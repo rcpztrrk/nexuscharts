@@ -1,0 +1,24 @@
+# === Build Artifacts ===
+build/
+public/wasm/nexuscharts.js
+public/wasm/nexuscharts.wasm
+
+# === Dependencies ===
+node_modules/
+emsdk/
+
+# === TypeScript/Rollup Output ===
+build/
+
+# === OS Files ===
+.DS_Store
+Thumbs.db
+*.suo
+*.user
+*.sln.docstates
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo

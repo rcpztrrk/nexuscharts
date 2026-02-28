@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexusCharts - Hello Triangle</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1e1e24;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        #chart-container {
+            width: 800px;
+            height: 600px;
+            border: 1px solid #333;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>NexusCharts (WASM/WebGL Demo)</h2>
+    <div id="chart-container">
+        <canvas id="canvas" width="800" height="600"></canvas>
+    </div>
+
+    <!-- IMPORTANT: Module config MUST come BEFORE the Emscripten glue script -->
+    <script>
+        var Module = {
+            canvas: document.getElementById('canvas'),
+            onRuntimeInitialized: function () {
+                console.log("[NexusCharts:JS] WebAssembly Runtime is ready.");
+                if (Module.initEngine()) {
+                    console.log("[NexusCharts:JS] Engine initialized successfully from C++!");
+                }
+            }
+        };
+    </script>
+    <!-- Emscripten glue code loads AFTER Module is configured -->
+    <script src="wasm/nexuscharts.js"></script>
+</body>
+
+</html>
