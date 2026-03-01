@@ -40,20 +40,19 @@
         <canvas id="canvas" width="800" height="600"></canvas>
     </div>
 
-    <!-- IMPORTANT: Module config MUST come BEFORE the Emscripten glue script -->
-    <script>
-        var Module = {
-            canvas: document.getElementById('canvas'),
-            onRuntimeInitialized: function () {
-                console.log("[NexusCharts:JS] WebAssembly Runtime is ready.");
-                if (Module.initEngine()) {
-                    console.log("[NexusCharts:JS] Engine initialized successfully from C++!");
-                }
-            }
-        };
+    <script type="module">
+        import { NexusCharts } from "./nexus-charts.esm.js";
+
+        const chart = new NexusCharts({
+            canvasId: "canvas",
+            width: 800,
+            height: 600,
+            wasmScriptPath: "wasm/nexuscharts.js",
+            wasmBinaryPath: "wasm/nexuscharts.wasm"
+        });
+
+        window.nexusChart = chart;
     </script>
-    <!-- Emscripten glue code loads AFTER Module is configured -->
-    <script src="wasm/nexuscharts.js"></script>
 </body>
 
 </html>

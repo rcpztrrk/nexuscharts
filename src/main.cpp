@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string>
 #include <emscripten.h>
 #include <emscripten/bind.h>
 #include <emscripten/html5.h>
@@ -14,16 +15,43 @@ using namespace emscripten;
 DataManager* g_dataManager = nullptr;
 RenderingEngine* g_renderingEngine = nullptr;
 Camera* g_camera = nullptr;
+EMSCRIPTEN_WEBGL_CONTEXT_HANDLE g_webglContext = 0;
+bool g_engineInitialized = false;
 
 // Main loop for Emscripten (called every frame like requestAnimationFrame)
 void MainLoop() {
+    if (g_camera) {
+        g_camera->Update();
+    }
     if (g_renderingEngine) {
         g_renderingEngine->Render();
     }
 }
 
+void PanCamera(float deltaX, float deltaY) {
+    if (g_camera) {
+        g_camera->Pan(deltaX, deltaY);
+    }
+}
+
+void ZoomCamera(float zoomFactor) {
+    if (g_camera) {
+        g_camera->Zoom(zoomFactor);
+    }
+}
+
 // Initialization function callable from JS
-bool InitEngine() {
+bool InitEngine(std::string canvasSelector, int width, int height) {
+    if (g_engineInitialized) {
+        std::cout << "[NexusCharts:WASM] Engine is already initialized. Skipping duplicate init." << std::endl;
+        return true;
+    }
+
+    if (canvasSelector.empty()) {
+        std::cerr << "[NexusCharts:WASM] ERROR: canvas selector cannot be empty." << std::endl;
+        return false;
+    }
+
     std::cout << "[NexusCharts:WASM] Engine is initializing..." << std::endl;
 
     // --- Step 1: Create WebGL 2.0 Context ---
@@ -36,33 +64,53 @@ bool InitEngine() {
     attrs.stencil = 0;
     attrs.antialias = 1;
 
-    // Target the canvas element with id "canvas"
-    EMSCRIPTEN_WEBGL_CONTEXT_HANDLE ctx = emscripten_webgl_create_context("#canvas", &attrs);
-    if (ctx <= 0) {
-        std::cerr << "[NexusCharts:WASM] ERROR: Failed to create WebGL2 context! Code: " << ctx << std::endl;
+    // Target the canvas element selector provided by JS wrapper.
+    g_webglContext = emscripten_webgl_create_context(canvasSelector.c_str(), &attrs);
+    if (g_webglContext <= 0) {
+        std::cerr << "[NexusCharts:WASM] ERROR: Failed to create WebGL2 context! Code: " << g_webglContext << std::endl;
+        g_webglContext = 0;
         return false;
     }
-    emscripten_webgl_make_context_current(ctx);
+    emscripten_webgl_make_context_current(g_webglContext);
     std::cout << "[NexusCharts:WASM] WebGL 2.0 context created successfully." << std::endl;
 
-    // Set canvas size
-    emscripten_set_canvas_element_size("#canvas", 800, 600);
+    int targetWidth = width;
+    int targetHeight = height;
+
+    // Set canvas size if values are provided from JS API.
+    if (width > 0 && height > 0) {
+        emscripten_set_canvas_element_size(canvasSelector.c_str(), width, height);
+    } else {
+        targetWidth = 800;
+        targetHeight = 600;
+        emscripten_get_canvas_element_size(canvasSelector.c_str(), &targetWidth, &targetHeight);
+    }
 
     // --- Step 2: Initialize Engine Components ---
     g_dataManager = new DataManager();
-    g_renderingEngine = new RenderingEngine();
     g_camera = new Camera();
+    g_camera->SetViewport(targetWidth, targetHeight);
+
+    g_renderingEngine = new RenderingEngine(targetWidth, targetHeight);
+    g_renderingEngine->SetCamera(g_camera);
+    g_renderingEngine->SetViewportSize(targetWidth, targetHeight);
 
     // --- Step 3: Start the render loop ---
     // 0 fps = use requestAnimationFrame, 0 = don't simulate infinite loop (let browser breathe)
     emscripten_set_main_loop(MainLoop, 0, 0);
 
+    g_engineInitialized = true;
     std::cout << "[NexusCharts:WASM] Engine initialized successfully!" << std::endl;
     return true;
 }
 
 // Cleanup function callable from JS
 void DestroyEngine() {
+    if (!g_engineInitialized) {
+        std::cout << "[NexusCharts:WASM] Destroy requested but engine is not initialized. Skipping." << std::endl;
+        return;
+    }
+
     std::cout << "[NexusCharts:WASM] Destroying engine..." << std::endl;
 
     emscripten_cancel_main_loop();
@@ -70,12 +118,24 @@ void DestroyEngine() {
     delete g_dataManager;
     delete g_renderingEngine;
     delete g_camera;
+    g_dataManager = nullptr;
+    g_renderingEngine = nullptr;
+    g_camera = nullptr;
+
+    if (g_webglContext > 0) {
+        emscripten_webgl_destroy_context(g_webglContext);
+        g_webglContext = 0;
+    }
+
+    g_engineInitialized = false;
 }
 
 // Bindings to expose functions to JavaScript
 EMSCRIPTEN_BINDINGS(nexus_charts_module) {
     function("initEngine", &InitEngine);
     function("destroyEngine", &DestroyEngine);
+    function("panCamera", &PanCamera);
+    function("zoomCamera", &ZoomCamera);
 }
 
 int main() {

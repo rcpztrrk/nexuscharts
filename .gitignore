@@ -1,4 +1,5 @@
 # === Build Artifacts ===
+.mpm/
 build/
 public/wasm/nexuscharts.js
 public/wasm/nexuscharts.wasm
@@ -9,6 +10,7 @@ emsdk/
 
 # === TypeScript/Rollup Output ===
 build/
+public/nexus-charts.esm.js
 
 # === OS Files ===
 .DS_Store

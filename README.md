@@ -1,84 +1,79 @@
-# 📈 NexusCharts
+# NexusCharts
 
-**Blazing-fast financial charting library powered by WebGL 2.0 and WebAssembly.**
+NexusCharts is a financial charting engine built with a C++ core compiled to WebAssembly and rendered with WebGL 2.0.  
+The project focuses on high-throughput candlestick rendering and a TypeScript-first integration layer for browser applications.
 
-NexusCharts aims to render millions of candlesticks at 60 FPS using a C++ core compiled to WebAssembly, with GPU-accelerated Instanced Rendering via WebGL 2.0. Designed to surpass TradingView's `lightweight-charts` in both performance and extensibility.
+## Project Status
 
-![Phase 1 - WebGL Clear Color](https://img.shields.io/badge/Phase_1-Complete-brightgreen)
-![License](https://img.shields.io/badge/License-MIT-blue)
+- Phase 1 completed: WebAssembly runtime, WebGL2 context, render loop, and integration baseline.
+- Phase 2 completed: candlestick body and wick rendering with instancing, plus 2D camera matrix integration.
 
-## 🚀 Features (Planned)
+## Core Capabilities
 
-- **Extreme Performance:** C++ data processing compiled to WASM + GPU rendering via WebGL 2.0 Instanced Rendering.
-- **Extensible API:** TypeScript API for custom drawing tools (Fibonacci, Trend Lines, Pitchfork).
-- **Plug & Play:** Install via NPM and integrate with React, Vue, or Vanilla JS in seconds.
-- **1M+ Data Points:** Pan and zoom through massive datasets without dropping below 60 FPS.
+- C++20 engine compiled to WebAssembly via Emscripten.
+- WebGL 2.0 rendering pipeline using GPU instancing.
+- TypeScript wrapper that bootstraps and controls the WASM module.
+- Development demo page served from `public/`.
 
-## 🛠 Tech Stack
+## Technology Stack
 
 | Layer | Technology |
 |---|---|
-| **Core Engine** | C++20 → WebAssembly (Emscripten) |
-| **Rendering** | WebGL 2.0 (GLES 3.0) |
-| **API / Wrapper** | TypeScript (Strict Mode) |
-| **Build** | CMake + Emscripten, Rollup |
+| Core Engine | C++20 -> WebAssembly (Emscripten) |
+| Rendering | WebGL 2.0 (GLES 3.0) |
+| Wrapper API | TypeScript (strict mode) |
+| Build | CMake, Emscripten, Rollup |
 
-## 📦 Project Structure
+## Repository Structure
 
-```
+```text
 nexuscharts/
-├── src/                    # C++ Core Engine
-│   ├── core/               # Data management (WASM)
-│   ├── graphics/           # WebGL rendering engine
-│   ├── math/               # Camera, projections, transforms
-│   └── main.cpp            # Emscripten entry point & bindings
-├── ts-src/                 # TypeScript API Bridge
-│   └── index.ts            # NexusCharts class
-├── public/                 # Dev server & test page
-│   ├── index.html          # Test canvas
-│   └── wasm/               # Compiled WASM output (gitignored)
-├── CMakeLists.txt          # C++ build config (Emscripten)
-├── rollup.config.js        # TypeScript bundler
-├── tsconfig.json           # TypeScript config
-└── package.json            # NPM scripts & deps
+|-- src/
+|   |-- core/                  # Data and processing components
+|   |-- graphics/              # Rendering engine and shader pipeline
+|   |-- math/                  # Camera and transform utilities
+|   `-- main.cpp               # Emscripten entry point and bindings
+|-- ts-src/
+|   `-- index.ts               # TypeScript wrapper
+|-- public/
+|   |-- index.html             # Demo page
+|   `-- wasm/                  # Generated WASM artifacts (ignored in git)
+|-- CMakeLists.txt
+|-- rollup.config.js
+|-- tsconfig.json
+`-- package.json
 ```
 
-## 🏗 Getting Started
+## Prerequisites
 
-### Prerequisites
-
+- [Node.js](https://nodejs.org/) 18+
+- [CMake](https://cmake.org/) 3.20+
 - [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html)
-- [Node.js](https://nodejs.org/) (v18+)
-- [CMake](https://cmake.org/) (v3.20+)
 
-### Setup
+## Build and Run
 
 ```bash
-# Clone the repo
-git clone https://github.com/YOUR_USERNAME/nexuscharts.git
+git clone https://github.com/rcpztrrk/nexuscharts.git
 cd nexuscharts
-
-# Install Emscripten SDK
-git clone https://github.com/emscripten-core/emsdk.git
-cd emsdk && ./emsdk install latest && ./emsdk activate latest && cd ..
-
-# Install JS dependencies
 npm install
-
-# Build WASM + TypeScript
 npm run build
-
-# Start dev server
 npm run dev
 ```
 
-## 🗺 Roadmap
+On Windows PowerShell systems with restricted script execution, run npm commands through `cmd /c`:
 
-- [x] **Phase 1:** Hello Triangle — Emscripten setup, WebGL2 context, first clear color render.
-- [ ] **Phase 2:** Render The Ticks — 2D Camera, Candlestick shader, Instanced Rendering.
-- [ ] **Phase 3:** Pan & Zoom — Mouse events → C++ camera matrix, Y-axis auto-scaling.
-- [ ] **Phase 4:** Developer Open API — `addDrawing()`, `createSeries()`, NPM publish.
+```powershell
+cmd /c npm run build
+cmd /c npm run dev
+```
 
-## 📄 License
+## Development Roadmap
 
-[MIT](LICENSE)
+- [x] Phase 1: Runtime and context bootstrap
+- [x] Phase 2: Candlestick pipeline completion (wicks, camera integration)
+- [ ] Phase 3: Interactive pan and zoom
+- [ ] Phase 4: Public API and package publishing
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
