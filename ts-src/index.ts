@@ -6,6 +6,7 @@ export interface InitOptions {
     height?: number;
     wasmScriptPath?: string;
     wasmBinaryPath?: string;
+    enableInteraction?: boolean;
 }
 
 interface NexusWasmModule {
@@ -39,6 +40,12 @@ export class NexusCharts {
     private readonly height?: number;
     private readonly wasmScriptPath: string;
     private readonly wasmBinaryPath: string;
+    private readonly enableInteraction: boolean;
+    private currentZoom: number = 1.0;
+    private isDragging: boolean = false;
+    private lastPointerX: number = 0;
+    private lastPointerY: number = 0;
+    private cleanupHandlers: Array<() => void> = [];
     private static wasmLoadPromise: Promise<NexusWasmModule> | null = null;
 
     constructor(options: InitOptions) {
@@ -47,6 +54,7 @@ export class NexusCharts {
         this.height = options.height;
         this.wasmScriptPath = options.wasmScriptPath ?? "wasm/nexuscharts.js";
         this.wasmBinaryPath = options.wasmBinaryPath ?? "wasm/nexuscharts.wasm";
+        this.enableInteraction = options.enableInteraction ?? true;
 
         this.canvas = document.getElementById(options.canvasId) as HTMLCanvasElement;
 
@@ -75,6 +83,9 @@ export class NexusCharts {
             }
 
             this.moduleLoaded = true;
+            if (this.enableInteraction && this.canvas) {
+                this.attachInteractionHandlers(this.canvas);
+            }
             console.log("[NexusCharts:JS] WASM module loaded and engine initialized.");
         } catch (error) {
             console.error("[NexusCharts:JS] WASM bootstrap failed.", error);
@@ -124,6 +135,7 @@ export class NexusCharts {
     }
 
     public destroy(): void {
+        this.detachInteractionHandlers();
         if (this.module) {
             this.module.destroyEngine();
         }
@@ -141,6 +153,64 @@ export class NexusCharts {
         if (!this.moduleLoaded || !this.module) {
             return;
         }
+        this.currentZoom = Math.min(5.0, Math.max(0.2, this.currentZoom * zoomFactor));
         this.module.zoomCamera(zoomFactor);
+    }
+
+    private attachInteractionHandlers(canvas: HTMLCanvasElement): void {
+        const onMouseDown = (event: MouseEvent) => {
+            this.isDragging = true;
+            this.lastPointerX = event.clientX;
+            this.lastPointerY = event.clientY;
+        };
+
+        const onMouseMove = (event: MouseEvent) => {
+            if (!this.isDragging) {
+                return;
+            }
+
+            const dx = event.clientX - this.lastPointerX;
+            const dy = event.clientY - this.lastPointerY;
+            this.lastPointerX = event.clientX;
+            this.lastPointerY = event.clientY;
+
+            const width = canvas.width || 1;
+            const height = canvas.height || 1;
+            const aspect = width / height;
+            const worldUnitsPerPixelX = (2.0 * this.currentZoom * aspect) / width;
+            const worldUnitsPerPixelY = (2.0 * this.currentZoom) / height;
+
+            this.pan(-dx * worldUnitsPerPixelX, dy * worldUnitsPerPixelY);
+        };
+
+        const stopDragging = () => {
+            this.isDragging = false;
+        };
+
+        const onWheel = (event: WheelEvent) => {
+            event.preventDefault();
+            const zoomFactor = event.deltaY > 0 ? 1.08 : 0.92;
+            this.zoom(zoomFactor);
+        };
+
+        canvas.addEventListener("mousedown", onMouseDown);
+        window.addEventListener("mousemove", onMouseMove);
+        window.addEventListener("mouseup", stopDragging);
+        canvas.addEventListener("mouseleave", stopDragging);
+        canvas.addEventListener("wheel", onWheel, { passive: false });
+
+        this.cleanupHandlers.push(() => canvas.removeEventListener("mousedown", onMouseDown));
+        this.cleanupHandlers.push(() => window.removeEventListener("mousemove", onMouseMove));
+        this.cleanupHandlers.push(() => window.removeEventListener("mouseup", stopDragging));
+        this.cleanupHandlers.push(() => canvas.removeEventListener("mouseleave", stopDragging));
+        this.cleanupHandlers.push(() => canvas.removeEventListener("wheel", onWheel));
+    }
+
+    private detachInteractionHandlers(): void {
+        for (const cleanup of this.cleanupHandlers) {
+            cleanup();
+        }
+        this.cleanupHandlers = [];
+        this.isDragging = false;
     }
 }

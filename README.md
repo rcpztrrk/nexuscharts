@@ -7,6 +7,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 
 - Phase 1 completed: WebAssembly runtime, WebGL2 context, render loop, and integration baseline.
 - Phase 2 completed: candlestick body and wick rendering with instancing, plus 2D camera matrix integration.
+- Phase 3 completed: mouse drag pan and wheel zoom interaction from TypeScript to WASM camera controls.
 
 ## Core Capabilities
 
@@ -71,8 +72,9 @@ cmd /c npm run dev
 
 - [x] Phase 1: Runtime and context bootstrap
 - [x] Phase 2: Candlestick pipeline completion (wicks, camera integration)
-- [ ] Phase 3: Interactive pan and zoom
-- [ ] Phase 4: Public API and package publishing
+- [x] Phase 3: Interactive pan and zoom
+- [ ] **Phase 4:** Developer Open API — `addDrawing()`, `createSeries()`, NPM publish.
+- [ ] **Phase 5:** RL Analytics View — Real-time agent decision heatmaps, Reward/P&L curves, WASM-based "Observer" data stream.
 
 ## License
 
