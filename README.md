@@ -8,13 +8,32 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Phase 1 completed: WebAssembly runtime, WebGL2 context, render loop, and integration baseline.
 - Phase 2 completed: candlestick body and wick rendering with instancing, plus 2D camera matrix integration.
 - Phase 3 completed: mouse drag pan and wheel zoom interaction from TypeScript to WASM camera controls.
+- Phase 4 in progress: public API surface is available (`waitUntilReady`, `createSeries`, `addDrawing`), with WASM data bridge pending.
 
 ## Core Capabilities
 
 - C++20 engine compiled to WebAssembly via Emscripten.
 - WebGL 2.0 rendering pipeline using GPU instancing.
 - TypeScript wrapper that bootstraps and controls the WASM module.
+- Public chart API for series and drawing management.
 - Development demo page served from `public/`.
+
+## API Snapshot
+
+```ts
+const chart = new NexusCharts({ canvasId: "canvas" });
+await chart.waitUntilReady();
+
+const series = chart.createSeries({ type: "candlestick" });
+series.setData([
+  { time: 1, open: 100, high: 105, low: 98, close: 103 }
+]);
+
+chart.addDrawing({
+  type: "line",
+  points: [{ x: -0.8, y: -0.2 }, { x: 0.7, y: 0.4 }]
+});
+```
 
 ## Technology Stack
 
@@ -73,7 +92,7 @@ cmd /c npm run dev
 - [x] Phase 1: Runtime and context bootstrap
 - [x] Phase 2: Candlestick pipeline completion (wicks, camera integration)
 - [x] Phase 3: Interactive pan and zoom
-- [ ] **Phase 4:** Developer Open API — `addDrawing()`, `createSeries()`, NPM publish.
+- [ ] Phase 4: Developer Open API and package publishing (in progress)
 - [ ] **Phase 5:** RL Analytics View — Real-time agent decision heatmaps, Reward/P&L curves, WASM-based "Observer" data stream.
 
 ## License
