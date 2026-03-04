@@ -1,6 +1,6 @@
 # NexusCharts
 
-NexusCharts is a financial charting engine built with a C++ core compiled to WebAssembly and rendered with WebGL 2.0.  
+NexusCharts is a financial charting engine built with a C++ core compiled to WebAssembly and rendered with WebGL 2.0.
 The project focuses on high-throughput candlestick rendering and a TypeScript-first integration layer for browser applications.
 
 ## Project Status
@@ -8,7 +8,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Phase 1 completed: WebAssembly runtime, WebGL2 context, render loop, and integration baseline.
 - Phase 2 completed: candlestick body and wick rendering with instancing, plus 2D camera matrix integration.
 - Phase 3 completed: mouse drag pan and wheel zoom interaction from TypeScript to WASM camera controls.
-- Phase 4 in progress: public API surface is available (`waitUntilReady`, `createSeries`, `addDrawing`), with WASM data bridge pending.
+- Phase 4 completed: public API surface, drawing overlay layer, and WASM series data bridge (`createSeries().setData()`).
 
 ## Core Capabilities
 
@@ -92,8 +92,8 @@ cmd /c npm run dev
 - [x] Phase 1: Runtime and context bootstrap
 - [x] Phase 2: Candlestick pipeline completion (wicks, camera integration)
 - [x] Phase 3: Interactive pan and zoom
-- [ ] Phase 4: Developer Open API and package publishing (in progress)
-- [ ] **Phase 5:** RL Analytics View — Real-time agent decision heatmaps, Reward/P&L curves, WASM-based "Observer" data stream.
+- [x] Phase 4: Developer Open API and package publishing
+- [ ] **Phase 5:** RL analytics view: real-time agent decision heatmaps, reward/P&L curves, and WASM-based observer data stream.
 
 ## License
 

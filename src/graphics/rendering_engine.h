@@ -1,8 +1,10 @@
 #pragma once
 
 #include <GLES3/gl3.h>
+#include <cstdint>
 
 class Camera;
+class DataManager;
 
 class RenderingEngine {
 public:
@@ -10,10 +12,12 @@ public:
     ~RenderingEngine();
     void Render();
     void SetCamera(const Camera* camera);
+    void SetDataManager(const DataManager* dataManager);
     void SetViewportSize(int width, int height);
 
 private:
     bool InitializePipeline();
+    void RefreshInstanceBuffersIfNeeded();
 
     bool initialized_ = false;
     bool pipelineAttempted_ = false;
@@ -29,4 +33,7 @@ private:
     int viewportWidth_ = 800;
     int viewportHeight_ = 600;
     const Camera* camera_ = nullptr;
+    const DataManager* dataManager_ = nullptr;
+    std::uint64_t appliedDataRevision_ = 0;
+    bool hasAppliedDataRevision_ = false;
 };

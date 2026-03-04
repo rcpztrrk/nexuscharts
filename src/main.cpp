@@ -1,5 +1,7 @@
 #include <iostream>
+#include <algorithm>
 #include <string>
+#include <vector>
 #include <emscripten.h>
 #include <emscripten/bind.h>
 #include <emscripten/html5.h>
@@ -38,6 +40,44 @@ void ZoomCamera(float zoomFactor) {
     if (g_camera) {
         g_camera->Zoom(zoomFactor);
     }
+}
+
+void SetSeriesData(val opens, val highs, val lows, val closes) {
+    if (g_dataManager == nullptr) {
+        std::cerr << "[NexusCharts:WASM] setSeriesData called before DataManager initialization." << std::endl;
+        return;
+    }
+
+    const int opensLength = opens["length"].as<int>();
+    const int highsLength = highs["length"].as<int>();
+    const int lowsLength = lows["length"].as<int>();
+    const int closesLength = closes["length"].as<int>();
+
+    if (opensLength != highsLength || opensLength != lowsLength || opensLength != closesLength) {
+        std::cerr << "[NexusCharts:WASM] setSeriesData length mismatch. Ignoring update." << std::endl;
+        return;
+    }
+
+    if (opensLength <= 0) {
+        g_dataManager->ClearCandles();
+        return;
+    }
+
+    std::vector<DataManager::Candle> candles;
+    candles.reserve(static_cast<std::size_t>(opensLength));
+
+    for (int i = 0; i < opensLength; ++i) {
+        const float open = static_cast<float>(opens[i].as<double>());
+        const float highRaw = static_cast<float>(highs[i].as<double>());
+        const float lowRaw = static_cast<float>(lows[i].as<double>());
+        const float close = static_cast<float>(closes[i].as<double>());
+
+        const float high = std::max({highRaw, open, close, lowRaw});
+        const float low = std::min({lowRaw, open, close, highRaw});
+        candles.push_back({open, high, low, close});
+    }
+
+    g_dataManager->SetCandles(candles);
 }
 
 // Initialization function callable from JS
@@ -93,6 +133,7 @@ bool InitEngine(std::string canvasSelector, int width, int height) {
 
     g_renderingEngine = new RenderingEngine(targetWidth, targetHeight);
     g_renderingEngine->SetCamera(g_camera);
+    g_renderingEngine->SetDataManager(g_dataManager);
     g_renderingEngine->SetViewportSize(targetWidth, targetHeight);
 
     // --- Step 3: Start the render loop ---
@@ -136,6 +177,7 @@ EMSCRIPTEN_BINDINGS(nexus_charts_module) {
     function("destroyEngine", &DestroyEngine);
     function("panCamera", &PanCamera);
     function("zoomCamera", &ZoomCamera);
+    function("setSeriesData", &SetSeriesData);
 }
 
 int main() {

@@ -1,5 +1,6 @@
 #include "rendering_engine.h"
 
+#include "core/data_manager.h"
 #include "math/camera.h"
 
 #include <algorithm>
@@ -7,6 +8,7 @@
 #include <cmath>
 #include <cstddef>
 #include <iostream>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -172,6 +174,72 @@ std::vector<CandleOhlc> BuildSampleCandles() {
     return candles;
 }
 
+std::vector<CandleOhlc> BuildCandlesFromDataManager(const DataManager* dataManager) {
+    if (dataManager == nullptr) {
+        return BuildSampleCandles();
+    }
+
+    const std::vector<DataManager::Candle>& source = dataManager->GetCandles();
+    if (source.empty()) {
+        // Show sample data before the first external data push.
+        if (dataManager->GetRevision() == 0) {
+            return BuildSampleCandles();
+        }
+        return {};
+    }
+
+    float minLow = std::numeric_limits<float>::max();
+    float maxHigh = std::numeric_limits<float>::lowest();
+    std::size_t validCount = 0;
+
+    for (const DataManager::Candle& candle : source) {
+        const float low = std::min({candle.low, candle.open, candle.close, candle.high});
+        const float high = std::max({candle.high, candle.open, candle.close, candle.low});
+        if (!std::isfinite(low) || !std::isfinite(high)) {
+            continue;
+        }
+        minLow = std::min(minLow, low);
+        maxHigh = std::max(maxHigh, high);
+        ++validCount;
+    }
+
+    if (validCount == 0) {
+        return {};
+    }
+
+    const float range = std::max(maxHigh - minLow, 1e-5f);
+    const float scale = 1.7f / range; // maps to roughly [-0.85, 0.85]
+    const auto normalizeY = [minLow, scale](float value) -> float {
+        return ((value - minLow) * scale) - 0.85f;
+    };
+
+    const float startX = -0.92f;
+    const float stepX = (validCount > 1) ? (1.84f / static_cast<float>(validCount - 1)) : 0.0f;
+
+    std::vector<CandleOhlc> output;
+    output.reserve(validCount);
+
+    std::size_t outputIndex = 0;
+    for (const DataManager::Candle& candle : source) {
+        const float low = std::min({candle.low, candle.open, candle.close, candle.high});
+        const float high = std::max({candle.high, candle.open, candle.close, candle.low});
+        if (!std::isfinite(low) || !std::isfinite(high)) {
+            continue;
+        }
+
+        output.push_back({
+            startX + (stepX * static_cast<float>(outputIndex)),
+            normalizeY(candle.open),
+            normalizeY(high),
+            normalizeY(low),
+            normalizeY(candle.close)
+        });
+        ++outputIndex;
+    }
+
+    return output;
+}
+
 void BuildRenderInstances(
     const std::vector<CandleOhlc>& ohlc,
     std::vector<RenderInstance>* bodyInstances,
@@ -208,6 +276,17 @@ void BuildRenderInstances(
             0.90f
         });
     }
+}
+
+void UploadInstances(GLuint instanceVbo, const std::vector<RenderInstance>& instances, GLsizei* outCount) {
+    glBindBuffer(GL_ARRAY_BUFFER, instanceVbo);
+    glBufferData(
+        GL_ARRAY_BUFFER,
+        static_cast<GLsizeiptr>(instances.size() * sizeof(RenderInstance)),
+        instances.empty() ? nullptr : instances.data(),
+        GL_DYNAMIC_DRAW
+    );
+    *outCount = static_cast<GLsizei>(instances.size());
 }
 
 std::array<float, 16> BuildIdentityMatrix() {
@@ -257,6 +336,11 @@ void RenderingEngine::SetCamera(const Camera* camera) {
     camera_ = camera;
 }
 
+void RenderingEngine::SetDataManager(const DataManager* dataManager) {
+    dataManager_ = dataManager;
+    hasAppliedDataRevision_ = false;
+}
+
 void RenderingEngine::SetViewportSize(int width, int height) {
     if (width > 0) {
         viewportWidth_ = width;
@@ -298,7 +382,7 @@ bool RenderingEngine::InitializePipeline() {
 
     std::vector<RenderInstance> bodyInstances;
     std::vector<RenderInstance> wickInstances;
-    BuildRenderInstances(BuildSampleCandles(), &bodyInstances, &wickInstances);
+    BuildRenderInstances(BuildCandlesFromDataManager(dataManager_), &bodyInstances, &wickInstances);
 
     bodyInstanceCount_ = static_cast<GLsizei>(bodyInstances.size());
     wickInstanceCount_ = static_cast<GLsizei>(wickInstances.size());
@@ -320,8 +404,8 @@ bool RenderingEngine::InitializePipeline() {
         glBufferData(
             GL_ARRAY_BUFFER,
             static_cast<GLsizeiptr>(instances.size() * sizeof(RenderInstance)),
-            instances.data(),
-            GL_STATIC_DRAW
+            instances.empty() ? nullptr : instances.data(),
+            GL_DYNAMIC_DRAW
         );
 
         constexpr GLsizei stride = static_cast<GLsizei>(sizeof(RenderInstance));
@@ -353,10 +437,39 @@ bool RenderingEngine::InitializePipeline() {
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
+    if (dataManager_ != nullptr) {
+        appliedDataRevision_ = dataManager_->GetRevision();
+        hasAppliedDataRevision_ = true;
+    } else {
+        hasAppliedDataRevision_ = false;
+    }
+
     initialized_ = true;
     std::cout << "[NexusCharts] Phase 2 pipeline initialized. Bodies: " << bodyInstanceCount_
               << ", Wicks: " << wickInstanceCount_ << std::endl;
     return true;
+}
+
+void RenderingEngine::RefreshInstanceBuffersIfNeeded() {
+    if (!initialized_ || dataManager_ == nullptr) {
+        return;
+    }
+
+    const std::uint64_t revision = dataManager_->GetRevision();
+    if (hasAppliedDataRevision_ && revision == appliedDataRevision_) {
+        return;
+    }
+
+    std::vector<RenderInstance> bodyInstances;
+    std::vector<RenderInstance> wickInstances;
+    BuildRenderInstances(BuildCandlesFromDataManager(dataManager_), &bodyInstances, &wickInstances);
+
+    UploadInstances(bodyInstanceVbo_, bodyInstances, &bodyInstanceCount_);
+    UploadInstances(wickInstanceVbo_, wickInstances, &wickInstanceCount_);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    appliedDataRevision_ = revision;
+    hasAppliedDataRevision_ = true;
 }
 
 void RenderingEngine::Render() {
@@ -372,6 +485,8 @@ void RenderingEngine::Render() {
             return;
         }
     }
+
+    RefreshInstanceBuffersIfNeeded();
 
     glUseProgram(shaderProgram_);
     const std::array<float, 16> viewProj = camera_ ? camera_->GetViewProjectionMatrix() : BuildIdentityMatrix();

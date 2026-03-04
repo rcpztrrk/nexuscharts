@@ -63,6 +63,7 @@ interface NexusWasmModule {
     destroyEngine: () => void;
     panCamera: (deltaX: number, deltaY: number) => void;
     zoomCamera: (zoomFactor: number) => void;
+    setSeriesData: (opens: number[], highs: number[], lows: number[], closes: number[]) => void;
     canvas?: HTMLCanvasElement;
     locateFile?: (path: string) => string;
     onRuntimeInitialized?: () => void;
@@ -100,7 +101,7 @@ export class NexusCharts {
     private cleanupHandlers: Array<() => void> = [];
     private readonly seriesStore = new Map<string, { type: SeriesType; data: CandleDataPoint[] }>();
     private readonly drawingStore = new Map<string, StoredDrawing>();
-    private warnDataBridgePending: boolean = true;
+    private warnMissingSetSeriesData: boolean = true;
     private idCounter: number = 0;
     private readonly readyPromise: Promise<void>;
     private resolveReady!: () => void;
@@ -363,15 +364,49 @@ export class NexusCharts {
     }
 
     private syncSeriesToEngine(seriesId: string): void {
-        if (!this.moduleLoaded) {
+        if (!this.moduleLoaded || !this.module) {
             return;
         }
-        if (this.warnDataBridgePending) {
+
+        const series = this.seriesStore.get(seriesId);
+        if (!series || series.type !== "candlestick") {
+            return;
+        }
+
+        if (typeof this.module.setSeriesData !== "function") {
+            if (this.warnMissingSetSeriesData) {
+                console.warn("[NexusCharts] WASM export 'setSeriesData' is not available.");
+                this.warnMissingSetSeriesData = false;
+            }
+            return;
+        }
+
+        const opens: number[] = [];
+        const highs: number[] = [];
+        const lows: number[] = [];
+        const closes: number[] = [];
+
+        for (const point of series.data) {
+            const open = Number(point.open);
+            const high = Number(point.high);
+            const low = Number(point.low);
+            const close = Number(point.close);
+            if (!Number.isFinite(open) || !Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) {
+                continue;
+            }
+            opens.push(open);
+            highs.push(high);
+            lows.push(low);
+            closes.push(close);
+        }
+
+        try {
+            this.module.setSeriesData(opens, highs, lows, closes);
+        } catch (error) {
             console.warn(
-                "[NexusCharts] Series API is active. WASM data bridge will be connected in the next phase.",
-                { seriesId }
+                "[NexusCharts] Failed to push series data to WASM.",
+                { seriesId, error }
             );
-            this.warnDataBridgePending = false;
         }
     }
 
