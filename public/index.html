@@ -51,13 +51,74 @@
             wasmBinaryPath: "wasm/nexuscharts.wasm"
         });
 
+        const generateCandles = (count = 36) => {
+            const candles = [];
+            let price = 102;
+            for (let i = 0; i < count; i += 1) {
+                const wave = Math.sin(i * 0.32) * 1.4;
+                const pull = Math.cos(i * 0.19) * 0.9;
+                const noise = (Math.random() - 0.5) * 0.8;
+
+                const open = price;
+                const close = open + wave + pull + noise;
+                const high = Math.max(open, close) + 0.7 + (Math.random() * 0.9);
+                const low = Math.min(open, close) - 0.7 - (Math.random() * 0.9);
+
+                candles.push({
+                    time: i + 1,
+                    open: Number(open.toFixed(2)),
+                    high: Number(high.toFixed(2)),
+                    low: Number(low.toFixed(2)),
+                    close: Number(close.toFixed(2))
+                });
+
+                price = close;
+            }
+            return candles;
+        };
+
+        const buildObserverFrames = (candles) => {
+            const frames = [];
+            let cumulativePnl = 0;
+            for (let i = 0; i < candles.length; i += 1) {
+                const candle = candles[i];
+                const delta = candle.close - candle.open;
+                const reward = delta;
+                cumulativePnl += delta;
+
+                let action = "hold";
+                if (delta > 0.2) action = "buy";
+                else if (delta < -0.2) action = "sell";
+
+                const confidence = Math.min(1, 0.45 + (Math.abs(delta) / 3.5));
+                const x = -0.9 + ((1.8 * i) / Math.max(1, candles.length - 1));
+                const y = action === "buy" ? 0.48 : action === "sell" ? -0.48 : 0.0;
+
+                frames.push({
+                    time: candle.time,
+                    reward: Number(reward.toFixed(3)),
+                    pnl: Number(cumulativePnl.toFixed(3)),
+                    confidence: Number(confidence.toFixed(3)),
+                    action,
+                    x: Number(x.toFixed(3)),
+                    y
+                });
+            }
+            return frames;
+        };
+
         chart.waitUntilReady().then(() => {
             const series = chart.createSeries({ type: "candlestick" });
-            series.setData([
-                { time: 1, open: 102, high: 110, low: 98, close: 108 },
-                { time: 2, open: 108, high: 112, low: 105, close: 106 },
-                { time: 3, open: 106, high: 115, low: 104, close: 113 }
-            ]);
+            const candles = generateCandles(42);
+            series.setData(candles);
+
+            chart.configureAnalytics({
+                showHeatmap: true,
+                showRewardCurve: true,
+                showPnlCurve: true,
+                maxFrames: 180
+            });
+            chart.setObserverFrames(buildObserverFrames(candles));
 
             chart.addDrawing({
                 type: "line",

@@ -5,7 +5,15 @@ export interface InitOptions {
     wasmScriptPath?: string;
     wasmBinaryPath?: string;
     enableInteraction?: boolean;
+    analytics?: AnalyticsOptions;
     onReady?: (chart: NexusCharts) => void;
+}
+
+export interface AnalyticsOptions {
+    showRewardCurve?: boolean;
+    showPnlCurve?: boolean;
+    showHeatmap?: boolean;
+    maxFrames?: number;
 }
 
 export interface CandleDataPoint {
@@ -17,6 +25,18 @@ export interface CandleDataPoint {
 }
 
 export type SeriesType = "candlestick";
+
+export type AgentAction = "buy" | "sell" | "hold";
+
+export interface ObserverFrame {
+    time: number;
+    reward: number;
+    pnl: number;
+    confidence?: number;
+    action?: AgentAction;
+    x?: number; // normalized world space [-1, 1]
+    y?: number; // normalized world space [-1, 1]
+}
 
 export interface SeriesOptions {
     id?: string;
@@ -56,6 +76,16 @@ export interface DrawingDefinition {
 
 interface StoredDrawing extends DrawingDefinition {
     id: string;
+}
+
+interface NormalizedObserverFrame {
+    time: number;
+    reward: number;
+    pnl: number;
+    confidence: number;
+    action: AgentAction;
+    x: number;
+    y: number;
 }
 
 interface NexusWasmModule {
@@ -101,6 +131,13 @@ export class NexusCharts {
     private cleanupHandlers: Array<() => void> = [];
     private readonly seriesStore = new Map<string, { type: SeriesType; data: CandleDataPoint[] }>();
     private readonly drawingStore = new Map<string, StoredDrawing>();
+    private readonly observerFrames: NormalizedObserverFrame[] = [];
+    private analyticsOptions: Required<AnalyticsOptions> = {
+        showRewardCurve: true,
+        showPnlCurve: true,
+        showHeatmap: true,
+        maxFrames: 240,
+    };
     private warnMissingSetSeriesData: boolean = true;
     private idCounter: number = 0;
     private readonly readyPromise: Promise<void>;
@@ -115,6 +152,9 @@ export class NexusCharts {
         this.wasmBinaryPath = options.wasmBinaryPath ?? "wasm/nexuscharts.wasm";
         this.enableInteraction = options.enableInteraction ?? true;
         this.onReadyCallback = options.onReady;
+        if (options.analytics) {
+            this.analyticsOptions = this.normalizeAnalyticsOptions(options.analytics);
+        }
         this.readyPromise = new Promise<void>((resolve) => {
             this.resolveReady = resolve;
         });
@@ -227,6 +267,43 @@ export class NexusCharts {
 
     public clearDrawings(): void {
         this.drawingStore.clear();
+        this.redrawDrawings();
+    }
+
+    public configureAnalytics(options: AnalyticsOptions): void {
+        this.analyticsOptions = this.normalizeAnalyticsOptions(options);
+        this.trimObserverFramesToLimit();
+        this.redrawDrawings();
+    }
+
+    public pushObserverFrame(frame: ObserverFrame): void {
+        const normalized = this.normalizeObserverFrame(frame, this.observerFrames.length);
+        if (!normalized) {
+            return;
+        }
+        this.observerFrames.push(normalized);
+        this.trimObserverFramesToLimit();
+        this.redrawDrawings();
+    }
+
+    public setObserverFrames(frames: ObserverFrame[]): void {
+        this.observerFrames.length = 0;
+        for (let i = 0; i < frames.length; i += 1) {
+            const normalized = this.normalizeObserverFrame(frames[i], i);
+            if (normalized) {
+                this.observerFrames.push(normalized);
+            }
+        }
+        this.trimObserverFramesToLimit();
+        this.redrawDrawings();
+    }
+
+    public getObserverFrames(): ObserverFrame[] {
+        return this.observerFrames.map((frame) => ({ ...frame }));
+    }
+
+    public clearObserverFrames(): void {
+        this.observerFrames.length = 0;
         this.redrawDrawings();
     }
 
@@ -489,6 +566,211 @@ export class NexusCharts {
 
             ctx.restore();
         }
+
+        this.renderAnalyticsOverlay(ctx, width, height, toCanvas);
+    }
+
+    private normalizeAnalyticsOptions(options: AnalyticsOptions): Required<AnalyticsOptions> {
+        const rawMaxFrames = options.maxFrames ?? this.analyticsOptions.maxFrames;
+        const parsedMaxFrames = Number(rawMaxFrames);
+        const maxFrames = Number.isFinite(parsedMaxFrames)
+            ? Math.max(10, Math.min(5000, Math.floor(parsedMaxFrames)))
+            : this.analyticsOptions.maxFrames;
+
+        return {
+            showRewardCurve: options.showRewardCurve ?? this.analyticsOptions.showRewardCurve,
+            showPnlCurve: options.showPnlCurve ?? this.analyticsOptions.showPnlCurve,
+            showHeatmap: options.showHeatmap ?? this.analyticsOptions.showHeatmap,
+            maxFrames,
+        };
+    }
+
+    private normalizeObserverFrame(frame: ObserverFrame, sequenceIndex: number): NormalizedObserverFrame | null {
+        const reward = Number(frame.reward);
+        const pnl = Number(frame.pnl);
+        if (!Number.isFinite(reward) || !Number.isFinite(pnl)) {
+            return null;
+        }
+
+        const parsedTime = Number(frame.time);
+        const time = Number.isFinite(parsedTime) ? parsedTime : sequenceIndex;
+        const confidenceRaw = Number(frame.confidence ?? 0.65);
+        const confidence = this.clamp(Number.isFinite(confidenceRaw) ? confidenceRaw : 0.65, 0, 1);
+
+        const action: AgentAction = frame.action ?? (reward > 0 ? "buy" : reward < 0 ? "sell" : "hold");
+        const xRaw = Number(frame.x);
+        const yRaw = Number(frame.y);
+
+        const x = Number.isFinite(xRaw)
+            ? this.clamp(xRaw, -1, 1)
+            : this.defaultObserverX(sequenceIndex);
+        const y = Number.isFinite(yRaw)
+            ? this.clamp(yRaw, -1, 1)
+            : this.defaultObserverY(action);
+
+        return { time, reward, pnl, confidence, action, x, y };
+    }
+
+    private defaultObserverX(sequenceIndex: number): number {
+        const span = Math.max(1, this.analyticsOptions.maxFrames - 1);
+        const wrapped = sequenceIndex % this.analyticsOptions.maxFrames;
+        return this.clamp(-0.9 + ((1.8 * wrapped) / span), -0.95, 0.95);
+    }
+
+    private defaultObserverY(action: AgentAction): number {
+        if (action === "buy") return 0.45;
+        if (action === "sell") return -0.45;
+        return 0.0;
+    }
+
+    private clamp(value: number, minValue: number, maxValue: number): number {
+        return Math.min(maxValue, Math.max(minValue, value));
+    }
+
+    private trimObserverFramesToLimit(): void {
+        const overflow = this.observerFrames.length - this.analyticsOptions.maxFrames;
+        if (overflow > 0) {
+            this.observerFrames.splice(0, overflow);
+        }
+    }
+
+    private renderAnalyticsOverlay(
+        ctx: CanvasRenderingContext2D,
+        width: number,
+        height: number,
+        toCanvas: (point: DrawingPoint) => { x: number; y: number }
+    ): void {
+        if (this.observerFrames.length === 0) {
+            return;
+        }
+
+        const frames = this.observerFrames.slice(-this.analyticsOptions.maxFrames);
+
+        if (this.analyticsOptions.showHeatmap) {
+            for (const frame of frames) {
+                const point = toCanvas({ x: frame.x, y: frame.y });
+                const radius = 2.5 + (frame.confidence * 4.5);
+                let color = "#ffd166";
+                if (frame.action === "buy") color = "#39d98a";
+                if (frame.action === "sell") color = "#ff5c70";
+
+                ctx.save();
+                ctx.globalAlpha = 0.12 + (frame.confidence * 0.35);
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        if (!this.analyticsOptions.showRewardCurve && !this.analyticsOptions.showPnlCurve) {
+            return;
+        }
+
+        const panelWidth = Math.max(220, Math.min(340, width * 0.36));
+        const panelHeight = Math.max(120, Math.min(180, height * 0.30));
+        const panelX = width - panelWidth - 12;
+        const panelY = 12;
+
+        const plotPadL = 12;
+        const plotPadR = 8;
+        const plotPadT = 26;
+        const plotPadB = 24;
+        const plotX = panelX + plotPadL;
+        const plotY = panelY + plotPadT;
+        const plotW = panelWidth - plotPadL - plotPadR;
+        const plotH = panelHeight - plotPadT - plotPadB;
+
+        let minValue = Number.POSITIVE_INFINITY;
+        let maxValue = Number.NEGATIVE_INFINITY;
+        for (const frame of frames) {
+            if (this.analyticsOptions.showRewardCurve) {
+                minValue = Math.min(minValue, frame.reward);
+                maxValue = Math.max(maxValue, frame.reward);
+            }
+            if (this.analyticsOptions.showPnlCurve) {
+                minValue = Math.min(minValue, frame.pnl);
+                maxValue = Math.max(maxValue, frame.pnl);
+            }
+        }
+
+        if (!Number.isFinite(minValue) || !Number.isFinite(maxValue)) {
+            return;
+        }
+
+        if (Math.abs(maxValue - minValue) < 1e-6) {
+            maxValue += 1;
+            minValue -= 1;
+        }
+
+        const xForIndex = (index: number): number => {
+            const d = Math.max(1, frames.length - 1);
+            return plotX + ((index / d) * plotW);
+        };
+        const yForValue = (value: number): number => {
+            const t = (value - minValue) / (maxValue - minValue);
+            return plotY + ((1 - t) * plotH);
+        };
+
+        ctx.save();
+        ctx.fillStyle = "rgba(6, 15, 30, 0.72)";
+        ctx.strokeStyle = "rgba(120, 148, 188, 0.45)";
+        ctx.lineWidth = 1;
+        ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+        ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
+
+        if (minValue <= 0 && maxValue >= 0) {
+            ctx.strokeStyle = "rgba(115, 138, 171, 0.35)";
+            ctx.setLineDash([4, 3]);
+            const y0 = yForValue(0);
+            ctx.beginPath();
+            ctx.moveTo(plotX, y0);
+            ctx.lineTo(plotX + plotW, y0);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        const drawCurve = (extract: (frame: NormalizedObserverFrame) => number, color: string) => {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let i = 0; i < frames.length; i += 1) {
+                const x = xForIndex(i);
+                const y = yForValue(extract(frames[i]));
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            ctx.stroke();
+        };
+
+        if (this.analyticsOptions.showRewardCurve) {
+            drawCurve((frame) => frame.reward, "#57d4ff");
+        }
+        if (this.analyticsOptions.showPnlCurve) {
+            drawCurve((frame) => frame.pnl, "#ffb86b");
+        }
+
+        const last = frames[frames.length - 1];
+        ctx.font = "12px 'Segoe UI', sans-serif";
+        ctx.fillStyle = "#dce7ff";
+        ctx.fillText("Observer Analytics", panelX + 10, panelY + 16);
+
+        let metricsX = panelX + 10;
+        if (this.analyticsOptions.showRewardCurve) {
+            ctx.fillStyle = "#57d4ff";
+            ctx.fillText(`R ${last.reward.toFixed(2)}`, metricsX, panelY + panelHeight - 8);
+            metricsX += 70;
+        }
+        if (this.analyticsOptions.showPnlCurve) {
+            ctx.fillStyle = "#ffb86b";
+            ctx.fillText(`P ${last.pnl.toFixed(2)}`, metricsX, panelY + panelHeight - 8);
+        }
+
+        ctx.restore();
     }
 
     private nextId(prefix: "series" | "drawing"): string {

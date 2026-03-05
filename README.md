@@ -9,6 +9,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Phase 2 completed: candlestick body and wick rendering with instancing, plus 2D camera matrix integration.
 - Phase 3 completed: mouse drag pan and wheel zoom interaction from TypeScript to WASM camera controls.
 - Phase 4 completed: public API surface, drawing overlay layer, and WASM series data bridge (`createSeries().setData()`).
+- Phase 5 started: observer analytics overlay (reward/pnl curves + decision heatmap stream API).
 
 ## Core Capabilities
 
@@ -16,6 +17,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - WebGL 2.0 rendering pipeline using GPU instancing.
 - TypeScript wrapper that bootstraps and controls the WASM module.
 - Public chart API for series and drawing management.
+- Observer analytics API (`setObserverFrames`, `pushObserverFrame`, `configureAnalytics`).
 - Development demo page served from `public/`.
 
 ## API Snapshot
@@ -33,6 +35,11 @@ chart.addDrawing({
   type: "line",
   points: [{ x: -0.8, y: -0.2 }, { x: 0.7, y: 0.4 }]
 });
+
+chart.configureAnalytics({ showHeatmap: true, showRewardCurve: true, showPnlCurve: true });
+chart.setObserverFrames([
+  { time: 1, reward: 0.35, pnl: 0.35, action: "buy", confidence: 0.72, x: -0.7, y: 0.5 }
+]);
 ```
 
 ## Technology Stack
@@ -93,7 +100,7 @@ cmd /c npm run dev
 - [x] Phase 2: Candlestick pipeline completion (wicks, camera integration)
 - [x] Phase 3: Interactive pan and zoom
 - [x] Phase 4: Developer Open API and package publishing
-- [ ] **Phase 5:** RL analytics view: real-time agent decision heatmaps, reward/P&L curves, and WASM-based observer data stream.
+- [ ] **Phase 5:** RL analytics view: real-time agent decision heatmaps, reward/P&L curves, and WASM-based observer data stream (in progress).
 
 ## License
 
