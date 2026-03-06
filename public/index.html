@@ -31,6 +31,13 @@
             height: 100%;
             display: block;
         }
+
+        #metrics-label {
+            margin-top: 12px;
+            color: #9bb3d6;
+            font-size: 13px;
+            letter-spacing: 0.2px;
+        }
     </style>
 </head>
 
@@ -39,6 +46,7 @@
     <div id="chart-container">
         <canvas id="canvas" width="800" height="600"></canvas>
     </div>
+    <div id="metrics-label">Observer stream waiting...</div>
 
     <script type="module">
         import { NexusCharts } from "./nexus-charts.esm.js";
@@ -108,6 +116,7 @@
         };
 
         chart.waitUntilReady().then(() => {
+            const metricsLabel = document.getElementById("metrics-label");
             const series = chart.createSeries({ type: "candlestick" });
             const candles = generateCandles(42);
             series.setData(candles);
@@ -118,7 +127,8 @@
                 showPnlCurve: true,
                 maxFrames: 180
             });
-            chart.setObserverFrames(buildObserverFrames(candles));
+            const initialFrames = buildObserverFrames(candles);
+            chart.setObserverFrames(initialFrames);
 
             chart.addDrawing({
                 type: "line",
@@ -131,6 +141,43 @@
                 y: -0.35,
                 style: { color: "#5ea6ff", width: 1.5, dash: [6, 4] }
             });
+
+            let streamIndex = initialFrames.length;
+            let cumulativePnl = initialFrames.length ? initialFrames[initialFrames.length - 1].pnl : 0;
+
+            setInterval(() => {
+                const reward = Math.sin(streamIndex * 0.33) * 0.65 + ((Math.random() - 0.5) * 0.25);
+                cumulativePnl += reward;
+
+                let action = "hold";
+                if (reward > 0.12) action = "buy";
+                else if (reward < -0.12) action = "sell";
+
+                const confidence = Math.min(1, 0.5 + (Math.abs(reward) / 0.85));
+                const x = -0.9 + ((1.8 * (streamIndex % 180)) / 179);
+                const y = action === "buy" ? 0.48 : action === "sell" ? -0.48 : 0.0;
+
+                chart.pushObserverFrame({
+                    time: streamIndex + 1,
+                    reward: Number(reward.toFixed(3)),
+                    pnl: Number(cumulativePnl.toFixed(3)),
+                    confidence: Number(confidence.toFixed(3)),
+                    action,
+                    x: Number(x.toFixed(3)),
+                    y
+                });
+
+                const metrics = chart.getObserverMetrics(60);
+                if (metricsLabel) {
+                    metricsLabel.textContent =
+                        `Observer stream (${metrics.source}) | frames: ${metrics.frameCount} | ` +
+                        `R: ${metrics.lastReward.toFixed(3)} | ` +
+                        `P: ${metrics.lastPnl.toFixed(3)} | ` +
+                        `avg60: ${metrics.averageReward.toFixed(3)}`;
+                }
+
+                streamIndex += 1;
+            }, 1200);
         });
 
         window.nexusChart = chart;

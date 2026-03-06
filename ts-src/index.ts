@@ -38,6 +38,14 @@ export interface ObserverFrame {
     y?: number; // normalized world space [-1, 1]
 }
 
+export interface ObserverMetrics {
+    frameCount: number;
+    lastReward: number;
+    lastPnl: number;
+    averageReward: number;
+    source: "wasm" | "js";
+}
+
 export interface SeriesOptions {
     id?: string;
     type?: SeriesType;
@@ -94,6 +102,20 @@ interface NexusWasmModule {
     panCamera: (deltaX: number, deltaY: number) => void;
     zoomCamera: (zoomFactor: number) => void;
     setSeriesData: (opens: number[], highs: number[], lows: number[], closes: number[]) => void;
+    pushObserverFrame?: (
+        time: number,
+        reward: number,
+        pnl: number,
+        confidence: number,
+        actionCode: number,
+        x: number,
+        y: number
+    ) => void;
+    clearObserverFrames?: () => void;
+    getObserverFrameCount?: () => number;
+    getObserverLastReward?: () => number;
+    getObserverLastPnl?: () => number;
+    getObserverAverageReward?: (window: number) => number;
     canvas?: HTMLCanvasElement;
     locateFile?: (path: string) => string;
     onRuntimeInitialized?: () => void;
@@ -139,6 +161,7 @@ export class NexusCharts {
         maxFrames: 240,
     };
     private warnMissingSetSeriesData: boolean = true;
+    private warnMissingObserverBridge: boolean = true;
     private idCounter: number = 0;
     private readonly readyPromise: Promise<void>;
     private resolveReady!: () => void;
@@ -283,6 +306,7 @@ export class NexusCharts {
         }
         this.observerFrames.push(normalized);
         this.trimObserverFramesToLimit();
+        this.syncObserverFrameToEngine(normalized);
         this.redrawDrawings();
     }
 
@@ -295,6 +319,7 @@ export class NexusCharts {
             }
         }
         this.trimObserverFramesToLimit();
+        this.syncAllObserverFramesToEngine();
         this.redrawDrawings();
     }
 
@@ -304,7 +329,64 @@ export class NexusCharts {
 
     public clearObserverFrames(): void {
         this.observerFrames.length = 0;
+        if (this.moduleLoaded && this.module && typeof this.module.clearObserverFrames === "function") {
+            this.module.clearObserverFrames();
+        }
         this.redrawDrawings();
+    }
+
+    public getObserverMetrics(window: number = 0): ObserverMetrics {
+        const sanitizedWindow = Number.isFinite(window)
+            ? Math.max(0, Math.floor(window))
+            : 0;
+
+        if (
+            this.moduleLoaded &&
+            this.module &&
+            typeof this.module.getObserverFrameCount === "function" &&
+            typeof this.module.getObserverLastReward === "function" &&
+            typeof this.module.getObserverLastPnl === "function" &&
+            typeof this.module.getObserverAverageReward === "function"
+        ) {
+            try {
+                return {
+                    frameCount: Number(this.module.getObserverFrameCount()),
+                    lastReward: Number(this.module.getObserverLastReward()),
+                    lastPnl: Number(this.module.getObserverLastPnl()),
+                    averageReward: Number(this.module.getObserverAverageReward(sanitizedWindow)),
+                    source: "wasm",
+                };
+            } catch (error) {
+                console.warn("[NexusCharts] Failed to read observer metrics from WASM.", { error });
+            }
+        }
+
+        const frameCount = this.observerFrames.length;
+        if (frameCount === 0) {
+            return {
+                frameCount: 0,
+                lastReward: 0,
+                lastPnl: 0,
+                averageReward: 0,
+                source: "js",
+            };
+        }
+
+        const span = sanitizedWindow > 0 ? Math.min(sanitizedWindow, frameCount) : frameCount;
+        const start = frameCount - span;
+        let rewardSum = 0;
+        for (let i = start; i < frameCount; i += 1) {
+            rewardSum += this.observerFrames[i].reward;
+        }
+
+        const last = this.observerFrames[frameCount - 1];
+        return {
+            frameCount,
+            lastReward: last.reward,
+            lastPnl: last.pnl,
+            averageReward: rewardSum / span,
+            source: "js",
+        };
     }
 
     private async initEngine(): Promise<void> {
@@ -321,6 +403,8 @@ export class NexusCharts {
             }
 
             this.moduleLoaded = true;
+            this.syncAllSeriesToEngine();
+            this.syncAllObserverFramesToEngine();
             if (this.enableInteraction && this.canvas) {
                 this.attachInteractionHandlers(this.canvas);
             }
@@ -484,6 +568,80 @@ export class NexusCharts {
                 "[NexusCharts] Failed to push series data to WASM.",
                 { seriesId, error }
             );
+        }
+    }
+
+    private syncAllSeriesToEngine(): void {
+        for (const [seriesId] of this.seriesStore) {
+            this.syncSeriesToEngine(seriesId);
+        }
+    }
+
+    private actionToCode(action: AgentAction): number {
+        if (action === "buy") return 1;
+        if (action === "sell") return -1;
+        return 0;
+    }
+
+    private syncObserverFrameToEngine(frame: NormalizedObserverFrame): void {
+        if (!this.moduleLoaded || !this.module) {
+            return;
+        }
+
+        if (typeof this.module.pushObserverFrame !== "function") {
+            if (this.warnMissingObserverBridge) {
+                console.warn("[NexusCharts] WASM observer stream exports are not available.");
+                this.warnMissingObserverBridge = false;
+            }
+            return;
+        }
+
+        try {
+            this.module.pushObserverFrame(
+                frame.time,
+                frame.reward,
+                frame.pnl,
+                frame.confidence,
+                this.actionToCode(frame.action),
+                frame.x,
+                frame.y
+            );
+        } catch (error) {
+            console.warn("[NexusCharts] Failed to push observer frame to WASM.", { error });
+        }
+    }
+
+    private syncAllObserverFramesToEngine(): void {
+        if (!this.moduleLoaded || !this.module) {
+            return;
+        }
+
+        if (
+            typeof this.module.pushObserverFrame !== "function" ||
+            typeof this.module.clearObserverFrames !== "function"
+        ) {
+            if (this.warnMissingObserverBridge) {
+                console.warn("[NexusCharts] WASM observer stream exports are not available.");
+                this.warnMissingObserverBridge = false;
+            }
+            return;
+        }
+
+        try {
+            this.module.clearObserverFrames();
+            for (const frame of this.observerFrames) {
+                this.module.pushObserverFrame(
+                    frame.time,
+                    frame.reward,
+                    frame.pnl,
+                    frame.confidence,
+                    this.actionToCode(frame.action),
+                    frame.x,
+                    frame.y
+                );
+            }
+        } catch (error) {
+            console.warn("[NexusCharts] Failed to sync observer frames to WASM.", { error });
         }
     }
 

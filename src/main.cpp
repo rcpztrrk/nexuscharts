@@ -1,5 +1,6 @@
 #include <iostream>
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 #include <emscripten.h>
@@ -19,6 +20,30 @@ RenderingEngine* g_renderingEngine = nullptr;
 Camera* g_camera = nullptr;
 EMSCRIPTEN_WEBGL_CONTEXT_HANDLE g_webglContext = 0;
 bool g_engineInitialized = false;
+
+namespace {
+
+float SanitizeFiniteFloat(double value, float fallback = 0.0f) {
+    if (std::isfinite(value)) {
+        return static_cast<float>(value);
+    }
+    return fallback;
+}
+
+double SanitizeFiniteDouble(double value, double fallback = 0.0) {
+    if (std::isfinite(value)) {
+        return value;
+    }
+    return fallback;
+}
+
+int ClampActionCode(int actionCode) {
+    if (actionCode < -1) return -1;
+    if (actionCode > 1) return 1;
+    return actionCode;
+}
+
+} // namespace
 
 // Main loop for Emscripten (called every frame like requestAnimationFrame)
 void MainLoop() {
@@ -78,6 +103,70 @@ void SetSeriesData(val opens, val highs, val lows, val closes) {
     }
 
     g_dataManager->SetCandles(candles);
+}
+
+void PushObserverFrame(
+    double time,
+    double reward,
+    double pnl,
+    double confidence,
+    int actionCode,
+    double x,
+    double y
+) {
+    if (g_dataManager == nullptr) {
+        std::cerr << "[NexusCharts:WASM] pushObserverFrame called before DataManager initialization." << std::endl;
+        return;
+    }
+
+    DataManager::ObserverFrame frame = {
+        SanitizeFiniteDouble(time, 0.0),
+        SanitizeFiniteFloat(reward, 0.0f),
+        SanitizeFiniteFloat(pnl, 0.0f),
+        std::clamp(SanitizeFiniteFloat(confidence, 0.0f), 0.0f, 1.0f),
+        ClampActionCode(actionCode),
+        std::clamp(SanitizeFiniteFloat(x, 0.0f), -1.0f, 1.0f),
+        std::clamp(SanitizeFiniteFloat(y, 0.0f), -1.0f, 1.0f)
+    };
+
+    g_dataManager->PushObserverFrame(frame);
+}
+
+void ClearObserverFrames() {
+    if (g_dataManager == nullptr) {
+        std::cerr << "[NexusCharts:WASM] clearObserverFrames called before DataManager initialization." << std::endl;
+        return;
+    }
+    g_dataManager->ClearObserverFrames();
+}
+
+int GetObserverFrameCount() {
+    if (g_dataManager == nullptr) {
+        return 0;
+    }
+    return static_cast<int>(g_dataManager->GetObserverFrameCount());
+}
+
+double GetObserverLastReward() {
+    if (g_dataManager == nullptr) {
+        return 0.0;
+    }
+    return static_cast<double>(g_dataManager->GetLastObserverReward());
+}
+
+double GetObserverLastPnl() {
+    if (g_dataManager == nullptr) {
+        return 0.0;
+    }
+    return static_cast<double>(g_dataManager->GetLastObserverPnl());
+}
+
+double GetObserverAverageReward(int window) {
+    if (g_dataManager == nullptr) {
+        return 0.0;
+    }
+    const std::size_t sanitizedWindow = (window > 0) ? static_cast<std::size_t>(window) : 0;
+    return static_cast<double>(g_dataManager->GetAverageObserverReward(sanitizedWindow));
 }
 
 // Initialization function callable from JS
@@ -178,6 +267,12 @@ EMSCRIPTEN_BINDINGS(nexus_charts_module) {
     function("panCamera", &PanCamera);
     function("zoomCamera", &ZoomCamera);
     function("setSeriesData", &SetSeriesData);
+    function("pushObserverFrame", &PushObserverFrame);
+    function("clearObserverFrames", &ClearObserverFrames);
+    function("getObserverFrameCount", &GetObserverFrameCount);
+    function("getObserverLastReward", &GetObserverLastReward);
+    function("getObserverLastPnl", &GetObserverLastPnl);
+    function("getObserverAverageReward", &GetObserverAverageReward);
 }
 
 int main() {
