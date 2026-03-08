@@ -6,7 +6,16 @@ export interface InitOptions {
     wasmBinaryPath?: string;
     enableInteraction?: boolean;
     analytics?: AnalyticsOptions;
+    ui?: UiOptions;
     onReady?: (chart: NexusCharts) => void;
+}
+
+export interface UiOptions {
+    showAxes?: boolean;
+    showCrosshair?: boolean;
+    showTooltip?: boolean;
+    axisTickCount?: number;
+    pricePrecision?: number;
 }
 
 export interface AnalyticsOptions {
@@ -44,6 +53,28 @@ export interface ObserverMetrics {
     lastPnl: number;
     averageReward: number;
     source: "wasm" | "js";
+}
+
+export interface WorldPoint {
+    x: number;
+    y: number;
+}
+
+export interface ScreenPoint {
+    x: number;
+    y: number;
+}
+
+export interface HoveredCandle {
+    index: number;
+    time: number | string;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    screenX: number;
+    screenY: number;
+    worldX: number;
 }
 
 export interface SeriesOptions {
@@ -94,6 +125,22 @@ interface NormalizedObserverFrame {
     action: AgentAction;
     x: number;
     y: number;
+}
+
+interface NormalizedCandleDataPoint {
+    source: CandleDataPoint;
+    x: number;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+}
+
+interface SeriesGeometry {
+    candles: NormalizedCandleDataPoint[];
+    minPrice: number;
+    maxPrice: number;
+    scale: number;
 }
 
 interface NexusWasmModule {
@@ -147,9 +194,14 @@ export class NexusCharts {
     private readonly enableInteraction: boolean;
     private readonly onReadyCallback?: (chart: NexusCharts) => void;
     private currentZoom: number = 1.0;
+    private currentCenterX: number = 0.0;
+    private currentCenterY: number = 0.0;
     private isDragging: boolean = false;
     private lastPointerX: number = 0;
     private lastPointerY: number = 0;
+    private hoverCanvasX: number | null = null;
+    private hoverCanvasY: number | null = null;
+    private hoveredCandle: HoveredCandle | null = null;
     private cleanupHandlers: Array<() => void> = [];
     private readonly seriesStore = new Map<string, { type: SeriesType; data: CandleDataPoint[] }>();
     private readonly drawingStore = new Map<string, StoredDrawing>();
@@ -159,6 +211,13 @@ export class NexusCharts {
         showPnlCurve: true,
         showHeatmap: true,
         maxFrames: 240,
+    };
+    private uiOptions: Required<UiOptions> = {
+        showAxes: true,
+        showCrosshair: true,
+        showTooltip: true,
+        axisTickCount: 5,
+        pricePrecision: 2,
     };
     private warnMissingSetSeriesData: boolean = true;
     private warnMissingObserverBridge: boolean = true;
@@ -177,6 +236,9 @@ export class NexusCharts {
         this.onReadyCallback = options.onReady;
         if (options.analytics) {
             this.analyticsOptions = this.normalizeAnalyticsOptions(options.analytics);
+        }
+        if (options.ui) {
+            this.uiOptions = this.normalizeUiOptions(options.ui);
         }
         this.readyPromise = new Promise<void>((resolve) => {
             this.resolveReady = resolve;
@@ -220,7 +282,10 @@ export class NexusCharts {
         if (!this.moduleLoaded || !this.module) {
             return;
         }
+        this.currentCenterX += deltaX;
+        this.currentCenterY += deltaY;
         this.module.panCamera(deltaX, deltaY);
+        this.refreshHoverFromStoredPointer();
         this.redrawDrawings();
     }
 
@@ -230,7 +295,36 @@ export class NexusCharts {
         }
         this.currentZoom = Math.min(5.0, Math.max(0.2, this.currentZoom * zoomFactor));
         this.module.zoomCamera(zoomFactor);
+        this.refreshHoverFromStoredPointer();
         this.redrawDrawings();
+    }
+
+    public screenToWorld(clientX: number, clientY: number): WorldPoint | null {
+        const surface = this.overlayCanvas ?? this.canvas;
+        if (!surface) {
+            return null;
+        }
+
+        const rect = surface.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) {
+            return null;
+        }
+
+        const canvasX = ((clientX - rect.left) / rect.width) * surface.width;
+        const canvasY = ((clientY - rect.top) / rect.height) * surface.height;
+        return this.canvasToWorldPoint(canvasX, canvasY, surface.width, surface.height);
+    }
+
+    public worldToScreen(worldX: number, worldY: number): ScreenPoint | null {
+        const surface = this.overlayCanvas ?? this.canvas;
+        if (!surface) {
+            return null;
+        }
+        return this.worldToCanvasPoint(worldX, worldY, surface.width, surface.height);
+    }
+
+    public getHoveredCandle(): HoveredCandle | null {
+        return this.hoveredCandle ? { ...this.hoveredCandle } : null;
     }
 
     public createSeries(options: SeriesOptions = {}): SeriesApi {
@@ -248,6 +342,8 @@ export class NexusCharts {
             if (!series) return;
             series.data = [...data];
             this.syncSeriesToEngine(id);
+            this.refreshHoverFromStoredPointer();
+            this.redrawDrawings();
         };
 
         const update = (point: CandleDataPoint) => {
@@ -255,6 +351,8 @@ export class NexusCharts {
             if (!series) return;
             series.data.push(point);
             this.syncSeriesToEngine(id);
+            this.refreshHoverFromStoredPointer();
+            this.redrawDrawings();
         };
 
         const getData = (): CandleDataPoint[] => {
@@ -267,6 +365,8 @@ export class NexusCharts {
             if (!series) return;
             series.data = [];
             this.syncSeriesToEngine(id);
+            this.refreshHoverFromStoredPointer();
+            this.redrawDrawings();
         };
 
         return { id, type, setData, update, getData, clear };
@@ -461,25 +561,28 @@ export class NexusCharts {
             this.isDragging = true;
             this.lastPointerX = event.clientX;
             this.lastPointerY = event.clientY;
+            this.updateHoverFromClientPosition(event.clientX, event.clientY);
         };
 
         const onMouseMove = (event: MouseEvent) => {
-            if (!this.isDragging) {
+            if (this.isDragging) {
+                const dx = event.clientX - this.lastPointerX;
+                const dy = event.clientY - this.lastPointerY;
+                this.lastPointerX = event.clientX;
+                this.lastPointerY = event.clientY;
+
+                const width = canvas.width || 1;
+                const height = canvas.height || 1;
+                const aspect = width / height;
+                const worldUnitsPerPixelX = (2.0 * this.currentZoom * aspect) / width;
+                const worldUnitsPerPixelY = (2.0 * this.currentZoom) / height;
+
+                this.pan(-dx * worldUnitsPerPixelX, dy * worldUnitsPerPixelY);
                 return;
             }
 
-            const dx = event.clientX - this.lastPointerX;
-            const dy = event.clientY - this.lastPointerY;
-            this.lastPointerX = event.clientX;
-            this.lastPointerY = event.clientY;
-
-            const width = canvas.width || 1;
-            const height = canvas.height || 1;
-            const aspect = width / height;
-            const worldUnitsPerPixelX = (2.0 * this.currentZoom * aspect) / width;
-            const worldUnitsPerPixelY = (2.0 * this.currentZoom) / height;
-
-            this.pan(-dx * worldUnitsPerPixelX, dy * worldUnitsPerPixelY);
+            this.updateHoverFromClientPosition(event.clientX, event.clientY);
+            this.redrawDrawings();
         };
 
         const stopDragging = () => {
@@ -498,6 +601,14 @@ export class NexusCharts {
             }
             this.overlayCanvas.width = this.canvas.width;
             this.overlayCanvas.height = this.canvas.height;
+            this.refreshHoverFromStoredPointer();
+            this.redrawDrawings();
+        };
+
+        const clearHover = () => {
+            this.hoverCanvasX = null;
+            this.hoverCanvasY = null;
+            this.hoveredCandle = null;
             this.redrawDrawings();
         };
 
@@ -505,6 +616,7 @@ export class NexusCharts {
         window.addEventListener("mousemove", onMouseMove);
         window.addEventListener("mouseup", stopDragging);
         canvas.addEventListener("mouseleave", stopDragging);
+        canvas.addEventListener("mouseleave", clearHover);
         canvas.addEventListener("wheel", onWheel, { passive: false });
         window.addEventListener("resize", onResize);
 
@@ -512,6 +624,7 @@ export class NexusCharts {
         this.cleanupHandlers.push(() => window.removeEventListener("mousemove", onMouseMove));
         this.cleanupHandlers.push(() => window.removeEventListener("mouseup", stopDragging));
         this.cleanupHandlers.push(() => canvas.removeEventListener("mouseleave", stopDragging));
+        this.cleanupHandlers.push(() => canvas.removeEventListener("mouseleave", clearHover));
         this.cleanupHandlers.push(() => canvas.removeEventListener("wheel", onWheel));
         this.cleanupHandlers.push(() => window.removeEventListener("resize", onResize));
     }
@@ -645,6 +758,191 @@ export class NexusCharts {
         }
     }
 
+    private normalizeUiOptions(options: UiOptions): Required<UiOptions> {
+        const tickCount = Number.isFinite(options.axisTickCount)
+            ? Math.max(3, Math.min(10, Math.floor(options.axisTickCount ?? this.uiOptions.axisTickCount)))
+            : this.uiOptions.axisTickCount;
+        const pricePrecision = Number.isFinite(options.pricePrecision)
+            ? Math.max(0, Math.min(8, Math.floor(options.pricePrecision ?? this.uiOptions.pricePrecision)))
+            : this.uiOptions.pricePrecision;
+
+        return {
+            showAxes: options.showAxes ?? this.uiOptions.showAxes,
+            showCrosshair: options.showCrosshair ?? this.uiOptions.showCrosshair,
+            showTooltip: options.showTooltip ?? this.uiOptions.showTooltip,
+            axisTickCount: tickCount,
+            pricePrecision,
+        };
+    }
+
+    private worldToCanvasPoint(worldX: number, worldY: number, width: number, height: number): ScreenPoint {
+        const safeWidth = Math.max(1, width);
+        const safeHeight = Math.max(1, height);
+        const aspect = safeWidth / safeHeight;
+        const halfHeight = this.currentZoom;
+        const halfWidth = halfHeight * aspect;
+        const left = this.currentCenterX - halfWidth;
+        const bottom = this.currentCenterY - halfHeight;
+
+        return {
+            x: ((worldX - left) / (halfWidth * 2.0)) * safeWidth,
+            y: safeHeight - (((worldY - bottom) / (halfHeight * 2.0)) * safeHeight),
+        };
+    }
+
+    private canvasToWorldPoint(canvasX: number, canvasY: number, width: number, height: number): WorldPoint {
+        const safeWidth = Math.max(1, width);
+        const safeHeight = Math.max(1, height);
+        const aspect = safeWidth / safeHeight;
+        const halfHeight = this.currentZoom;
+        const halfWidth = halfHeight * aspect;
+        const left = this.currentCenterX - halfWidth;
+        const bottom = this.currentCenterY - halfHeight;
+
+        return {
+            x: left + ((canvasX / safeWidth) * halfWidth * 2.0),
+            y: bottom + (((safeHeight - canvasY) / safeHeight) * halfHeight * 2.0),
+        };
+    }
+
+    private getPrimaryCandlestickSeries(): CandleDataPoint[] {
+        for (const series of this.seriesStore.values()) {
+            if (series.type === "candlestick" && series.data.length > 0) {
+                return series.data;
+            }
+        }
+        return [];
+    }
+
+    private buildSeriesGeometry(): SeriesGeometry | null {
+        const source = this.getPrimaryCandlestickSeries();
+        if (source.length === 0) {
+            return null;
+        }
+
+        let minPrice = Number.POSITIVE_INFINITY;
+        let maxPrice = Number.NEGATIVE_INFINITY;
+        const valid: CandleDataPoint[] = [];
+
+        for (const point of source) {
+            const open = Number(point.open);
+            const high = Number(point.high);
+            const low = Number(point.low);
+            const close = Number(point.close);
+            if (!Number.isFinite(open) || !Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) {
+                continue;
+            }
+
+            const pointLow = Math.min(low, open, close, high);
+            const pointHigh = Math.max(high, open, close, low);
+            minPrice = Math.min(minPrice, pointLow);
+            maxPrice = Math.max(maxPrice, pointHigh);
+            valid.push(point);
+        }
+
+        if (valid.length === 0) {
+            return null;
+        }
+
+        const range = Math.max(maxPrice - minPrice, 1e-5);
+        const scale = 1.7 / range;
+        const startX = -0.92;
+        const stepX = valid.length > 1 ? 1.84 / (valid.length - 1) : 0.0;
+        const normalizeY = (value: number): number => ((value - minPrice) * scale) - 0.85;
+
+        const candles: NormalizedCandleDataPoint[] = valid.map((point, index) => ({
+            source: point,
+            x: startX + (stepX * index),
+            open: normalizeY(point.open),
+            high: normalizeY(Math.max(point.high, point.open, point.close, point.low)),
+            low: normalizeY(Math.min(point.low, point.open, point.close, point.high)),
+            close: normalizeY(point.close),
+        }));
+
+        return { candles, minPrice, maxPrice, scale };
+    }
+
+    private formatPrice(value: number): string {
+        return value.toFixed(this.uiOptions.pricePrecision);
+    }
+
+    private worldYToPrice(worldY: number, geometry: SeriesGeometry): number {
+        return geometry.minPrice + ((worldY + 0.85) / geometry.scale);
+    }
+
+    private updateHoverFromClientPosition(clientX: number, clientY: number): void {
+        const surface = this.overlayCanvas ?? this.canvas;
+        if (!surface) {
+            this.hoveredCandle = null;
+            return;
+        }
+
+        const rect = surface.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) {
+            this.hoveredCandle = null;
+            return;
+        }
+
+        const canvasX = ((clientX - rect.left) / rect.width) * surface.width;
+        const canvasY = ((clientY - rect.top) / rect.height) * surface.height;
+        if (canvasX < 0 || canvasX > surface.width || canvasY < 0 || canvasY > surface.height) {
+            this.hoverCanvasX = null;
+            this.hoverCanvasY = null;
+            this.hoveredCandle = null;
+            return;
+        }
+
+        this.hoverCanvasX = canvasX;
+        this.hoverCanvasY = canvasY;
+
+        const geometry = this.buildSeriesGeometry();
+        if (!geometry || geometry.candles.length === 0) {
+            this.hoveredCandle = null;
+            return;
+        }
+
+        let nearestIndex = 0;
+        let nearestDistance = Number.POSITIVE_INFINITY;
+        for (let i = 0; i < geometry.candles.length; i += 1) {
+            const screen = this.worldToCanvasPoint(geometry.candles[i].x, geometry.candles[i].close, surface.width, surface.height);
+            const distance = Math.abs(screen.x - canvasX);
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestIndex = i;
+            }
+        }
+
+        const candle = geometry.candles[nearestIndex];
+        const closePoint = this.worldToCanvasPoint(candle.x, candle.close, surface.width, surface.height);
+        this.hoveredCandle = {
+            index: nearestIndex,
+            time: candle.source.time,
+            open: candle.source.open,
+            high: candle.source.high,
+            low: candle.source.low,
+            close: candle.source.close,
+            screenX: closePoint.x,
+            screenY: closePoint.y,
+            worldX: candle.x,
+        };
+    }
+
+    private refreshHoverFromStoredPointer(): void {
+        const surface = this.overlayCanvas ?? this.canvas;
+        if (!surface || this.hoverCanvasX === null || this.hoverCanvasY === null) {
+            return;
+        }
+
+        const rect = surface.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) {
+            return;
+        }
+
+        const clientX = rect.left + ((this.hoverCanvasX / surface.width) * rect.width);
+        const clientY = rect.top + ((this.hoverCanvasY / surface.height) * rect.height);
+        this.updateHoverFromClientPosition(clientX, clientY);
+    }
+
     private initializeOverlayCanvas(baseCanvas: HTMLCanvasElement): void {
         const parent = baseCanvas.parentElement;
         if (!parent) {
@@ -679,10 +977,11 @@ export class NexusCharts {
         const width = this.overlayCanvas.width;
         const height = this.overlayCanvas.height;
         ctx.clearRect(0, 0, width, height);
+        const geometry = this.buildSeriesGeometry();
 
         const toCanvas = (point: DrawingPoint): { x: number; y: number } => ({
-            x: ((point.x + 1) * 0.5) * width,
-            y: (1 - ((point.y + 1) * 0.5)) * height,
+            x: this.worldToCanvasPoint(point.x, point.y, width, height).x,
+            y: this.worldToCanvasPoint(point.x, point.y, width, height).y,
         });
 
         for (const drawing of this.drawingStore.values()) {
@@ -725,7 +1024,141 @@ export class NexusCharts {
             ctx.restore();
         }
 
+        this.renderAxesOverlay(ctx, width, height, geometry);
+        this.renderCrosshairOverlay(ctx, width, height);
+        this.renderTooltipOverlay(ctx, width, height);
         this.renderAnalyticsOverlay(ctx, width, height, toCanvas);
+    }
+
+    private renderAxesOverlay(
+        ctx: CanvasRenderingContext2D,
+        width: number,
+        height: number,
+        geometry: SeriesGeometry | null
+    ): void {
+        if (!this.uiOptions.showAxes || !geometry) {
+            return;
+        }
+
+        const tickCount = this.uiOptions.axisTickCount;
+        const priceLabelWidth = 58;
+        const timeLabelHeight = 20;
+
+        ctx.save();
+        ctx.font = "11px 'Segoe UI', sans-serif";
+        ctx.strokeStyle = "rgba(106, 138, 184, 0.25)";
+        ctx.fillStyle = "rgba(7, 18, 34, 0.72)";
+        ctx.lineWidth = 1;
+
+        const topWorldY = this.currentCenterY + this.currentZoom;
+        const bottomWorldY = this.currentCenterY - this.currentZoom;
+
+        for (let i = 0; i < tickCount; i += 1) {
+            const t = tickCount > 1 ? i / (tickCount - 1) : 0;
+            const worldY = topWorldY - (t * (topWorldY - bottomWorldY));
+            const canvasPoint = this.worldToCanvasPoint(this.currentCenterX, worldY, width, height);
+            const labelY = Math.min(height - timeLabelHeight - 4, Math.max(10, canvasPoint.y));
+            const price = this.worldYToPrice(worldY, geometry);
+
+            ctx.beginPath();
+            ctx.moveTo(0, canvasPoint.y);
+            ctx.lineTo(width, canvasPoint.y);
+            ctx.stroke();
+
+            ctx.fillStyle = "rgba(7, 18, 34, 0.85)";
+            ctx.fillRect(width - priceLabelWidth, labelY - 9, priceLabelWidth - 6, 18);
+            ctx.fillStyle = "#98afd1";
+            ctx.fillText(this.formatPrice(price), width - priceLabelWidth + 6, labelY + 4);
+        }
+
+        const visibleCandles = geometry.candles.filter((candle) => {
+            const x = this.worldToCanvasPoint(candle.x, candle.close, width, height).x;
+            return x >= 0 && x <= width;
+        });
+        const source = visibleCandles.length > 0 ? visibleCandles : geometry.candles;
+        const step = Math.max(1, Math.floor(source.length / tickCount));
+
+        for (let i = 0; i < source.length; i += step) {
+            const candle = source[i];
+            const point = this.worldToCanvasPoint(candle.x, candle.close, width, height);
+            const label = String(candle.source.time);
+            const textWidth = ctx.measureText(label).width;
+            const boxX = Math.max(6, Math.min(width - textWidth - 14, point.x - (textWidth * 0.5) - 5));
+            const boxY = height - timeLabelHeight;
+
+            ctx.fillStyle = "rgba(7, 18, 34, 0.85)";
+            ctx.fillRect(boxX, boxY, textWidth + 10, 16);
+            ctx.fillStyle = "#98afd1";
+            ctx.fillText(label, boxX + 5, boxY + 12);
+        }
+
+        ctx.restore();
+    }
+
+    private renderCrosshairOverlay(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+        if (!this.uiOptions.showCrosshair || !this.hoveredCandle || this.hoverCanvasX === null || this.hoverCanvasY === null) {
+            return;
+        }
+
+        ctx.save();
+        ctx.strokeStyle = "rgba(120, 188, 255, 0.55)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+
+        ctx.beginPath();
+        ctx.moveTo(this.hoveredCandle.screenX, 0);
+        ctx.lineTo(this.hoveredCandle.screenX, height);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(0, this.hoverCanvasY);
+        ctx.lineTo(width, this.hoverCanvasY);
+        ctx.stroke();
+
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(87, 212, 255, 0.9)";
+        ctx.beginPath();
+        ctx.arc(this.hoveredCandle.screenX, this.hoveredCandle.screenY, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+
+    private renderTooltipOverlay(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+        if (!this.uiOptions.showTooltip || !this.hoveredCandle || this.hoverCanvasX === null || this.hoverCanvasY === null) {
+            return;
+        }
+
+        const lines = [
+            `T ${this.hoveredCandle.time}`,
+            `O ${this.formatPrice(this.hoveredCandle.open)}`,
+            `H ${this.formatPrice(this.hoveredCandle.high)}`,
+            `L ${this.formatPrice(this.hoveredCandle.low)}`,
+            `C ${this.formatPrice(this.hoveredCandle.close)}`,
+        ];
+
+        ctx.save();
+        ctx.font = "12px 'Segoe UI', sans-serif";
+        const maxWidth = Math.max(...lines.map((line) => ctx.measureText(line).width));
+        const boxWidth = maxWidth + 18;
+        const boxHeight = 18 + (lines.length * 14);
+        const boxX = Math.min(width - boxWidth - 10, this.hoverCanvasX + 14);
+        const boxY = Math.max(10, Math.min(height - boxHeight - 10, this.hoverCanvasY - 10));
+
+        ctx.fillStyle = "rgba(7, 18, 34, 0.92)";
+        ctx.strokeStyle = "rgba(120, 148, 188, 0.45)";
+        ctx.lineWidth = 1;
+        ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+        ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+
+        const delta = this.hoveredCandle.close - this.hoveredCandle.open;
+        ctx.fillStyle = delta >= 0 ? "#49d17f" : "#ff6a7a";
+        ctx.fillText(lines[0], boxX + 9, boxY + 14);
+        ctx.fillStyle = "#dce7ff";
+        for (let i = 1; i < lines.length; i += 1) {
+            ctx.fillText(lines[i], boxX + 9, boxY + 14 + (i * 14));
+        }
+
+        ctx.restore();
     }
 
     private normalizeAnalyticsOptions(options: AnalyticsOptions): Required<AnalyticsOptions> {

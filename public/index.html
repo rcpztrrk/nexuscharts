@@ -38,6 +38,13 @@
             font-size: 13px;
             letter-spacing: 0.2px;
         }
+
+        #ux-hint {
+            margin-top: 8px;
+            color: #6f86aa;
+            font-size: 12px;
+            letter-spacing: 0.2px;
+        }
     </style>
 </head>
 
@@ -47,6 +54,7 @@
         <canvas id="canvas" width="800" height="600"></canvas>
     </div>
     <div id="metrics-label">Observer stream waiting...</div>
+    <div id="ux-hint">Hover for OHLC tooltip and crosshair. Drag to pan, wheel to zoom.</div>
 
     <script type="module">
         import { NexusCharts } from "./nexus-charts.esm.js";
