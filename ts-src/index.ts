@@ -14,8 +14,18 @@ export interface UiOptions {
     showAxes?: boolean;
     showCrosshair?: boolean;
     showTooltip?: boolean;
+    showControlBar?: boolean;
     axisTickCount?: number;
     pricePrecision?: number;
+}
+
+export interface UiState {
+    showAxes: boolean;
+    showCrosshair: boolean;
+    showTooltip: boolean;
+    showControlBar: boolean;
+    showHeatmap: boolean;
+    showAnalyticsPanel: boolean;
 }
 
 export interface AnalyticsOptions {
@@ -150,6 +160,14 @@ interface OverlayRect {
     height: number;
 }
 
+interface ControlButtonState extends OverlayRect {
+    id: "fit" | "axes" | "crosshair" | "tooltip" | "heatmap" | "analytics";
+    label: string;
+    hint: string;
+    active: boolean;
+    kind: "action" | "toggle";
+}
+
 interface NexusWasmModule {
     initEngine: (canvasSelector: string, width: number, height: number) => boolean;
     destroyEngine: () => void;
@@ -216,6 +234,7 @@ export class NexusCharts {
     private readonly seriesStore = new Map<string, { type: SeriesType; data: CandleDataPoint[] }>();
     private readonly drawingStore = new Map<string, StoredDrawing>();
     private readonly observerFrames: NormalizedObserverFrame[] = [];
+    private controlButtons: ControlButtonState[] = [];
     private analyticsOptions: Required<AnalyticsOptions> = {
         showRewardCurve: true,
         showPnlCurve: true,
@@ -226,6 +245,7 @@ export class NexusCharts {
         showAxes: true,
         showCrosshair: true,
         showTooltip: true,
+        showControlBar: true,
         axisTickCount: 5,
         pricePrecision: 2,
     };
@@ -469,6 +489,25 @@ export class NexusCharts {
         this.redrawDrawings();
     }
 
+    public configureUi(options: UiOptions): void {
+        this.uiOptions = this.normalizeUiOptions(options);
+        if (!this.uiOptions.showControlBar) {
+            this.controlButtons = [];
+        }
+        this.redrawDrawings();
+    }
+
+    public getUiState(): UiState {
+        return {
+            showAxes: this.uiOptions.showAxes,
+            showCrosshair: this.uiOptions.showCrosshair,
+            showTooltip: this.uiOptions.showTooltip,
+            showControlBar: this.uiOptions.showControlBar,
+            showHeatmap: this.analyticsOptions.showHeatmap,
+            showAnalyticsPanel: this.analyticsOptions.showRewardCurve || this.analyticsOptions.showPnlCurve,
+        };
+    }
+
     public configureAnalytics(options: AnalyticsOptions): void {
         this.analyticsOptions = this.normalizeAnalyticsOptions(options);
         this.trimObserverFramesToLimit();
@@ -634,6 +673,9 @@ export class NexusCharts {
 
     private attachInteractionHandlers(canvas: HTMLCanvasElement): void {
         const onMouseDown = (event: MouseEvent) => {
+            if (this.getControlButtonAtClientPosition(event.clientX, event.clientY)) {
+                return;
+            }
             this.isDragging = true;
             this.draggedDuringPointer = false;
             this.lastPointerX = event.clientX;
@@ -669,7 +711,10 @@ export class NexusCharts {
             this.isDragging = false;
         };
 
-        const onClick = () => {
+        const onClick = (event: MouseEvent) => {
+            if (this.handleControlBarClick(event.clientX, event.clientY)) {
+                return;
+            }
             if (this.draggedDuringPointer || !this.hoveredCandle) {
                 return;
             }
@@ -688,6 +733,47 @@ export class NexusCharts {
 
         const onDoubleClick = () => {
             this.fitToData();
+        };
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.repeat) {
+                return;
+            }
+
+            const target = event.target as HTMLElement | null;
+            const tagName = target?.tagName?.toLowerCase();
+            if (target?.isContentEditable || tagName === "input" || tagName === "textarea" || tagName === "select") {
+                return;
+            }
+
+            switch (event.key.toLowerCase()) {
+                case "f":
+                    this.fitToData();
+                    event.preventDefault();
+                    break;
+                case "a":
+                    this.toggleUiFlag("showAxes");
+                    event.preventDefault();
+                    break;
+                case "c":
+                    this.toggleUiFlag("showCrosshair");
+                    event.preventDefault();
+                    break;
+                case "t":
+                    this.toggleUiFlag("showTooltip");
+                    event.preventDefault();
+                    break;
+                case "h":
+                    this.toggleAnalyticsFlag("showHeatmap");
+                    event.preventDefault();
+                    break;
+                case "g":
+                    this.toggleAnalyticsPanel();
+                    event.preventDefault();
+                    break;
+                default:
+                    break;
+            }
         };
 
         const onResize = () => {
@@ -716,6 +802,7 @@ export class NexusCharts {
         canvas.addEventListener("dblclick", onDoubleClick);
         canvas.addEventListener("wheel", onWheel, { passive: false });
         window.addEventListener("resize", onResize);
+        window.addEventListener("keydown", onKeyDown);
 
         this.cleanupHandlers.push(() => canvas.removeEventListener("mousedown", onMouseDown));
         this.cleanupHandlers.push(() => window.removeEventListener("mousemove", onMouseMove));
@@ -726,6 +813,7 @@ export class NexusCharts {
         this.cleanupHandlers.push(() => canvas.removeEventListener("dblclick", onDoubleClick));
         this.cleanupHandlers.push(() => canvas.removeEventListener("wheel", onWheel));
         this.cleanupHandlers.push(() => window.removeEventListener("resize", onResize));
+        this.cleanupHandlers.push(() => window.removeEventListener("keydown", onKeyDown));
     }
 
     private detachInteractionHandlers(): void {
@@ -882,9 +970,103 @@ export class NexusCharts {
             showAxes: options.showAxes ?? this.uiOptions.showAxes,
             showCrosshair: options.showCrosshair ?? this.uiOptions.showCrosshair,
             showTooltip: options.showTooltip ?? this.uiOptions.showTooltip,
+            showControlBar: options.showControlBar ?? this.uiOptions.showControlBar,
             axisTickCount: tickCount,
             pricePrecision,
         };
+    }
+
+    private toggleUiFlag(flag: "showAxes" | "showCrosshair" | "showTooltip"): void {
+        this.uiOptions = {
+            ...this.uiOptions,
+            [flag]: !this.uiOptions[flag],
+        };
+        this.redrawDrawings();
+    }
+
+    private toggleAnalyticsFlag(flag: "showHeatmap"): void {
+        this.analyticsOptions = {
+            ...this.analyticsOptions,
+            [flag]: !this.analyticsOptions[flag],
+        };
+        this.redrawDrawings();
+    }
+
+    private toggleAnalyticsPanel(): void {
+        const isVisible = this.analyticsOptions.showRewardCurve || this.analyticsOptions.showPnlCurve;
+        this.analyticsOptions = {
+            ...this.analyticsOptions,
+            showRewardCurve: !isVisible,
+            showPnlCurve: !isVisible,
+        };
+        this.redrawDrawings();
+    }
+
+    private getCanvasPointFromClientPosition(clientX: number, clientY: number): ScreenPoint | null {
+        const surface = this.overlayCanvas ?? this.canvas;
+        if (!surface) {
+            return null;
+        }
+
+        const rect = surface.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) {
+            return null;
+        }
+
+        return {
+            x: ((clientX - rect.left) / rect.width) * surface.width,
+            y: ((clientY - rect.top) / rect.height) * surface.height,
+        };
+    }
+
+    private getControlButtonAtClientPosition(clientX: number, clientY: number): ControlButtonState | null {
+        if (!this.uiOptions.showControlBar || this.controlButtons.length === 0) {
+            return null;
+        }
+
+        const point = this.getCanvasPointFromClientPosition(clientX, clientY);
+        if (!point) {
+            return null;
+        }
+
+        return this.controlButtons.find((button) =>
+            point.x >= button.x &&
+            point.x <= (button.x + button.width) &&
+            point.y >= button.y &&
+            point.y <= (button.y + button.height)
+        ) ?? null;
+    }
+
+    private handleControlBarClick(clientX: number, clientY: number): boolean {
+        const hit = this.getControlButtonAtClientPosition(clientX, clientY);
+        if (!hit) {
+            return false;
+        }
+
+        switch (hit.id) {
+            case "fit":
+                this.fitToData();
+                break;
+            case "axes":
+                this.toggleUiFlag("showAxes");
+                break;
+            case "crosshair":
+                this.toggleUiFlag("showCrosshair");
+                break;
+            case "tooltip":
+                this.toggleUiFlag("showTooltip");
+                break;
+            case "heatmap":
+                this.toggleAnalyticsFlag("showHeatmap");
+                break;
+            case "analytics":
+                this.toggleAnalyticsPanel();
+                break;
+            default:
+                return false;
+        }
+
+        return true;
     }
 
     private worldToCanvasPoint(worldX: number, worldY: number, width: number, height: number): ScreenPoint {
@@ -1166,6 +1348,7 @@ export class NexusCharts {
         this.renderSelectionOverlay(ctx, width, height, geometry);
         this.renderCrosshairOverlay(ctx, width, height);
         this.renderTooltipOverlay(ctx, width, height);
+        this.renderControlBarOverlay(ctx, width, height);
     }
 
     private renderAxesOverlay(
@@ -1297,6 +1480,84 @@ export class NexusCharts {
         ctx.fillRect(boxX, boxY, boxWidth, 18);
         ctx.fillStyle = "#ffcc66";
         ctx.fillText(label, boxX + 5, boxY + 13);
+        ctx.restore();
+    }
+
+    private renderControlBarOverlay(ctx: CanvasRenderingContext2D, width: number, _height: number): void {
+        this.controlButtons = [];
+        if (!this.uiOptions.showControlBar) {
+            return;
+        }
+
+        const buttons: Array<Omit<ControlButtonState, "x" | "y" | "width" | "height">> = [
+            { id: "fit", label: "Fit", hint: "F", active: true, kind: "action" },
+            { id: "axes", label: "Axes", hint: "A", active: this.uiOptions.showAxes, kind: "toggle" },
+            { id: "crosshair", label: "Cross", hint: "C", active: this.uiOptions.showCrosshair, kind: "toggle" },
+            { id: "tooltip", label: "Tip", hint: "T", active: this.uiOptions.showTooltip, kind: "toggle" },
+            { id: "heatmap", label: "Heat", hint: "H", active: this.analyticsOptions.showHeatmap, kind: "toggle" },
+            {
+                id: "analytics",
+                label: "Panel",
+                hint: "G",
+                active: this.analyticsOptions.showRewardCurve || this.analyticsOptions.showPnlCurve,
+                kind: "toggle",
+            },
+        ];
+
+        ctx.save();
+        ctx.font = "11px 'Segoe UI', sans-serif";
+
+        let cursorX = 12;
+        const cursorY = this.selectedCandleIndex !== null ? 36 : 12;
+        const gap = 6;
+
+        for (const button of buttons) {
+            const label = `${button.label} ${button.hint}`;
+            const textWidth = ctx.measureText(label).width;
+            const buttonWidth = textWidth + 14;
+            if (cursorX + buttonWidth > (width - 12)) {
+                break;
+            }
+
+            const state: ControlButtonState = {
+                ...button,
+                x: cursorX,
+                y: cursorY,
+                width: buttonWidth,
+                height: 20,
+            };
+            this.controlButtons.push(state);
+            cursorX += buttonWidth + gap;
+        }
+
+        for (const button of this.controlButtons) {
+            const fill = button.kind === "action"
+                ? "rgba(18, 28, 47, 0.92)"
+                : button.active
+                    ? "rgba(21, 69, 119, 0.88)"
+                    : "rgba(18, 28, 47, 0.78)";
+            const stroke = button.active
+                ? "rgba(120, 188, 255, 0.55)"
+                : "rgba(120, 148, 188, 0.28)";
+
+            ctx.fillStyle = fill;
+            ctx.strokeStyle = stroke;
+            ctx.lineWidth = 1;
+            ctx.fillRect(button.x, button.y, button.width, button.height);
+            ctx.strokeRect(button.x, button.y, button.width, button.height);
+
+            ctx.fillStyle = button.kind === "action"
+                ? "#dce7ff"
+                : button.active
+                    ? "#eef6ff"
+                    : "#9bb3d6";
+            ctx.fillText(button.label, button.x + 6, button.y + 13);
+
+            const hintWidth = ctx.measureText(button.hint).width;
+            ctx.fillStyle = button.active ? "rgba(255, 209, 102, 0.95)" : "rgba(173, 191, 221, 0.72)";
+            ctx.fillText(button.hint, button.x + button.width - hintWidth - 6, button.y + 13);
+        }
+
         ctx.restore();
     }
 
