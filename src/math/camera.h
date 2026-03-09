@@ -7,6 +7,7 @@ public:
     Camera();
     void Update();
     void SetViewport(int width, int height);
+    void SetView(float centerX, float centerY, float zoom);
     void Pan(float deltaX, float deltaY);
     void Zoom(float zoomFactor);
     std::array<float, 16> GetViewProjectionMatrix() const;

@@ -20,6 +20,12 @@ void Camera::SetViewport(int width, int height) {
     }
 }
 
+void Camera::SetView(float centerX, float centerY, float zoom) {
+    centerX_ = centerX;
+    centerY_ = centerY;
+    zoom_ = std::clamp(zoom, 0.2f, 5.0f);
+}
+
 void Camera::Pan(float deltaX, float deltaY) {
     centerX_ += deltaX;
     centerY_ += deltaY;

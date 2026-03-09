@@ -67,6 +67,19 @@ void ZoomCamera(float zoomFactor) {
     }
 }
 
+void SetCameraView(double centerX, double centerY, double zoom) {
+    if (g_camera == nullptr) {
+        std::cerr << "[NexusCharts:WASM] setCameraView called before camera initialization." << std::endl;
+        return;
+    }
+
+    g_camera->SetView(
+        SanitizeFiniteFloat(centerX, 0.0f),
+        SanitizeFiniteFloat(centerY, 0.0f),
+        SanitizeFiniteFloat(zoom, 1.0f)
+    );
+}
+
 void SetSeriesData(val opens, val highs, val lows, val closes) {
     if (g_dataManager == nullptr) {
         std::cerr << "[NexusCharts:WASM] setSeriesData called before DataManager initialization." << std::endl;
@@ -266,6 +279,7 @@ EMSCRIPTEN_BINDINGS(nexus_charts_module) {
     function("destroyEngine", &DestroyEngine);
     function("panCamera", &PanCamera);
     function("zoomCamera", &ZoomCamera);
+    function("setCameraView", &SetCameraView);
     function("setSeriesData", &SetSeriesData);
     function("pushObserverFrame", &PushObserverFrame);
     function("clearObserverFrames", &ClearObserverFrames);

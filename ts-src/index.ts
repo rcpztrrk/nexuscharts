@@ -143,11 +143,19 @@ interface SeriesGeometry {
     scale: number;
 }
 
+interface OverlayRect {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
 interface NexusWasmModule {
     initEngine: (canvasSelector: string, width: number, height: number) => boolean;
     destroyEngine: () => void;
     panCamera: (deltaX: number, deltaY: number) => void;
     zoomCamera: (zoomFactor: number) => void;
+    setCameraView?: (centerX: number, centerY: number, zoom: number) => void;
     setSeriesData: (opens: number[], highs: number[], lows: number[], closes: number[]) => void;
     pushObserverFrame?: (
         time: number,
@@ -197,11 +205,13 @@ export class NexusCharts {
     private currentCenterX: number = 0.0;
     private currentCenterY: number = 0.0;
     private isDragging: boolean = false;
+    private draggedDuringPointer: boolean = false;
     private lastPointerX: number = 0;
     private lastPointerY: number = 0;
     private hoverCanvasX: number | null = null;
     private hoverCanvasY: number | null = null;
     private hoveredCandle: HoveredCandle | null = null;
+    private selectedCandleIndex: number | null = null;
     private cleanupHandlers: Array<() => void> = [];
     private readonly seriesStore = new Map<string, { type: SeriesType; data: CandleDataPoint[] }>();
     private readonly drawingStore = new Map<string, StoredDrawing>();
@@ -293,8 +303,30 @@ export class NexusCharts {
         if (!this.moduleLoaded || !this.module) {
             return;
         }
+        const surface = this.overlayCanvas ?? this.canvas;
+        const anchorX = this.hoverCanvasX ?? (surface ? surface.width * 0.5 : null);
+        const anchorY = this.hoverCanvasY ?? (surface ? surface.height * 0.5 : null);
+        const anchoredWorld = (surface && anchorX !== null && anchorY !== null)
+            ? this.canvasToWorldPoint(anchorX, anchorY, surface.width, surface.height)
+            : null;
+
         this.currentZoom = Math.min(5.0, Math.max(0.2, this.currentZoom * zoomFactor));
-        this.module.zoomCamera(zoomFactor);
+
+        if (surface && anchoredWorld && anchorX !== null && anchorY !== null) {
+            const aspect = surface.width / Math.max(1, surface.height);
+            const halfHeight = this.currentZoom;
+            const halfWidth = halfHeight * aspect;
+            const normalizedX = anchorX / Math.max(1, surface.width);
+            const normalizedY = (surface.height - anchorY) / Math.max(1, surface.height);
+            const left = anchoredWorld.x - (normalizedX * halfWidth * 2.0);
+            const bottom = anchoredWorld.y - (normalizedY * halfHeight * 2.0);
+            this.currentCenterX = left + halfWidth;
+            this.currentCenterY = bottom + halfHeight;
+            this.applyCameraView();
+        } else {
+            this.module.zoomCamera(zoomFactor);
+        }
+
         this.refreshHoverFromStoredPointer();
         this.redrawDrawings();
     }
@@ -325,6 +357,50 @@ export class NexusCharts {
 
     public getHoveredCandle(): HoveredCandle | null {
         return this.hoveredCandle ? { ...this.hoveredCandle } : null;
+    }
+
+    public getSelectedCandle(): HoveredCandle | null {
+        const geometry = this.buildSeriesGeometry();
+        const candle = this.getCandleByIndex(this.selectedCandleIndex, geometry);
+        return candle ? { ...candle } : null;
+    }
+
+    public clearSelectedCandle(): void {
+        this.selectedCandleIndex = null;
+        this.redrawDrawings();
+    }
+
+    public fitToData(): void {
+        const geometry = this.buildSeriesGeometry();
+        const surface = this.overlayCanvas ?? this.canvas;
+        if (!geometry || geometry.candles.length === 0 || !surface) {
+            return;
+        }
+
+        let minX = Number.POSITIVE_INFINITY;
+        let maxX = Number.NEGATIVE_INFINITY;
+        let minY = Number.POSITIVE_INFINITY;
+        let maxY = Number.NEGATIVE_INFINITY;
+
+        for (const candle of geometry.candles) {
+            minX = Math.min(minX, candle.x);
+            maxX = Math.max(maxX, candle.x);
+            minY = Math.min(minY, candle.low);
+            maxY = Math.max(maxY, candle.high);
+        }
+
+        const aspect = surface.width / Math.max(1, surface.height);
+        const paddingY = 0.18;
+        const paddingX = 0.08;
+        const halfHeightFromY = Math.max(0.35, ((maxY - minY) * 0.5) + paddingY);
+        const halfHeightFromX = Math.max(0.35, ((((maxX - minX) * 0.5) + paddingX) / Math.max(aspect, 1e-6)));
+
+        this.currentCenterX = (minX + maxX) * 0.5;
+        this.currentCenterY = (minY + maxY) * 0.5;
+        this.currentZoom = Math.min(5.0, Math.max(0.2, Math.max(halfHeightFromY, halfHeightFromX)));
+        this.applyCameraView();
+        this.refreshHoverFromStoredPointer();
+        this.redrawDrawings();
     }
 
     public createSeries(options: SeriesOptions = {}): SeriesApi {
@@ -559,6 +635,7 @@ export class NexusCharts {
     private attachInteractionHandlers(canvas: HTMLCanvasElement): void {
         const onMouseDown = (event: MouseEvent) => {
             this.isDragging = true;
+            this.draggedDuringPointer = false;
             this.lastPointerX = event.clientX;
             this.lastPointerY = event.clientY;
             this.updateHoverFromClientPosition(event.clientX, event.clientY);
@@ -568,6 +645,9 @@ export class NexusCharts {
             if (this.isDragging) {
                 const dx = event.clientX - this.lastPointerX;
                 const dy = event.clientY - this.lastPointerY;
+                if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+                    this.draggedDuringPointer = true;
+                }
                 this.lastPointerX = event.clientX;
                 this.lastPointerY = event.clientY;
 
@@ -589,10 +669,25 @@ export class NexusCharts {
             this.isDragging = false;
         };
 
+        const onClick = () => {
+            if (this.draggedDuringPointer || !this.hoveredCandle) {
+                return;
+            }
+            this.selectedCandleIndex = this.selectedCandleIndex === this.hoveredCandle.index
+                ? null
+                : this.hoveredCandle.index;
+            this.redrawDrawings();
+        };
+
         const onWheel = (event: WheelEvent) => {
             event.preventDefault();
+            this.updateHoverFromClientPosition(event.clientX, event.clientY);
             const zoomFactor = event.deltaY > 0 ? 1.08 : 0.92;
             this.zoom(zoomFactor);
+        };
+
+        const onDoubleClick = () => {
+            this.fitToData();
         };
 
         const onResize = () => {
@@ -617,6 +712,8 @@ export class NexusCharts {
         window.addEventListener("mouseup", stopDragging);
         canvas.addEventListener("mouseleave", stopDragging);
         canvas.addEventListener("mouseleave", clearHover);
+        canvas.addEventListener("click", onClick);
+        canvas.addEventListener("dblclick", onDoubleClick);
         canvas.addEventListener("wheel", onWheel, { passive: false });
         window.addEventListener("resize", onResize);
 
@@ -625,6 +722,8 @@ export class NexusCharts {
         this.cleanupHandlers.push(() => window.removeEventListener("mouseup", stopDragging));
         this.cleanupHandlers.push(() => canvas.removeEventListener("mouseleave", stopDragging));
         this.cleanupHandlers.push(() => canvas.removeEventListener("mouseleave", clearHover));
+        this.cleanupHandlers.push(() => canvas.removeEventListener("click", onClick));
+        this.cleanupHandlers.push(() => canvas.removeEventListener("dblclick", onDoubleClick));
         this.cleanupHandlers.push(() => canvas.removeEventListener("wheel", onWheel));
         this.cleanupHandlers.push(() => window.removeEventListener("resize", onResize));
     }
@@ -758,6 +857,19 @@ export class NexusCharts {
         }
     }
 
+    private applyCameraView(): void {
+        if (!this.moduleLoaded || !this.module) {
+            return;
+        }
+
+        if (typeof this.module.setCameraView === "function") {
+            this.module.setCameraView(this.currentCenterX, this.currentCenterY, this.currentZoom);
+            return;
+        }
+
+        console.warn("[NexusCharts] WASM export 'setCameraView' is not available.");
+    }
+
     private normalizeUiOptions(options: UiOptions): Required<UiOptions> {
         const tickCount = Number.isFinite(options.axisTickCount)
             ? Math.max(3, Math.min(10, Math.floor(options.axisTickCount ?? this.uiOptions.axisTickCount)))
@@ -868,6 +980,31 @@ export class NexusCharts {
 
     private worldYToPrice(worldY: number, geometry: SeriesGeometry): number {
         return geometry.minPrice + ((worldY + 0.85) / geometry.scale);
+    }
+
+    private getCandleByIndex(index: number | null, geometry: SeriesGeometry | null): HoveredCandle | null {
+        if (index === null || !geometry || index < 0 || index >= geometry.candles.length) {
+            return null;
+        }
+
+        const surface = this.overlayCanvas ?? this.canvas;
+        if (!surface) {
+            return null;
+        }
+
+        const candle = geometry.candles[index];
+        const closePoint = this.worldToCanvasPoint(candle.x, candle.close, surface.width, surface.height);
+        return {
+            index,
+            time: candle.source.time,
+            open: candle.source.open,
+            high: candle.source.high,
+            low: candle.source.low,
+            close: candle.source.close,
+            screenX: closePoint.x,
+            screenY: closePoint.y,
+            worldX: candle.x,
+        };
     }
 
     private updateHoverFromClientPosition(clientX: number, clientY: number): void {
@@ -1025,9 +1162,10 @@ export class NexusCharts {
         }
 
         this.renderAxesOverlay(ctx, width, height, geometry);
+        this.renderAnalyticsOverlay(ctx, width, height, toCanvas);
+        this.renderSelectionOverlay(ctx, width, height, geometry);
         this.renderCrosshairOverlay(ctx, width, height);
         this.renderTooltipOverlay(ctx, width, height);
-        this.renderAnalyticsOverlay(ctx, width, height, toCanvas);
     }
 
     private renderAxesOverlay(
@@ -1096,7 +1234,10 @@ export class NexusCharts {
     }
 
     private renderCrosshairOverlay(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-        if (!this.uiOptions.showCrosshair || !this.hoveredCandle || this.hoverCanvasX === null || this.hoverCanvasY === null) {
+        const geometry = this.buildSeriesGeometry();
+        const activeCandle = this.hoveredCandle ?? this.getCandleByIndex(this.selectedCandleIndex, geometry);
+        const activeY = this.hoverCanvasY ?? activeCandle?.screenY ?? null;
+        if (!this.uiOptions.showCrosshair || !activeCandle || activeY === null) {
             return;
         }
 
@@ -1106,34 +1247,79 @@ export class NexusCharts {
         ctx.setLineDash([5, 5]);
 
         ctx.beginPath();
-        ctx.moveTo(this.hoveredCandle.screenX, 0);
-        ctx.lineTo(this.hoveredCandle.screenX, height);
+        ctx.moveTo(activeCandle.screenX, 0);
+        ctx.lineTo(activeCandle.screenX, height);
         ctx.stroke();
 
         ctx.beginPath();
-        ctx.moveTo(0, this.hoverCanvasY);
-        ctx.lineTo(width, this.hoverCanvasY);
+        ctx.moveTo(0, activeY);
+        ctx.lineTo(width, activeY);
         ctx.stroke();
 
         ctx.setLineDash([]);
         ctx.fillStyle = "rgba(87, 212, 255, 0.9)";
         ctx.beginPath();
-        ctx.arc(this.hoveredCandle.screenX, this.hoveredCandle.screenY, 3, 0, Math.PI * 2);
+        ctx.arc(activeCandle.screenX, activeCandle.screenY, 3, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
     }
 
-    private renderTooltipOverlay(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-        if (!this.uiOptions.showTooltip || !this.hoveredCandle || this.hoverCanvasX === null || this.hoverCanvasY === null) {
+    private renderSelectionOverlay(
+        ctx: CanvasRenderingContext2D,
+        width: number,
+        height: number,
+        geometry: SeriesGeometry | null
+    ): void {
+        const selectedCandle = this.getCandleByIndex(this.selectedCandleIndex, geometry);
+        if (!selectedCandle) {
             return;
         }
 
+        ctx.save();
+        ctx.fillStyle = "rgba(255, 204, 102, 0.08)";
+        ctx.strokeStyle = "rgba(255, 204, 102, 0.6)";
+        ctx.lineWidth = 1;
+        ctx.fillRect(selectedCandle.screenX - 14, 0, 28, height);
+
+        ctx.beginPath();
+        ctx.moveTo(selectedCandle.screenX, 0);
+        ctx.lineTo(selectedCandle.screenX, height);
+        ctx.stroke();
+
+        const label = `Selected #${selectedCandle.index + 1}`;
+        ctx.font = "12px 'Segoe UI', sans-serif";
+        const textWidth = ctx.measureText(label).width;
+        const boxWidth = textWidth + 10;
+        const boxX = 12;
+        const boxY = 12;
+
+        ctx.fillStyle = "rgba(18, 28, 47, 0.92)";
+        ctx.fillRect(boxX, boxY, boxWidth, 18);
+        ctx.fillStyle = "#ffcc66";
+        ctx.fillText(label, boxX + 5, boxY + 13);
+        ctx.restore();
+    }
+
+    private renderTooltipOverlay(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+        const geometry = this.buildSeriesGeometry();
+        const activeCandle = this.hoveredCandle ?? this.getCandleByIndex(this.selectedCandleIndex, geometry);
+        if (!this.uiOptions.showTooltip || !activeCandle) {
+            return;
+        }
+
+        const anchorX = this.hoverCanvasX ?? activeCandle.screenX;
+        const anchorY = this.hoverCanvasY ?? activeCandle.screenY;
+        const delta = activeCandle.close - activeCandle.open;
+        const deltaPercent = activeCandle.open !== 0 ? (delta / activeCandle.open) * 100.0 : 0.0;
+        const range = activeCandle.high - activeCandle.low;
         const lines = [
-            `T ${this.hoveredCandle.time}`,
-            `O ${this.formatPrice(this.hoveredCandle.open)}`,
-            `H ${this.formatPrice(this.hoveredCandle.high)}`,
-            `L ${this.formatPrice(this.hoveredCandle.low)}`,
-            `C ${this.formatPrice(this.hoveredCandle.close)}`,
+            `T ${activeCandle.time}`,
+            `O ${this.formatPrice(activeCandle.open)}`,
+            `H ${this.formatPrice(activeCandle.high)}`,
+            `L ${this.formatPrice(activeCandle.low)}`,
+            `C ${this.formatPrice(activeCandle.close)}`,
+            `D ${delta >= 0 ? "+" : ""}${this.formatPrice(delta)} (${deltaPercent.toFixed(2)}%)`,
+            `R ${this.formatPrice(range)}`,
         ];
 
         ctx.save();
@@ -1141,8 +1327,16 @@ export class NexusCharts {
         const maxWidth = Math.max(...lines.map((line) => ctx.measureText(line).width));
         const boxWidth = maxWidth + 18;
         const boxHeight = 18 + (lines.length * 14);
-        const boxX = Math.min(width - boxWidth - 10, this.hoverCanvasX + 14);
-        const boxY = Math.max(10, Math.min(height - boxHeight - 10, this.hoverCanvasY - 10));
+        const analyticsPanel = this.getAnalyticsPanelBounds(width, height);
+        let boxX = Math.min(width - boxWidth - 10, anchorX + 14);
+        let boxY = Math.max(10, Math.min(height - boxHeight - 10, anchorY - 10));
+
+        if (analyticsPanel && this.rectsOverlap(boxX, boxY, boxWidth, boxHeight, analyticsPanel)) {
+            boxX = Math.max(10, anchorX - boxWidth - 14);
+        }
+        if (analyticsPanel && this.rectsOverlap(boxX, boxY, boxWidth, boxHeight, analyticsPanel)) {
+            boxY = Math.min(height - boxHeight - 10, analyticsPanel.y + analyticsPanel.height + 10);
+        }
 
         ctx.fillStyle = "rgba(7, 18, 34, 0.92)";
         ctx.strokeStyle = "rgba(120, 148, 188, 0.45)";
@@ -1150,7 +1344,6 @@ export class NexusCharts {
         ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
         ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
 
-        const delta = this.hoveredCandle.close - this.hoveredCandle.open;
         ctx.fillStyle = delta >= 0 ? "#49d17f" : "#ff6a7a";
         ctx.fillText(lines[0], boxX + 9, boxY + 14);
         ctx.fillStyle = "#dce7ff";
@@ -1218,6 +1411,33 @@ export class NexusCharts {
         return Math.min(maxValue, Math.max(minValue, value));
     }
 
+    private rectsOverlap(x: number, y: number, width: number, height: number, other: OverlayRect): boolean {
+        return (
+            x < (other.x + other.width) &&
+            (x + width) > other.x &&
+            y < (other.y + other.height) &&
+            (y + height) > other.y
+        );
+    }
+
+    private getAnalyticsPanelBounds(width: number, height: number): OverlayRect | null {
+        if (this.observerFrames.length === 0) {
+            return null;
+        }
+        if (!this.analyticsOptions.showRewardCurve && !this.analyticsOptions.showPnlCurve) {
+            return null;
+        }
+
+        const panelWidth = Math.max(220, Math.min(340, width * 0.36));
+        const panelHeight = Math.max(120, Math.min(180, height * 0.30));
+        return {
+            x: width - panelWidth - 12,
+            y: 12,
+            width: panelWidth,
+            height: panelHeight,
+        };
+    }
+
     private trimObserverFramesToLimit(): void {
         const overflow = this.observerFrames.length - this.analyticsOptions.maxFrames;
         if (overflow > 0) {
@@ -1259,10 +1479,14 @@ export class NexusCharts {
             return;
         }
 
-        const panelWidth = Math.max(220, Math.min(340, width * 0.36));
-        const panelHeight = Math.max(120, Math.min(180, height * 0.30));
-        const panelX = width - panelWidth - 12;
-        const panelY = 12;
+        const analyticsPanel = this.getAnalyticsPanelBounds(width, height);
+        if (!analyticsPanel) {
+            return;
+        }
+        const panelWidth = analyticsPanel.width;
+        const panelHeight = analyticsPanel.height;
+        const panelX = analyticsPanel.x;
+        const panelY = analyticsPanel.y;
 
         const plotPadL = 12;
         const plotPadR = 8;
