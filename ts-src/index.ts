@@ -15,6 +15,8 @@ export interface UiOptions {
     showCrosshair?: boolean;
     showTooltip?: boolean;
     showControlBar?: boolean;
+    tooltipMode?: "follow" | "fixed";
+    persistState?: boolean;
     axisTickCount?: number;
     pricePrecision?: number;
 }
@@ -24,6 +26,8 @@ export interface UiState {
     showCrosshair: boolean;
     showTooltip: boolean;
     showControlBar: boolean;
+    tooltipMode: "follow" | "fixed";
+    persistState: boolean;
     showHeatmap: boolean;
     showAnalyticsPanel: boolean;
 }
@@ -161,11 +165,21 @@ interface OverlayRect {
 }
 
 interface ControlButtonState extends OverlayRect {
-    id: "fit" | "axes" | "crosshair" | "tooltip" | "heatmap" | "analytics";
+    id: "fit" | "axes" | "crosshair" | "tooltip" | "tooltip_mode" | "heatmap" | "analytics";
     label: string;
     hint: string;
     active: boolean;
     kind: "action" | "toggle";
+}
+
+interface TimeAxisLabel {
+    x: number;
+    text: string;
+}
+
+interface PersistedChartState {
+    ui: Pick<UiState, "showAxes" | "showCrosshair" | "showTooltip" | "showControlBar" | "tooltipMode" | "persistState">;
+    analytics: Pick<AnalyticsOptions, "showHeatmap" | "showRewardCurve" | "showPnlCurve">;
 }
 
 interface NexusWasmModule {
@@ -246,6 +260,8 @@ export class NexusCharts {
         showCrosshair: true,
         showTooltip: true,
         showControlBar: true,
+        tooltipMode: "follow",
+        persistState: true,
         axisTickCount: 5,
         pricePrecision: 2,
     };
@@ -264,6 +280,13 @@ export class NexusCharts {
         this.wasmBinaryPath = options.wasmBinaryPath ?? "wasm/nexuscharts.wasm";
         this.enableInteraction = options.enableInteraction ?? true;
         this.onReadyCallback = options.onReady;
+        const persisted = this.loadPersistedChartState();
+        if (persisted?.ui) {
+            this.uiOptions = this.normalizeUiOptions(persisted.ui);
+        }
+        if (persisted?.analytics) {
+            this.analyticsOptions = this.normalizeAnalyticsOptions(persisted.analytics);
+        }
         if (options.analytics) {
             this.analyticsOptions = this.normalizeAnalyticsOptions(options.analytics);
         }
@@ -386,8 +409,7 @@ export class NexusCharts {
     }
 
     public clearSelectedCandle(): void {
-        this.selectedCandleIndex = null;
-        this.redrawDrawings();
+        this.setSelectedCandleIndex(null);
     }
 
     public fitToData(): void {
@@ -494,6 +516,7 @@ export class NexusCharts {
         if (!this.uiOptions.showControlBar) {
             this.controlButtons = [];
         }
+        this.persistChartState();
         this.redrawDrawings();
     }
 
@@ -503,6 +526,8 @@ export class NexusCharts {
             showCrosshair: this.uiOptions.showCrosshair,
             showTooltip: this.uiOptions.showTooltip,
             showControlBar: this.uiOptions.showControlBar,
+            tooltipMode: this.uiOptions.tooltipMode,
+            persistState: this.uiOptions.persistState,
             showHeatmap: this.analyticsOptions.showHeatmap,
             showAnalyticsPanel: this.analyticsOptions.showRewardCurve || this.analyticsOptions.showPnlCurve,
         };
@@ -511,6 +536,7 @@ export class NexusCharts {
     public configureAnalytics(options: AnalyticsOptions): void {
         this.analyticsOptions = this.normalizeAnalyticsOptions(options);
         this.trimObserverFramesToLimit();
+        this.persistChartState();
         this.redrawDrawings();
     }
 
@@ -718,10 +744,10 @@ export class NexusCharts {
             if (this.draggedDuringPointer || !this.hoveredCandle) {
                 return;
             }
-            this.selectedCandleIndex = this.selectedCandleIndex === this.hoveredCandle.index
+            const nextIndex = this.selectedCandleIndex === this.hoveredCandle.index
                 ? null
                 : this.hoveredCandle.index;
-            this.redrawDrawings();
+            this.setSelectedCandleIndex(nextIndex);
         };
 
         const onWheel = (event: WheelEvent) => {
@@ -763,12 +789,36 @@ export class NexusCharts {
                     this.toggleUiFlag("showTooltip");
                     event.preventDefault();
                     break;
+                case "m":
+                    this.toggleTooltipMode();
+                    event.preventDefault();
+                    break;
                 case "h":
                     this.toggleAnalyticsFlag("showHeatmap");
                     event.preventDefault();
                     break;
                 case "g":
                     this.toggleAnalyticsPanel();
+                    event.preventDefault();
+                    break;
+                case "arrowleft":
+                    this.moveSelection(-1);
+                    event.preventDefault();
+                    break;
+                case "arrowright":
+                    this.moveSelection(1);
+                    event.preventDefault();
+                    break;
+                case "home":
+                    this.jumpSelection("start");
+                    event.preventDefault();
+                    break;
+                case "end":
+                    this.jumpSelection("end");
+                    event.preventDefault();
+                    break;
+                case "escape":
+                    this.clearSelectedCandle();
                     event.preventDefault();
                     break;
                 default:
@@ -965,12 +1015,18 @@ export class NexusCharts {
         const pricePrecision = Number.isFinite(options.pricePrecision)
             ? Math.max(0, Math.min(8, Math.floor(options.pricePrecision ?? this.uiOptions.pricePrecision)))
             : this.uiOptions.pricePrecision;
+        const tooltipMode = options.tooltipMode
+            ? (options.tooltipMode === "fixed" ? "fixed" : "follow")
+            : this.uiOptions.tooltipMode;
+        const persistState = options.persistState ?? this.uiOptions.persistState;
 
         return {
             showAxes: options.showAxes ?? this.uiOptions.showAxes,
             showCrosshair: options.showCrosshair ?? this.uiOptions.showCrosshair,
             showTooltip: options.showTooltip ?? this.uiOptions.showTooltip,
             showControlBar: options.showControlBar ?? this.uiOptions.showControlBar,
+            tooltipMode,
+            persistState,
             axisTickCount: tickCount,
             pricePrecision,
         };
@@ -981,6 +1037,16 @@ export class NexusCharts {
             ...this.uiOptions,
             [flag]: !this.uiOptions[flag],
         };
+        this.persistChartState();
+        this.redrawDrawings();
+    }
+
+    private toggleTooltipMode(): void {
+        this.uiOptions = {
+            ...this.uiOptions,
+            tooltipMode: this.uiOptions.tooltipMode === "follow" ? "fixed" : "follow",
+        };
+        this.persistChartState();
         this.redrawDrawings();
     }
 
@@ -989,6 +1055,7 @@ export class NexusCharts {
             ...this.analyticsOptions,
             [flag]: !this.analyticsOptions[flag],
         };
+        this.persistChartState();
         this.redrawDrawings();
     }
 
@@ -999,7 +1066,100 @@ export class NexusCharts {
             showRewardCurve: !isVisible,
             showPnlCurve: !isVisible,
         };
+        this.persistChartState();
         this.redrawDrawings();
+    }
+
+    private getStorageKey(): string {
+        return `nexuscharts:ui:${this.canvasId}`;
+    }
+
+    private loadPersistedChartState(): PersistedChartState | null {
+        if (typeof window === "undefined" || !window.localStorage) {
+            return null;
+        }
+        try {
+            const raw = window.localStorage.getItem(this.getStorageKey());
+            if (!raw) {
+                return null;
+            }
+            const parsed = JSON.parse(raw) as PersistedChartState;
+            if (!parsed || typeof parsed !== "object") {
+                return null;
+            }
+            return parsed;
+        } catch {
+            return null;
+        }
+    }
+
+    private persistChartState(): void {
+        if (typeof window === "undefined" || !window.localStorage) {
+            return;
+        }
+        if (!this.uiOptions.persistState) {
+            try {
+                window.localStorage.removeItem(this.getStorageKey());
+            } catch {
+                // Ignore storage failures.
+            }
+            return;
+        }
+        const state: PersistedChartState = {
+            ui: {
+                showAxes: this.uiOptions.showAxes,
+                showCrosshair: this.uiOptions.showCrosshair,
+                showTooltip: this.uiOptions.showTooltip,
+                showControlBar: this.uiOptions.showControlBar,
+                tooltipMode: this.uiOptions.tooltipMode,
+                persistState: this.uiOptions.persistState,
+            },
+            analytics: {
+                showHeatmap: this.analyticsOptions.showHeatmap,
+                showRewardCurve: this.analyticsOptions.showRewardCurve,
+                showPnlCurve: this.analyticsOptions.showPnlCurve,
+            },
+        };
+        try {
+            window.localStorage.setItem(this.getStorageKey(), JSON.stringify(state));
+        } catch {
+            // Ignore storage quota/privacy mode failures and keep runtime behavior.
+        }
+    }
+
+    private setSelectedCandleIndex(index: number | null): void {
+        this.selectedCandleIndex = index;
+        this.hoveredCandle = null;
+        this.hoverCanvasX = null;
+        this.hoverCanvasY = null;
+        this.redrawDrawings();
+    }
+
+    private moveSelection(step: number): void {
+        const geometry = this.buildSeriesGeometry();
+        if (!geometry || geometry.candles.length === 0) {
+            return;
+        }
+        const count = geometry.candles.length;
+        let nextIndex = this.selectedCandleIndex;
+        if (nextIndex === null) {
+            if (this.hoveredCandle) {
+                nextIndex = this.hoveredCandle.index;
+            } else {
+                nextIndex = step >= 0 ? 0 : (count - 1);
+            }
+        } else {
+            nextIndex = Math.max(0, Math.min(count - 1, nextIndex + step));
+        }
+        this.setSelectedCandleIndex(nextIndex);
+    }
+
+    private jumpSelection(to: "start" | "end"): void {
+        const geometry = this.buildSeriesGeometry();
+        if (!geometry || geometry.candles.length === 0) {
+            return;
+        }
+        this.setSelectedCandleIndex(to === "start" ? 0 : (geometry.candles.length - 1));
     }
 
     private getCanvasPointFromClientPosition(clientX: number, clientY: number): ScreenPoint | null {
@@ -1055,6 +1215,9 @@ export class NexusCharts {
                 break;
             case "tooltip":
                 this.toggleUiFlag("showTooltip");
+                break;
+            case "tooltip_mode":
+                this.toggleTooltipMode();
                 break;
             case "heatmap":
                 this.toggleAnalyticsFlag("showHeatmap");
@@ -1160,8 +1323,151 @@ export class NexusCharts {
         return value.toFixed(this.uiOptions.pricePrecision);
     }
 
+    private formatTimeLabel(value: number | string): string {
+        if (typeof value === "number") {
+            if (Number.isInteger(value)) {
+                return String(value);
+            }
+            return value.toFixed(2);
+        }
+        return String(value);
+    }
+
     private worldYToPrice(worldY: number, geometry: SeriesGeometry): number {
         return geometry.minPrice + ((worldY + 0.85) / geometry.scale);
+    }
+
+    private priceToWorldY(price: number, geometry: SeriesGeometry): number {
+        return ((price - geometry.minPrice) * geometry.scale) - 0.85;
+    }
+
+    private niceStep(rawStep: number): number {
+        if (!Number.isFinite(rawStep) || rawStep <= 0) {
+            return 1;
+        }
+        const exponent = Math.floor(Math.log10(rawStep));
+        const power = Math.pow(10, exponent);
+        const fraction = rawStep / power;
+        if (fraction <= 1) return power;
+        if (fraction <= 2) return 2 * power;
+        if (fraction <= 5) return 5 * power;
+        return 10 * power;
+    }
+
+    private buildNiceTicks(minValue: number, maxValue: number, targetCount: number): number[] {
+        if (!Number.isFinite(minValue) || !Number.isFinite(maxValue)) {
+            return [];
+        }
+
+        if (Math.abs(maxValue - minValue) < 1e-9) {
+            return [minValue];
+        }
+
+        const desired = Math.max(2, targetCount);
+        const rawStep = Math.abs(maxValue - minValue) / Math.max(1, desired - 1);
+        const step = this.niceStep(rawStep);
+        const start = Math.ceil(minValue / step) * step;
+        const ticks: number[] = [];
+
+        for (let value = start; value <= (maxValue + (step * 0.5)); value += step) {
+            ticks.push(Number(value.toFixed(8)));
+            if (ticks.length > 200) {
+                break;
+            }
+        }
+
+        if (ticks.length === 0) {
+            ticks.push(Number(minValue.toFixed(8)));
+            ticks.push(Number(maxValue.toFixed(8)));
+        }
+
+        return ticks;
+    }
+
+    private toNumericTime(value: number | string): number | null {
+        if (typeof value === "number") {
+            return Number.isFinite(value) ? value : null;
+        }
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    private buildVisibleTimeLabels(
+        geometry: SeriesGeometry,
+        width: number,
+        height: number,
+        targetCount: number
+    ): TimeAxisLabel[] {
+        const visible = geometry.candles
+            .map((candle, index) => ({
+                index,
+                candle,
+                x: this.worldToCanvasPoint(candle.x, candle.close, width, height).x,
+                timeValue: this.toNumericTime(candle.source.time),
+            }))
+            .filter((item) => item.x >= 0 && item.x <= width);
+
+        const source = visible.length > 0
+            ? visible
+            : geometry.candles.map((candle, index) => ({
+                index,
+                candle,
+                x: this.worldToCanvasPoint(candle.x, candle.close, width, height).x,
+                timeValue: this.toNumericTime(candle.source.time),
+            }));
+
+        if (source.length === 0) {
+            return [];
+        }
+
+        const labels: TimeAxisLabel[] = [];
+        const allNumeric = source.every((entry) => entry.timeValue !== null);
+
+        if (allNumeric) {
+            const minTime = source[0].timeValue as number;
+            const maxTime = source[source.length - 1].timeValue as number;
+            const ticks = this.buildNiceTicks(minTime, maxTime, targetCount);
+            const used = new Set<number>();
+            for (const tick of ticks) {
+                let nearest = source[0];
+                let nearestDistance = Math.abs((nearest.timeValue as number) - tick);
+                for (let i = 1; i < source.length; i += 1) {
+                    const candidate = source[i];
+                    const distance = Math.abs((candidate.timeValue as number) - tick);
+                    if (distance < nearestDistance) {
+                        nearest = candidate;
+                        nearestDistance = distance;
+                    }
+                }
+                if (used.has(nearest.index)) {
+                    continue;
+                }
+                used.add(nearest.index);
+                labels.push({
+                    x: nearest.x,
+                    text: this.formatTimeLabel(nearest.candle.source.time),
+                });
+            }
+            labels.sort((a, b) => a.x - b.x);
+            return labels;
+        }
+
+        const step = Math.max(1, Math.floor(source.length / Math.max(2, targetCount)));
+        for (let i = 0; i < source.length; i += step) {
+            const entry = source[i];
+            labels.push({
+                x: entry.x,
+                text: this.formatTimeLabel(entry.candle.source.time),
+            });
+        }
+        if (labels.length > 0) {
+            const last = source[source.length - 1];
+            const lastLabel = this.formatTimeLabel(last.candle.source.time);
+            if (labels[labels.length - 1].text !== lastLabel) {
+                labels.push({ x: last.x, text: lastLabel });
+            }
+        }
+        return labels;
     }
 
     private getCandleByIndex(index: number | null, geometry: SeriesGeometry | null): HoveredCandle | null {
@@ -1364,6 +1670,7 @@ export class NexusCharts {
         const tickCount = this.uiOptions.axisTickCount;
         const priceLabelWidth = 58;
         const timeLabelHeight = 20;
+        const minTimeGapPx = 6;
 
         ctx.save();
         ctx.font = "11px 'Segoe UI', sans-serif";
@@ -1373,13 +1680,14 @@ export class NexusCharts {
 
         const topWorldY = this.currentCenterY + this.currentZoom;
         const bottomWorldY = this.currentCenterY - this.currentZoom;
+        const visibleMinPrice = this.worldYToPrice(bottomWorldY, geometry);
+        const visibleMaxPrice = this.worldYToPrice(topWorldY, geometry);
+        const priceTicks = this.buildNiceTicks(visibleMinPrice, visibleMaxPrice, tickCount);
 
-        for (let i = 0; i < tickCount; i += 1) {
-            const t = tickCount > 1 ? i / (tickCount - 1) : 0;
-            const worldY = topWorldY - (t * (topWorldY - bottomWorldY));
+        for (const price of priceTicks) {
+            const worldY = this.priceToWorldY(price, geometry);
             const canvasPoint = this.worldToCanvasPoint(this.currentCenterX, worldY, width, height);
             const labelY = Math.min(height - timeLabelHeight - 4, Math.max(10, canvasPoint.y));
-            const price = this.worldYToPrice(worldY, geometry);
 
             ctx.beginPath();
             ctx.moveTo(0, canvasPoint.y);
@@ -1392,25 +1700,25 @@ export class NexusCharts {
             ctx.fillText(this.formatPrice(price), width - priceLabelWidth + 6, labelY + 4);
         }
 
-        const visibleCandles = geometry.candles.filter((candle) => {
-            const x = this.worldToCanvasPoint(candle.x, candle.close, width, height).x;
-            return x >= 0 && x <= width;
-        });
-        const source = visibleCandles.length > 0 ? visibleCandles : geometry.candles;
-        const step = Math.max(1, Math.floor(source.length / tickCount));
-
-        for (let i = 0; i < source.length; i += step) {
-            const candle = source[i];
-            const point = this.worldToCanvasPoint(candle.x, candle.close, width, height);
-            const label = String(candle.source.time);
-            const textWidth = ctx.measureText(label).width;
-            const boxX = Math.max(6, Math.min(width - textWidth - 14, point.x - (textWidth * 0.5) - 5));
+        const approxMaxLabels = Math.max(3, Math.floor(width / 86));
+        const zoomDensity = this.clamp(1 / Math.max(0.35, this.currentZoom), 0.7, 2.8);
+        const targetTimeLabels = Math.max(3, Math.min(approxMaxLabels, Math.floor((tickCount + 2) * zoomDensity)));
+        const timeLabels = this.buildVisibleTimeLabels(geometry, width, height, targetTimeLabels);
+        let lastLabelEndX = -Infinity;
+        for (const label of timeLabels) {
+            const textWidth = ctx.measureText(label.text).width;
+            const boxWidth = textWidth + 10;
+            const boxX = Math.max(6, Math.min(width - boxWidth - 6, label.x - (boxWidth * 0.5)));
+            if (boxX < (lastLabelEndX + minTimeGapPx)) {
+                continue;
+            }
             const boxY = height - timeLabelHeight;
 
             ctx.fillStyle = "rgba(7, 18, 34, 0.85)";
-            ctx.fillRect(boxX, boxY, textWidth + 10, 16);
+            ctx.fillRect(boxX, boxY, boxWidth, 16);
             ctx.fillStyle = "#98afd1";
-            ctx.fillText(label, boxX + 5, boxY + 12);
+            ctx.fillText(label.text, boxX + 5, boxY + 12);
+            lastLabelEndX = boxX + boxWidth;
         }
 
         ctx.restore();
@@ -1420,7 +1728,7 @@ export class NexusCharts {
         const geometry = this.buildSeriesGeometry();
         const activeCandle = this.hoveredCandle ?? this.getCandleByIndex(this.selectedCandleIndex, geometry);
         const activeY = this.hoverCanvasY ?? activeCandle?.screenY ?? null;
-        if (!this.uiOptions.showCrosshair || !activeCandle || activeY === null) {
+        if (!this.uiOptions.showCrosshair || !activeCandle || activeY === null || !geometry) {
             return;
         }
 
@@ -1444,6 +1752,40 @@ export class NexusCharts {
         ctx.beginPath();
         ctx.arc(activeCandle.screenX, activeCandle.screenY, 3, 0, Math.PI * 2);
         ctx.fill();
+
+        const worldAtCursor = this.canvasToWorldPoint(activeCandle.screenX, activeY, width, height);
+        const priceAtCursor = this.worldYToPrice(worldAtCursor.y, geometry);
+        const priceText = this.formatPrice(priceAtCursor);
+        const timeText = this.formatTimeLabel(activeCandle.time);
+
+        ctx.font = "11px 'Segoe UI', sans-serif";
+
+        const priceTextWidth = ctx.measureText(priceText).width;
+        const priceBoxWidth = priceTextWidth + 12;
+        const priceBoxHeight = 18;
+        const priceBoxX = width - priceBoxWidth - 4;
+        const priceBoxY = Math.max(4, Math.min(height - priceBoxHeight - 24, activeY - 9));
+
+        ctx.fillStyle = "rgba(10, 24, 44, 0.95)";
+        ctx.strokeStyle = "rgba(120, 188, 255, 0.55)";
+        ctx.lineWidth = 1;
+        ctx.fillRect(priceBoxX, priceBoxY, priceBoxWidth, priceBoxHeight);
+        ctx.strokeRect(priceBoxX, priceBoxY, priceBoxWidth, priceBoxHeight);
+        ctx.fillStyle = "#8fd8ff";
+        ctx.fillText(priceText, priceBoxX + 6, priceBoxY + 13);
+
+        const timeTextWidth = ctx.measureText(timeText).width;
+        const timeBoxWidth = timeTextWidth + 12;
+        const timeBoxHeight = 16;
+        const timeBoxX = Math.max(4, Math.min(width - timeBoxWidth - 4, activeCandle.screenX - (timeBoxWidth * 0.5)));
+        const timeBoxY = height - timeBoxHeight - 2;
+
+        ctx.fillStyle = "rgba(10, 24, 44, 0.95)";
+        ctx.strokeStyle = "rgba(120, 188, 255, 0.5)";
+        ctx.fillRect(timeBoxX, timeBoxY, timeBoxWidth, timeBoxHeight);
+        ctx.strokeRect(timeBoxX, timeBoxY, timeBoxWidth, timeBoxHeight);
+        ctx.fillStyle = "#9dc7f5";
+        ctx.fillText(timeText, timeBoxX + 6, timeBoxY + 12);
         ctx.restore();
     }
 
@@ -1494,6 +1836,13 @@ export class NexusCharts {
             { id: "axes", label: "Axes", hint: "A", active: this.uiOptions.showAxes, kind: "toggle" },
             { id: "crosshair", label: "Cross", hint: "C", active: this.uiOptions.showCrosshair, kind: "toggle" },
             { id: "tooltip", label: "Tip", hint: "T", active: this.uiOptions.showTooltip, kind: "toggle" },
+            {
+                id: "tooltip_mode",
+                label: this.uiOptions.tooltipMode === "fixed" ? "Mode:Fix" : "Mode:Follow",
+                hint: "M",
+                active: this.uiOptions.tooltipMode === "fixed",
+                kind: "toggle",
+            },
             { id: "heatmap", label: "Heat", hint: "H", active: this.analyticsOptions.showHeatmap, kind: "toggle" },
             {
                 id: "analytics",
@@ -1563,7 +1912,10 @@ export class NexusCharts {
 
     private renderTooltipOverlay(ctx: CanvasRenderingContext2D, width: number, height: number): void {
         const geometry = this.buildSeriesGeometry();
-        const activeCandle = this.hoveredCandle ?? this.getCandleByIndex(this.selectedCandleIndex, geometry);
+        const selectedCandle = this.getCandleByIndex(this.selectedCandleIndex, geometry);
+        const activeCandle = this.uiOptions.tooltipMode === "fixed"
+            ? (selectedCandle ?? this.hoveredCandle)
+            : (this.hoveredCandle ?? selectedCandle);
         if (!this.uiOptions.showTooltip || !activeCandle) {
             return;
         }
@@ -1589,11 +1941,26 @@ export class NexusCharts {
         const boxWidth = maxWidth + 18;
         const boxHeight = 18 + (lines.length * 14);
         const analyticsPanel = this.getAnalyticsPanelBounds(width, height);
-        let boxX = Math.min(width - boxWidth - 10, anchorX + 14);
-        let boxY = Math.max(10, Math.min(height - boxHeight - 10, anchorY - 10));
+        let boxX = 12;
+        let boxY = 10;
+
+        if (this.uiOptions.tooltipMode === "fixed") {
+            const topInset = this.uiOptions.showControlBar
+                ? (this.selectedCandleIndex !== null ? 62 : 38)
+                : 10;
+            boxY = Math.max(10, Math.min(height - boxHeight - 10, topInset));
+        } else {
+            boxX = Math.min(width - boxWidth - 10, anchorX + 14);
+            boxY = Math.max(10, Math.min(height - boxHeight - 10, anchorY - 10));
+        }
 
         if (analyticsPanel && this.rectsOverlap(boxX, boxY, boxWidth, boxHeight, analyticsPanel)) {
-            boxX = Math.max(10, anchorX - boxWidth - 14);
+            if (this.uiOptions.tooltipMode === "fixed") {
+                boxY = Math.min(height - boxHeight - 10, analyticsPanel.y + analyticsPanel.height + 10);
+                boxX = 12;
+            } else {
+                boxX = Math.max(10, anchorX - boxWidth - 14);
+            }
         }
         if (analyticsPanel && this.rectsOverlap(boxX, boxY, boxWidth, boxHeight, analyticsPanel)) {
             boxY = Math.min(height - boxHeight - 10, analyticsPanel.y + analyticsPanel.height + 10);
