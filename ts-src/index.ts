@@ -96,6 +96,25 @@ export interface SeriesOptions {
     type?: SeriesType;
 }
 
+export type IndicatorType = "sma" | "ema" | "rsi";
+
+export interface IndicatorDefinition {
+    id?: string;
+    type: IndicatorType;
+    period: number;
+    pane?: "main" | "lower";
+    color?: string;
+}
+
+export interface IndicatorSeries {
+    id: string;
+    type: IndicatorType;
+    period: number;
+    pane: "main" | "lower";
+    color: string;
+    values: Array<number | null>;
+}
+
 export interface SeriesApi {
     id: string;
     type: SeriesType;
@@ -177,6 +196,13 @@ interface TimeAxisLabel {
     text: string;
 }
 
+interface PaneRect extends OverlayRect {
+    innerX: number;
+    innerY: number;
+    innerWidth: number;
+    innerHeight: number;
+}
+
 interface PersistedChartState {
     ui: Pick<UiState, "showAxes" | "showCrosshair" | "showTooltip" | "showControlBar" | "tooltipMode" | "persistState">;
     analytics: Pick<AnalyticsOptions, "showHeatmap" | "showRewardCurve" | "showPnlCurve">;
@@ -248,6 +274,8 @@ export class NexusCharts {
     private readonly seriesStore = new Map<string, { type: SeriesType; data: CandleDataPoint[] }>();
     private readonly drawingStore = new Map<string, StoredDrawing>();
     private readonly observerFrames: NormalizedObserverFrame[] = [];
+    private readonly indicatorStore = new Map<string, IndicatorSeries>();
+    private indicatorPaneHeightRatio: number = 0.26;
     private controlButtons: ControlButtonState[] = [];
     private analyticsOptions: Required<AnalyticsOptions> = {
         showRewardCurve: true,
@@ -460,6 +488,7 @@ export class NexusCharts {
             if (!series) return;
             series.data = [...data];
             this.syncSeriesToEngine(id);
+            this.recomputeIndicators();
             this.refreshHoverFromStoredPointer();
             this.redrawDrawings();
         };
@@ -469,6 +498,7 @@ export class NexusCharts {
             if (!series) return;
             series.data.push(point);
             this.syncSeriesToEngine(id);
+            this.recomputeIndicators();
             this.refreshHoverFromStoredPointer();
             this.redrawDrawings();
         };
@@ -483,11 +513,53 @@ export class NexusCharts {
             if (!series) return;
             series.data = [];
             this.syncSeriesToEngine(id);
+            this.recomputeIndicators();
             this.refreshHoverFromStoredPointer();
             this.redrawDrawings();
         };
 
         return { id, type, setData, update, getData, clear };
+    }
+
+    public addIndicator(definition: IndicatorDefinition): string {
+        const id = definition.id ?? this.nextId("indicator");
+        if (this.indicatorStore.has(id)) {
+            throw new Error(`[NexusCharts] Indicator id '${id}' already exists.`);
+        }
+        const period = Math.max(2, Math.floor(definition.period));
+        const pane = definition.pane ?? (definition.type === "rsi" ? "lower" : "main");
+        const color = definition.color ?? (definition.type === "rsi" ? "#7dd3fc" : "#fbbf24");
+        this.indicatorStore.set(id, {
+            id,
+            type: definition.type,
+            period,
+            pane,
+            color,
+            values: [],
+        });
+        this.recomputeIndicators();
+        this.redrawDrawings();
+        return id;
+    }
+
+    public removeIndicator(id: string): boolean {
+        const removed = this.indicatorStore.delete(id);
+        if (removed) {
+            this.redrawDrawings();
+        }
+        return removed;
+    }
+
+    public clearIndicators(): void {
+        this.indicatorStore.clear();
+        this.redrawDrawings();
+    }
+
+    public getIndicators(): IndicatorSeries[] {
+        return Array.from(this.indicatorStore.values()).map((indicator) => ({
+            ...indicator,
+            values: [...indicator.values],
+        }));
     }
 
     public addDrawing(definition: DrawingDefinition): string {
@@ -1319,6 +1391,124 @@ export class NexusCharts {
         return { candles, minPrice, maxPrice, scale };
     }
 
+    private recomputeIndicators(): void {
+        if (this.indicatorStore.size === 0) {
+            return;
+        }
+        const source = this.getPrimaryCandlestickSeries();
+        const closes: number[] = source.map((point) => Number(point.close));
+        const valid = closes.map((value) => (Number.isFinite(value) ? value : NaN));
+
+        for (const indicator of this.indicatorStore.values()) {
+            switch (indicator.type) {
+                case "sma":
+                    indicator.values = this.computeSma(valid, indicator.period);
+                    break;
+                case "ema":
+                    indicator.values = this.computeEma(valid, indicator.period);
+                    break;
+                case "rsi":
+                    indicator.values = this.computeRsi(valid, indicator.period);
+                    break;
+                default:
+                    indicator.values = [];
+                    break;
+            }
+        }
+    }
+
+    private computeSma(values: number[], period: number): Array<number | null> {
+        const result: Array<number | null> = new Array(values.length).fill(null);
+        if (values.length === 0) {
+            return result;
+        }
+        let sum = 0;
+        for (let i = 0; i < values.length; i += 1) {
+            const value = values[i];
+            if (!Number.isFinite(value)) {
+                continue;
+            }
+            sum += value;
+            if (i >= period) {
+                const drop = values[i - period];
+                if (Number.isFinite(drop)) {
+                    sum -= drop;
+                }
+            }
+            if (i >= period - 1) {
+                result[i] = sum / period;
+            }
+        }
+        return result;
+    }
+
+    private computeEma(values: number[], period: number): Array<number | null> {
+        const result: Array<number | null> = new Array(values.length).fill(null);
+        if (values.length === 0) {
+            return result;
+        }
+        const k = 2 / (period + 1);
+        let ema = 0;
+        let initialized = false;
+        let sum = 0;
+
+        for (let i = 0; i < values.length; i += 1) {
+            const value = values[i];
+            if (!Number.isFinite(value)) {
+                continue;
+            }
+            if (!initialized) {
+                sum += value;
+                if (i >= period - 1) {
+                    ema = sum / period;
+                    initialized = true;
+                    result[i] = ema;
+                }
+            } else {
+                ema = (value * k) + (ema * (1 - k));
+                result[i] = ema;
+            }
+        }
+        return result;
+    }
+
+    private computeRsi(values: number[], period: number): Array<number | null> {
+        const result: Array<number | null> = new Array(values.length).fill(null);
+        if (values.length < period + 1) {
+            return result;
+        }
+        let gainSum = 0;
+        let lossSum = 0;
+
+        for (let i = 1; i <= period; i += 1) {
+            const change = values[i] - values[i - 1];
+            if (!Number.isFinite(change)) {
+                continue;
+            }
+            if (change >= 0) gainSum += change;
+            else lossSum += Math.abs(change);
+        }
+        let avgGain = gainSum / period;
+        let avgLoss = lossSum / period;
+        result[period] = avgLoss === 0 ? 100 : 100 - (100 / (1 + (avgGain / avgLoss)));
+
+        for (let i = period + 1; i < values.length; i += 1) {
+            const change = values[i] - values[i - 1];
+            const gain = Number.isFinite(change) && change > 0 ? change : 0;
+            const loss = Number.isFinite(change) && change < 0 ? Math.abs(change) : 0;
+            avgGain = ((avgGain * (period - 1)) + gain) / period;
+            avgLoss = ((avgLoss * (period - 1)) + loss) / period;
+            if (avgLoss === 0) {
+                result[i] = 100;
+            } else {
+                const rs = avgGain / avgLoss;
+                result[i] = 100 - (100 / (1 + rs));
+            }
+        }
+
+        return result;
+    }
+
     private formatPrice(value: number): string {
         return value.toFixed(this.uiOptions.pricePrecision);
     }
@@ -1650,6 +1840,7 @@ export class NexusCharts {
         }
 
         this.renderAxesOverlay(ctx, width, height, geometry);
+        this.renderIndicatorOverlay(ctx, width, height, geometry);
         this.renderAnalyticsOverlay(ctx, width, height, toCanvas);
         this.renderSelectionOverlay(ctx, width, height, geometry);
         this.renderCrosshairOverlay(ctx, width, height);
@@ -1786,6 +1977,151 @@ export class NexusCharts {
         ctx.strokeRect(timeBoxX, timeBoxY, timeBoxWidth, timeBoxHeight);
         ctx.fillStyle = "#9dc7f5";
         ctx.fillText(timeText, timeBoxX + 6, timeBoxY + 12);
+        ctx.restore();
+    }
+
+    private renderIndicatorOverlay(
+        ctx: CanvasRenderingContext2D,
+        width: number,
+        height: number,
+        geometry: SeriesGeometry | null
+    ): void {
+        if (!geometry || this.indicatorStore.size === 0) {
+            return;
+        }
+
+        const indicatorPane = this.getIndicatorPaneBounds(width, height);
+        if (indicatorPane) {
+            ctx.save();
+            ctx.fillStyle = "rgba(6, 13, 26, 0.92)";
+            ctx.strokeStyle = "rgba(120, 148, 188, 0.35)";
+            ctx.lineWidth = 1;
+            ctx.fillRect(indicatorPane.x, indicatorPane.y, indicatorPane.width, indicatorPane.height);
+            ctx.strokeRect(indicatorPane.x, indicatorPane.y, indicatorPane.width, indicatorPane.height);
+            ctx.font = "11px 'Segoe UI', sans-serif";
+            ctx.fillStyle = "#97b0d2";
+            ctx.fillText("Indicators", indicatorPane.x + 12, indicatorPane.y + 16);
+            ctx.restore();
+        }
+
+        for (const indicator of this.indicatorStore.values()) {
+            if (indicator.values.length === 0) {
+                continue;
+            }
+            if (indicator.pane === "lower" && indicatorPane) {
+                this.renderIndicatorInPane(ctx, geometry, indicator, indicatorPane, width, height);
+            } else {
+                this.renderIndicatorInMain(ctx, geometry, indicator, width, height);
+            }
+        }
+    }
+
+    private renderIndicatorInMain(
+        ctx: CanvasRenderingContext2D,
+        geometry: SeriesGeometry,
+        indicator: IndicatorSeries,
+        width: number,
+        height: number
+    ): void {
+        ctx.save();
+        ctx.strokeStyle = indicator.color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        let started = false;
+        for (let i = 0; i < geometry.candles.length; i += 1) {
+            const value = indicator.values[i];
+            if (!Number.isFinite(value ?? NaN)) {
+                continue;
+            }
+            const worldY = this.priceToWorldY(value as number, geometry);
+            const point = this.worldToCanvasPoint(geometry.candles[i].x, worldY, width, height);
+            if (!started) {
+                ctx.moveTo(point.x, point.y);
+                started = true;
+            } else {
+                ctx.lineTo(point.x, point.y);
+            }
+        }
+        if (started) {
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    private renderIndicatorInPane(
+        ctx: CanvasRenderingContext2D,
+        geometry: SeriesGeometry,
+        indicator: IndicatorSeries,
+        pane: PaneRect,
+        width: number,
+        height: number
+    ): void {
+        let minValue = Number.POSITIVE_INFINITY;
+        let maxValue = Number.NEGATIVE_INFINITY;
+        for (const value of indicator.values) {
+            if (!Number.isFinite(value ?? NaN)) {
+                continue;
+            }
+            minValue = Math.min(minValue, value as number);
+            maxValue = Math.max(maxValue, value as number);
+        }
+
+        if (!Number.isFinite(minValue) || !Number.isFinite(maxValue)) {
+            return;
+        }
+
+        if (indicator.type === "rsi") {
+            minValue = 0;
+            maxValue = 100;
+        } else if (Math.abs(maxValue - minValue) < 1e-6) {
+            maxValue += 1;
+            minValue -= 1;
+        }
+
+        const mapY = (value: number): number => {
+            const t = (value - minValue) / (maxValue - minValue);
+            return pane.innerY + ((1 - t) * pane.innerHeight);
+        };
+
+        ctx.save();
+        ctx.strokeStyle = indicator.color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        let started = false;
+        for (let i = 0; i < geometry.candles.length; i += 1) {
+            const value = indicator.values[i];
+            if (!Number.isFinite(value ?? NaN)) {
+                continue;
+            }
+            const x = this.worldToCanvasPoint(geometry.candles[i].x, geometry.candles[i].close, width, height).x;
+            const y = mapY(value as number);
+            if (!started) {
+                ctx.moveTo(x, y);
+                started = true;
+            } else {
+                ctx.lineTo(x, y);
+            }
+        }
+        if (started) {
+            ctx.stroke();
+        }
+
+        if (indicator.type === "rsi") {
+            ctx.strokeStyle = "rgba(123, 148, 184, 0.35)";
+            ctx.setLineDash([4, 3]);
+            const y30 = mapY(30);
+            const y70 = mapY(70);
+            ctx.beginPath();
+            ctx.moveTo(pane.innerX, y30);
+            ctx.lineTo(pane.innerX + pane.innerWidth, y30);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(pane.innerX, y70);
+            ctx.lineTo(pane.innerX + pane.innerWidth, y70);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
         ctx.restore();
     }
 
@@ -2066,6 +2402,29 @@ export class NexusCharts {
         };
     }
 
+    private getIndicatorPaneBounds(width: number, height: number): PaneRect | null {
+        const hasLowerPane = Array.from(this.indicatorStore.values()).some((indicator) => indicator.pane === "lower");
+        if (!hasLowerPane) {
+            return null;
+        }
+        const panelHeight = Math.max(110, Math.min(200, height * this.indicatorPaneHeightRatio));
+        const panelY = height - panelHeight;
+        const panelX = 0;
+        const panelWidth = width;
+        const padding = 10;
+
+        return {
+            x: panelX,
+            y: panelY,
+            width: panelWidth,
+            height: panelHeight,
+            innerX: panelX + padding,
+            innerY: panelY + padding,
+            innerWidth: Math.max(0, panelWidth - (padding * 2)),
+            innerHeight: Math.max(0, panelHeight - (padding * 2)),
+        };
+    }
+
     private trimObserverFramesToLimit(): void {
         const overflow = this.observerFrames.length - this.analyticsOptions.maxFrames;
         if (overflow > 0) {
@@ -2216,7 +2575,7 @@ export class NexusCharts {
         ctx.restore();
     }
 
-    private nextId(prefix: "series" | "drawing"): string {
+    private nextId(prefix: "series" | "drawing" | "indicator"): string {
         this.idCounter += 1;
         return `${prefix}_${this.idCounter}`;
     }

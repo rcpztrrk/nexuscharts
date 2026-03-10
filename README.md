@@ -24,6 +24,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Interactive chart UX: hover crosshair, OHLC tooltip, candle selection, fit-to-data, and pointer-anchored zoom.
 - Dynamic axis labeling with visible-window time labels and nice-stepped price ticks.
 - Persistent UI preferences (`localStorage`) and tooltip mode switching (`follow` / `fixed`).
+- Indicator engine (SMA/EMA/RSI) with a secondary pane overlay.
 - Development demo page served from `public/`.
 
 ## API Snapshot
@@ -55,6 +56,10 @@ chart.configureUi({
   tooltipMode: "follow",
   persistState: true
 });
+
+chart.addIndicator({ type: "sma", period: 10, color: "#fbbf24" });
+chart.addIndicator({ type: "ema", period: 21, color: "#7dd3fc" });
+chart.addIndicator({ type: "rsi", period: 14, pane: "lower", color: "#a78bfa" });
 
 const ui = chart.getUiState();
 console.log(ui.showCrosshair, ui.showHeatmap);

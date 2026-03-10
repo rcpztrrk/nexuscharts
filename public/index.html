@@ -129,6 +129,10 @@
             const candles = generateCandles(42);
             series.setData(candles);
 
+            chart.addIndicator({ type: "sma", period: 8, color: "#fbbf24" });
+            chart.addIndicator({ type: "ema", period: 13, color: "#7dd3fc" });
+            chart.addIndicator({ type: "rsi", period: 14, color: "#a78bfa", pane: "lower" });
+
             chart.configureAnalytics({
                 showHeatmap: true,
                 showRewardCurve: true,
