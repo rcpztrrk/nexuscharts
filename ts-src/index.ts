@@ -17,6 +17,7 @@ export interface UiOptions {
     showControlBar?: boolean;
     tooltipMode?: "follow" | "fixed";
     persistState?: boolean;
+    autoScaleY?: boolean;
     axisTickCount?: number;
     pricePrecision?: number;
 }
@@ -28,6 +29,7 @@ export interface UiState {
     showControlBar: boolean;
     tooltipMode: "follow" | "fixed";
     persistState: boolean;
+    autoScaleY: boolean;
     showHeatmap: boolean;
     showAnalyticsPanel: boolean;
 }
@@ -184,7 +186,7 @@ interface OverlayRect {
 }
 
 interface ControlButtonState extends OverlayRect {
-    id: "fit" | "axes" | "crosshair" | "tooltip" | "tooltip_mode" | "heatmap" | "analytics";
+    id: "fit" | "axes" | "crosshair" | "tooltip" | "tooltip_mode" | "autoscale" | "heatmap" | "analytics";
     label: string;
     hint: string;
     active: boolean;
@@ -204,7 +206,7 @@ interface PaneRect extends OverlayRect {
 }
 
 interface PersistedChartState {
-    ui: Pick<UiState, "showAxes" | "showCrosshair" | "showTooltip" | "showControlBar" | "tooltipMode" | "persistState">;
+    ui: Pick<UiState, "showAxes" | "showCrosshair" | "showTooltip" | "showControlBar" | "tooltipMode" | "persistState" | "autoScaleY">;
     analytics: Pick<AnalyticsOptions, "showHeatmap" | "showRewardCurve" | "showPnlCurve">;
 }
 
@@ -290,6 +292,7 @@ export class NexusCharts {
         showControlBar: true,
         tooltipMode: "follow",
         persistState: true,
+        autoScaleY: false,
         axisTickCount: 5,
         pricePrecision: 2,
     };
@@ -366,6 +369,7 @@ export class NexusCharts {
         this.currentCenterX += deltaX;
         this.currentCenterY += deltaY;
         this.module.panCamera(deltaX, deltaY);
+        this.autoScaleVisibleY();
         this.refreshHoverFromStoredPointer();
         this.redrawDrawings();
     }
@@ -394,6 +398,7 @@ export class NexusCharts {
             this.currentCenterX = left + halfWidth;
             this.currentCenterY = bottom + halfHeight;
             this.applyCameraView();
+        this.autoScaleVisibleY();
         } else {
             this.module.zoomCamera(zoomFactor);
         }
@@ -489,6 +494,7 @@ export class NexusCharts {
             series.data = [...data];
             this.syncSeriesToEngine(id);
             this.recomputeIndicators();
+            this.autoScaleVisibleY();
             this.refreshHoverFromStoredPointer();
             this.redrawDrawings();
         };
@@ -499,6 +505,7 @@ export class NexusCharts {
             series.data.push(point);
             this.syncSeriesToEngine(id);
             this.recomputeIndicators();
+            this.autoScaleVisibleY();
             this.refreshHoverFromStoredPointer();
             this.redrawDrawings();
         };
@@ -514,6 +521,7 @@ export class NexusCharts {
             series.data = [];
             this.syncSeriesToEngine(id);
             this.recomputeIndicators();
+            this.autoScaleVisibleY();
             this.refreshHoverFromStoredPointer();
             this.redrawDrawings();
         };
@@ -600,6 +608,7 @@ export class NexusCharts {
             showControlBar: this.uiOptions.showControlBar,
             tooltipMode: this.uiOptions.tooltipMode,
             persistState: this.uiOptions.persistState,
+            autoScaleY: this.uiOptions.autoScaleY,
             showHeatmap: this.analyticsOptions.showHeatmap,
             showAnalyticsPanel: this.analyticsOptions.showRewardCurve || this.analyticsOptions.showPnlCurve,
         };
@@ -861,6 +870,10 @@ export class NexusCharts {
                     this.toggleUiFlag("showTooltip");
                     event.preventDefault();
                     break;
+                case "y":
+                    this.toggleAutoScaleY();
+                    event.preventDefault();
+                    break;
                 case "m":
                     this.toggleTooltipMode();
                     event.preventDefault();
@@ -1091,6 +1104,7 @@ export class NexusCharts {
             ? (options.tooltipMode === "fixed" ? "fixed" : "follow")
             : this.uiOptions.tooltipMode;
         const persistState = options.persistState ?? this.uiOptions.persistState;
+        const autoScaleY = options.autoScaleY ?? this.uiOptions.autoScaleY;
 
         return {
             showAxes: options.showAxes ?? this.uiOptions.showAxes,
@@ -1099,6 +1113,7 @@ export class NexusCharts {
             showControlBar: options.showControlBar ?? this.uiOptions.showControlBar,
             tooltipMode,
             persistState,
+            autoScaleY,
             axisTickCount: tickCount,
             pricePrecision,
         };
@@ -1119,6 +1134,16 @@ export class NexusCharts {
             tooltipMode: this.uiOptions.tooltipMode === "follow" ? "fixed" : "follow",
         };
         this.persistChartState();
+        this.redrawDrawings();
+    }
+
+    private toggleAutoScaleY(): void {
+        this.uiOptions = {
+            ...this.uiOptions,
+            autoScaleY: !this.uiOptions.autoScaleY,
+        };
+        this.persistChartState();
+        this.autoScaleVisibleY();
         this.redrawDrawings();
     }
 
@@ -1185,6 +1210,7 @@ export class NexusCharts {
                 showControlBar: this.uiOptions.showControlBar,
                 tooltipMode: this.uiOptions.tooltipMode,
                 persistState: this.uiOptions.persistState,
+            autoScaleY: this.uiOptions.autoScaleY,
             },
             analytics: {
                 showHeatmap: this.analyticsOptions.showHeatmap,
@@ -1226,7 +1252,7 @@ export class NexusCharts {
         this.setSelectedCandleIndex(nextIndex);
     }
 
-    private jumpSelection(to: "start" | "end"): void {
+        private jumpSelection(to: "start" | "end"): void {
         const geometry = this.buildSeriesGeometry();
         if (!geometry || geometry.candles.length === 0) {
             return;
@@ -1234,7 +1260,51 @@ export class NexusCharts {
         this.setSelectedCandleIndex(to === "start" ? 0 : (geometry.candles.length - 1));
     }
 
+    private autoScaleVisibleY(): void {
+        if (!this.uiOptions.autoScaleY) {
+            return;
+        }
+        const geometry = this.buildSeriesGeometry();
+        const surface = this.overlayCanvas ?? this.canvas;
+        if (!geometry || !surface) {
+            return;
+        }
+        const width = surface.width || 1;
+        const height = surface.height || 1;
+        const aspect = width / Math.max(1, height);
+        const halfWidth = this.currentZoom * aspect;
+        const left = this.currentCenterX - halfWidth;
+        const right = this.currentCenterX + halfWidth;
+
+        let minY = Number.POSITIVE_INFINITY;
+        let maxY = Number.NEGATIVE_INFINITY;
+        let count = 0;
+        for (const candle of geometry.candles) {
+            if (candle.x < left || candle.x > right) {
+                continue;
+            }
+            minY = Math.min(minY, candle.low, candle.open, candle.close, candle.high);
+            maxY = Math.max(maxY, candle.high, candle.open, candle.close, candle.low);
+            count += 1;
+        }
+        if (count === 0 || !Number.isFinite(minY) || !Number.isFinite(maxY)) {
+            return;
+        }
+
+        const padding = 0.08;
+        const targetHalfHeight = Math.max(0.2, ((maxY - minY) * 0.5) + padding);
+        const nextCenterY = (minY + maxY) * 0.5;
+        const nextZoom = targetHalfHeight > this.currentZoom ? Math.min(5.0, targetHalfHeight) : this.currentZoom;
+
+        if (Math.abs(nextCenterY - this.currentCenterY) > 1e-4 || Math.abs(nextZoom - this.currentZoom) > 1e-4) {
+            this.currentCenterY = nextCenterY;
+            this.currentZoom = Math.min(5.0, Math.max(0.2, nextZoom));
+            this.applyCameraView();
+        }
+    }
+
     private getCanvasPointFromClientPosition(clientX: number, clientY: number): ScreenPoint | null {
+
         const surface = this.overlayCanvas ?? this.canvas;
         if (!surface) {
             return null;
@@ -1290,6 +1360,9 @@ export class NexusCharts {
                 break;
             case "tooltip_mode":
                 this.toggleTooltipMode();
+                break;
+            case "autoscale":
+                this.toggleAutoScaleY();
                 break;
             case "heatmap":
                 this.toggleAnalyticsFlag("showHeatmap");
@@ -2169,6 +2242,7 @@ export class NexusCharts {
 
         const buttons: Array<Omit<ControlButtonState, "x" | "y" | "width" | "height">> = [
             { id: "fit", label: "Fit", hint: "F", active: true, kind: "action" },
+            { id: "autoscale", label: "AutoY", hint: "Y", active: this.uiOptions.autoScaleY, kind: "toggle" },
             { id: "axes", label: "Axes", hint: "A", active: this.uiOptions.showAxes, kind: "toggle" },
             { id: "crosshair", label: "Cross", hint: "C", active: this.uiOptions.showCrosshair, kind: "toggle" },
             { id: "tooltip", label: "Tip", hint: "T", active: this.uiOptions.showTooltip, kind: "toggle" },

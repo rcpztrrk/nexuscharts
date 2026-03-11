@@ -1,4 +1,4 @@
-# NexusCharts
+﻿# NexusCharts
 
 NexusCharts is a financial charting engine built with a C++ core compiled to WebAssembly and rendered with WebGL 2.0.
 The project focuses on high-throughput candlestick rendering and a TypeScript-first integration layer for browser applications.
@@ -23,6 +23,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - UI control API (`configureUi`, `getUiState`) with in-chart control bar and keyboard shortcuts.
 - Interactive chart UX: hover crosshair, OHLC tooltip, candle selection, fit-to-data, and pointer-anchored zoom.
 - Dynamic axis labeling with visible-window time labels and nice-stepped price ticks.
+- Optional Y-axis auto-scale for the visible window (autoScaleY).
 - Persistent UI preferences (`localStorage`) and tooltip mode switching (`follow` / `fixed`).
 - Indicator engine (SMA/EMA/RSI) with a secondary pane overlay.
 - Development demo page served from `public/`.
@@ -54,7 +55,8 @@ chart.configureUi({
   showTooltip: true,
   showControlBar: true,
   tooltipMode: "follow",
-  persistState: true
+  persistState: true,
+  autoScaleY: true
 });
 
 chart.addIndicator({ type: "sma", period: 10, color: "#fbbf24" });
@@ -126,7 +128,14 @@ cmd /c npm run dev
 - [x] Phase 5: RL analytics view: real-time agent decision heatmaps, reward/P&L curves, and WASM-based observer data stream.
 - [x] Phase 6: Chart UX refinement: polished time scale labels, crosshair axis labels, tooltip modes, and navigation ergonomics.
 - [ ] **Phase 7:** Indicator and pane engine: moving averages/oscillators, secondary panes, and synchronized scales (in progress).
+- [ ] Phase 8: Multi-series rendering (line/area/histogram) + volume histogram support.
+- [ ] Phase 9: Multi-pane layout with synchronized crosshair and independent scales.
+- [ ] Phase 10: Drawing tools (trend/fib/box/hline) with drag/resize + hit-testing.
+- [ ] Phase 11: Time/price anchoring for drawings and tooltips (not only normalized screen space).
+- [ ] Phase 12: Real-time updates (append candle, update last candle) + large dataset performance tuning.
+- [ ] Phase 13: Theme alignment with Borsa Terminali UI.
 
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE).
+
