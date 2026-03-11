@@ -1996,6 +1996,18 @@ export class NexusCharts {
             return;
         }
 
+        const indicatorPane = this.getIndicatorPaneBounds(width, height);
+        const hoverInLowerPane = !!(
+            indicatorPane
+            && this.hoverCanvasY !== null
+            && this.hoverCanvasY >= indicatorPane.y
+        );
+        const paneTop = hoverInLowerPane && indicatorPane ? indicatorPane.y : 0;
+        const paneBottom = hoverInLowerPane && indicatorPane
+            ? indicatorPane.y + indicatorPane.height
+            : (indicatorPane ? indicatorPane.y : height);
+        const lineY = this.clamp(activeY, paneTop + 2, paneBottom - 2);
+
         ctx.save();
         ctx.strokeStyle = "rgba(120, 188, 255, 0.55)";
         ctx.lineWidth = 1;
@@ -2006,37 +2018,96 @@ export class NexusCharts {
         ctx.lineTo(activeCandle.screenX, height);
         ctx.stroke();
 
+        ctx.save();
         ctx.beginPath();
-        ctx.moveTo(0, activeY);
-        ctx.lineTo(width, activeY);
+        ctx.rect(0, paneTop, width, Math.max(0, paneBottom - paneTop));
+        ctx.clip();
+        ctx.beginPath();
+        ctx.moveTo(0, lineY);
+        ctx.lineTo(width, lineY);
         ctx.stroke();
+        ctx.restore();
 
         ctx.setLineDash([]);
         ctx.fillStyle = "rgba(87, 212, 255, 0.9)";
         ctx.beginPath();
-        ctx.arc(activeCandle.screenX, activeCandle.screenY, 3, 0, Math.PI * 2);
+        ctx.arc(activeCandle.screenX, lineY, 3, 0, Math.PI * 2);
         ctx.fill();
 
-        const worldAtCursor = this.canvasToWorldPoint(activeCandle.screenX, activeY, width, height);
-        const priceAtCursor = this.worldYToPrice(worldAtCursor.y, geometry);
-        const priceText = this.formatPrice(priceAtCursor);
         const timeText = this.formatTimeLabel(activeCandle.time);
 
         ctx.font = "11px 'Segoe UI', sans-serif";
 
-        const priceTextWidth = ctx.measureText(priceText).width;
-        const priceBoxWidth = priceTextWidth + 12;
-        const priceBoxHeight = 18;
-        const priceBoxX = width - priceBoxWidth - 4;
-        const priceBoxY = Math.max(4, Math.min(height - priceBoxHeight - 24, activeY - 9));
+        if (!hoverInLowerPane) {
+            const worldAtCursor = this.canvasToWorldPoint(activeCandle.screenX, lineY, width, height);
+            const priceAtCursor = this.worldYToPrice(worldAtCursor.y, geometry);
+            const priceText = this.formatPrice(priceAtCursor);
+            const priceTextWidth = ctx.measureText(priceText).width;
+            const priceBoxWidth = priceTextWidth + 12;
+            const priceBoxHeight = 18;
+            const priceBoxX = width - priceBoxWidth - 4;
+            const priceBoxY = Math.max(4, Math.min(height - priceBoxHeight - 24, lineY - 9));
 
-        ctx.fillStyle = "rgba(10, 24, 44, 0.95)";
-        ctx.strokeStyle = "rgba(120, 188, 255, 0.55)";
-        ctx.lineWidth = 1;
-        ctx.fillRect(priceBoxX, priceBoxY, priceBoxWidth, priceBoxHeight);
-        ctx.strokeRect(priceBoxX, priceBoxY, priceBoxWidth, priceBoxHeight);
-        ctx.fillStyle = "#8fd8ff";
-        ctx.fillText(priceText, priceBoxX + 6, priceBoxY + 13);
+            ctx.fillStyle = "rgba(10, 24, 44, 0.95)";
+            ctx.strokeStyle = "rgba(120, 188, 255, 0.55)";
+            ctx.lineWidth = 1;
+            ctx.fillRect(priceBoxX, priceBoxY, priceBoxWidth, priceBoxHeight);
+            ctx.strokeRect(priceBoxX, priceBoxY, priceBoxWidth, priceBoxHeight);
+            ctx.fillStyle = "#8fd8ff";
+            ctx.fillText(priceText, priceBoxX + 6, priceBoxY + 13);
+        } else if (indicatorPane) {
+            const lowerIndicators = Array.from(this.indicatorStore.values()).filter((indicator) => indicator.pane === "lower");
+            if (lowerIndicators.length > 0) {
+                let minValue = Number.POSITIVE_INFINITY;
+                let maxValue = Number.NEGATIVE_INFINITY;
+                let allRsi = true;
+                for (const indicator of lowerIndicators) {
+                    if (indicator.type !== "rsi") {
+                        allRsi = false;
+                    }
+                    for (const value of indicator.values) {
+                        if (!Number.isFinite(value ?? NaN)) {
+                            continue;
+                        }
+                        minValue = Math.min(minValue, value as number);
+                        maxValue = Math.max(maxValue, value as number);
+                    }
+                }
+                if (allRsi) {
+                    minValue = 0;
+                    maxValue = 100;
+                } else if (Math.abs(maxValue - minValue) < 1e-6) {
+                    maxValue += 1;
+                    minValue -= 1;
+                }
+
+                if (Number.isFinite(minValue) && Number.isFinite(maxValue)) {
+                    const t = this.clamp(
+                        1 - ((lineY - indicatorPane.innerY) / Math.max(1, indicatorPane.innerHeight)),
+                        0,
+                        1
+                    );
+                    const valueAtCursor = minValue + (t * (maxValue - minValue));
+                    const labelPrefix = allRsi ? "RSI" : "V";
+                    const labelText = `${labelPrefix} ${valueAtCursor.toFixed(2)}`;
+
+                    const labelWidth = ctx.measureText(labelText).width + 12;
+                    const labelHeight = 18;
+                    const labelX = width - labelWidth - 4;
+                    const labelY = Math.max(
+                        indicatorPane.y + 4,
+                        Math.min(indicatorPane.y + indicatorPane.height - labelHeight - 4, lineY - 9)
+                    );
+
+                    ctx.fillStyle = "rgba(10, 24, 44, 0.95)";
+                    ctx.strokeStyle = "rgba(120, 188, 255, 0.5)";
+                    ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
+                    ctx.strokeRect(labelX, labelY, labelWidth, labelHeight);
+                    ctx.fillStyle = "#9dc7f5";
+                    ctx.fillText(labelText, labelX + 6, labelY + 13);
+                }
+            }
+        }
 
         const timeTextWidth = ctx.measureText(timeText).width;
         const timeBoxWidth = timeTextWidth + 12;
@@ -2330,6 +2401,13 @@ export class NexusCharts {
             return;
         }
 
+        const indicatorPane = this.getIndicatorPaneBounds(width, height);
+        const hoverInLowerPane = !!(
+            indicatorPane
+            && this.hoverCanvasY !== null
+            && this.hoverCanvasY >= indicatorPane.y
+        );
+
         const anchorX = this.hoverCanvasX ?? activeCandle.screenX;
         const anchorY = this.hoverCanvasY ?? activeCandle.screenY;
         const delta = activeCandle.close - activeCandle.open;
@@ -2347,6 +2425,49 @@ export class NexusCharts {
 
         ctx.save();
         ctx.font = "12px 'Segoe UI', sans-serif";
+
+        if (hoverInLowerPane && indicatorPane) {
+            const lowerIndicators = Array.from(this.indicatorStore.values()).filter((indicator) => indicator.pane === "lower");
+            const indicatorLines: string[] = [];
+            for (const indicator of lowerIndicators) {
+                const value = indicator.values[activeCandle.index];
+                if (!Number.isFinite(value ?? NaN)) {
+                    continue;
+                }
+                indicatorLines.push(`${indicator.type.toUpperCase()} ${Number(value).toFixed(2)}`);
+            }
+            if (indicatorLines.length === 0) {
+                ctx.restore();
+                return;
+            }
+
+            const timeLabel = `T ${activeCandle.time}`;
+            const allLines = [timeLabel, ...indicatorLines];
+            const maxWidth = Math.max(...allLines.map((line) => ctx.measureText(line).width));
+            const boxWidth = maxWidth + 18;
+            const boxHeight = 18 + (allLines.length * 14);
+            const boxX = Math.min(width - boxWidth - 10, anchorX + 14);
+            const boxY = Math.max(
+                indicatorPane.y + 6,
+                Math.min(indicatorPane.y + indicatorPane.height - boxHeight - 6, anchorY - 10)
+            );
+
+            ctx.fillStyle = "rgba(7, 18, 34, 0.92)";
+            ctx.strokeStyle = "rgba(120, 148, 188, 0.45)";
+            ctx.lineWidth = 1;
+            ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+            ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+
+            ctx.fillStyle = "#9bd1ff";
+            ctx.fillText(allLines[0], boxX + 9, boxY + 14);
+            ctx.fillStyle = "#dce7ff";
+            for (let i = 1; i < allLines.length; i += 1) {
+                ctx.fillText(allLines[i], boxX + 9, boxY + 14 + (i * 14));
+            }
+            ctx.restore();
+            return;
+        }
+
         const maxWidth = Math.max(...lines.map((line) => ctx.measureText(line).width));
         const boxWidth = maxWidth + 18;
         const boxHeight = 18 + (lines.length * 14);
