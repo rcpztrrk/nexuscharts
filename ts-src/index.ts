@@ -47,9 +47,10 @@ export interface CandleDataPoint {
     high: number;
     low: number;
     close: number;
+    volume?: number;
 }
 
-export type SeriesType = "candlestick" | "line" | "area" | "histogram";
+export type SeriesType = "candlestick" | "line" | "area" | "histogram" | "volume";
 
 export type AgentAction = "buy" | "sell" | "hold";
 
@@ -498,10 +499,10 @@ export class NexusCharts {
         }
 
         const style: SeriesStyle = {
-            color: options.color ?? (type === "histogram" ? "#fbbf24" : "#60a5fa"),
-            lineWidth: options.lineWidth ?? (type === "histogram" ? 1 : 2),
-            opacity: options.opacity ?? (type === "area" ? 0.25 : 1),
-            barWidthRatio: this.clamp(options.barWidthRatio ?? 0.6, 0.1, 1),
+            color: options.color ?? (type === "histogram" ? "#fbbf24" : type === "volume" ? "#38bdf8" : "#60a5fa"),
+            lineWidth: options.lineWidth ?? (type === "histogram" || type === "volume" ? 1 : 2),
+            opacity: options.opacity ?? (type === "area" ? 0.25 : type === "volume" ? 0.22 : 1),
+            barWidthRatio: this.clamp(options.barWidthRatio ?? (type === "volume" ? 0.55 : 0.6), 0.1, 1),
         };
         this.seriesStore.set(id, { type, data: [], style });
 
@@ -1974,12 +1975,59 @@ export class NexusCharts {
             spacing = sum / Math.max(1, limit);
         }
 
+        const indicatorPane = this.getIndicatorPaneBounds(width, height);
+        const mainBottom = indicatorPane ? indicatorPane.y : height;
+        const mainHeight = Math.max(1, mainBottom);
+        const volumeBottom = mainBottom - 6;
+        const volumeTop = Math.max(6, volumeBottom - Math.max(24, mainHeight * 0.2));
+
         const baseWorldY = this.priceToWorldY(geometry.minPrice, geometry);
         const baseY = this.worldToCanvasPoint(candles[0].x, baseWorldY, width, height).y;
 
         for (const series of extraSeries) {
             const count = Math.min(series.data.length, candles.length);
             if (count <= 0) {
+                continue;
+            }
+
+            ctx.save();
+            ctx.strokeStyle = series.style.color;
+            ctx.lineWidth = series.style.lineWidth;
+            ctx.lineJoin = "round";
+            ctx.lineCap = "round";
+
+            if (series.type === "volume") {
+                let minValue = Number.POSITIVE_INFINITY;
+                let maxValue = Number.NEGATIVE_INFINITY;
+                const values: number[] = [];
+                for (let i = 0; i < count; i += 1) {
+                    const raw = series.data[i].volume;
+                    const value = Number.isFinite(raw ?? NaN) ? Number(raw) : Math.abs(series.data[i].close - series.data[i].open);
+                    values.push(value);
+                    minValue = Math.min(minValue, value);
+                    maxValue = Math.max(maxValue, value);
+                }
+
+                if (!Number.isFinite(minValue) || !Number.isFinite(maxValue)) {
+                    ctx.restore();
+                    continue;
+                }
+                if (Math.abs(maxValue - minValue) < 1e-6) {
+                    maxValue += 1;
+                    minValue = Math.max(0, minValue - 1);
+                }
+
+                const barWidth = Math.max(1, spacing * series.style.barWidthRatio);
+                ctx.fillStyle = series.style.color;
+                ctx.globalAlpha = series.style.opacity;
+                for (let i = 0; i < count; i += 1) {
+                    const t = this.clamp((values[i] - minValue) / (maxValue - minValue), 0, 1);
+                    const y = volumeBottom - (t * (volumeBottom - volumeTop));
+                    const barHeight = Math.max(1, volumeBottom - y);
+                    ctx.fillRect(screenXs[i] - (barWidth * 0.5), y, barWidth, barHeight);
+                }
+
+                ctx.restore();
                 continue;
             }
 
@@ -1997,14 +2045,9 @@ export class NexusCharts {
             }
 
             if (points.length == 0) {
+                ctx.restore();
                 continue;
             }
-
-            ctx.save();
-            ctx.strokeStyle = series.style.color;
-            ctx.lineWidth = series.style.lineWidth;
-            ctx.lineJoin = "round";
-            ctx.lineCap = "round";
 
             if (series.type === "line" || series.type === "area") {
                 ctx.beginPath();

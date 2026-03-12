@@ -70,6 +70,7 @@
         const generateCandles = (count = 36) => {
             const candles = [];
             let price = 102;
+            const volumeBase = 180;
             for (let i = 0; i < count; i += 1) {
                 const wave = Math.sin(i * 0.32) * 1.4;
                 const pull = Math.cos(i * 0.19) * 0.9;
@@ -77,6 +78,7 @@
 
                 const open = price;
                 const close = open + wave + pull + noise;
+                const volume = volumeBase + (Math.abs(close - open) * 420) + (Math.random() * 120);
                 const high = Math.max(open, close) + 0.7 + (Math.random() * 0.9);
                 const low = Math.min(open, close) - 0.7 - (Math.random() * 0.9);
 
@@ -85,7 +87,8 @@
                     open: Number(open.toFixed(2)),
                     high: Number(high.toFixed(2)),
                     low: Number(low.toFixed(2)),
-                    close: Number(close.toFixed(2))
+                    close: Number(close.toFixed(2)),
+                    volume: Number(volume.toFixed(2))
                 });
 
                 price = close;
@@ -137,6 +140,9 @@
 
             const histSeries = chart.createSeries({ type: "histogram", color: "#f59e0b", opacity: 0.18, barWidthRatio: 0.45 });
             histSeries.setData(candles);
+
+            const volumeSeries = chart.createSeries({ type: "volume", color: "#38bdf8", opacity: 0.22, barWidthRatio: 0.55 });
+            volumeSeries.setData(candles);
 
             chart.addIndicator({ type: "sma", period: 8, color: "#fbbf24" });
             chart.addIndicator({ type: "ema", period: 13, color: "#7dd3fc" });
@@ -206,4 +212,3 @@
 </body>
 
 </html>
-
