@@ -48,9 +48,10 @@ export interface CandleDataPoint {
     low: number;
     close: number;
     volume?: number;
+    value?: number;
 }
 
-export type SeriesType = "candlestick" | "line" | "area" | "histogram" | "volume";
+export type SeriesType = "candlestick" | "line" | "area" | "histogram" | "volume" | "custom";
 
 export type AgentAction = "buy" | "sell" | "hold";
 
@@ -101,7 +102,33 @@ export interface SeriesOptions {
     lineWidth?: number;
     opacity?: number;
     barWidthRatio?: number;
+    valueKey?: SeriesValueKey;
+    renderer?: CustomSeriesRenderer;
 }
+
+export type SeriesValueKey = "open" | "high" | "low" | "close" | "volume" | "value";
+
+export interface CustomSeriesPoint {
+    x: number;
+    y: number;
+    index: number;
+    source: CandleDataPoint;
+}
+
+export interface CustomSeriesContext {
+    width: number;
+    height: number;
+    baseY: number;
+    geometry: SeriesGeometry;
+    style: SeriesStyle;
+    valueKey: SeriesValueKey;
+}
+
+export type CustomSeriesRenderer = (
+    ctx: CanvasRenderingContext2D,
+    points: CustomSeriesPoint[],
+    context: CustomSeriesContext
+) => void;
 
 interface SeriesStyle {
     color: string;
@@ -285,7 +312,7 @@ export class NexusCharts {
     private hoveredCandle: HoveredCandle | null = null;
     private selectedCandleIndex: number | null = null;
     private cleanupHandlers: Array<() => void> = [];
-    private readonly seriesStore = new Map<string, { type: SeriesType; data: CandleDataPoint[]; style: SeriesStyle }>();
+    private readonly seriesStore = new Map<string, { type: SeriesType; data: CandleDataPoint[]; style: SeriesStyle; valueKey: SeriesValueKey; renderer?: CustomSeriesRenderer }>();
     private readonly drawingStore = new Map<string, StoredDrawing>();
     private readonly observerFrames: NormalizedObserverFrame[] = [];
     private readonly indicatorStore = new Map<string, IndicatorSeries>();
@@ -499,12 +526,14 @@ export class NexusCharts {
         }
 
         const style: SeriesStyle = {
-            color: options.color ?? (type === "histogram" ? "#fbbf24" : type === "volume" ? "#38bdf8" : "#60a5fa"),
+            color: options.color ?? (type === "histogram" ? "#fbbf24" : type === "volume" ? "#38bdf8" : type === "custom" ? "#f472b6" : "#60a5fa"),
             lineWidth: options.lineWidth ?? (type === "histogram" || type === "volume" ? 1 : 2),
             opacity: options.opacity ?? (type === "area" ? 0.25 : type === "volume" ? 0.22 : 1),
             barWidthRatio: this.clamp(options.barWidthRatio ?? (type === "volume" ? 0.55 : 0.6), 0.1, 1),
         };
-        this.seriesStore.set(id, { type, data: [], style });
+        const valueKey: SeriesValueKey = options.valueKey
+            ?? (type === "volume" ? "volume" : "close");
+        this.seriesStore.set(id, { type, data: [], style, valueKey, renderer: options.renderer });
 
         const setData = (data: CandleDataPoint[]) => {
             const series = this.seriesStore.get(id);
@@ -1622,6 +1651,25 @@ export class NexusCharts {
         return ((price - geometry.minPrice) * geometry.scale) - 0.85;
     }
 
+    private resolveSeriesValue(point: CandleDataPoint, key: SeriesValueKey): number | null {
+        switch (key) {
+            case "open":
+                return point.open;
+            case "high":
+                return point.high;
+            case "low":
+                return point.low;
+            case "close":
+                return point.close;
+            case "volume":
+                return point.volume ?? null;
+            case "value":
+                return point.value ?? null;
+            default:
+                return null;
+        }
+    }
+
     private niceStep(rawStep: number): number {
         if (!Number.isFinite(rawStep) || rawStep <= 0) {
             return 1;
@@ -2001,8 +2049,10 @@ export class NexusCharts {
                 let maxValue = Number.NEGATIVE_INFINITY;
                 const values: number[] = [];
                 for (let i = 0; i < count; i += 1) {
-                    const raw = series.data[i].volume;
-                    const value = Number.isFinite(raw ?? NaN) ? Number(raw) : Math.abs(series.data[i].close - series.data[i].open);
+                    const raw = this.resolveSeriesValue(series.data[i], series.valueKey);
+                    const value = Number.isFinite(raw ?? NaN)
+                        ? Number(raw)
+                        : Math.abs(series.data[i].close - series.data[i].open);
                     values.push(value);
                     minValue = Math.min(minValue, value);
                     maxValue = Math.max(maxValue, value);
@@ -2031,20 +2081,44 @@ export class NexusCharts {
                 continue;
             }
 
-            const points: Array<{ x: number; y: number }> = [];
+            const points: CustomSeriesPoint[] = [];
             for (let i = 0; i < count; i += 1) {
-                const value = series.data[i].close;
+                const value = this.resolveSeriesValue(series.data[i], series.valueKey);
                 if (!Number.isFinite(value ?? NaN)) {
                     continue;
                 }
-                const worldY = this.priceToWorldY(value, geometry);
+                const worldY = this.priceToWorldY(value as number, geometry);
                 points.push({
                     x: screenXs[i],
                     y: this.worldToCanvasPoint(candles[i].x, worldY, width, height).y,
+                    index: i,
+                    source: series.data[i],
                 });
             }
 
             if (points.length == 0) {
+                ctx.restore();
+                continue;
+            }
+
+            if (series.type === "custom") {
+                if (series.renderer) {
+                    series.renderer(ctx, points, {
+                        width,
+                        height,
+                        baseY,
+                        geometry,
+                        style: series.style,
+                        valueKey: series.valueKey,
+                    });
+                } else {
+                    ctx.beginPath();
+                    ctx.moveTo(points[0].x, points[0].y);
+                    for (let i = 1; i < points.length; i += 1) {
+                        ctx.lineTo(points[i].x, points[i].y);
+                    }
+                    ctx.stroke();
+                }
                 ctx.restore();
                 continue;
             }
