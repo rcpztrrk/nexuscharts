@@ -49,7 +49,7 @@ export interface CandleDataPoint {
     close: number;
 }
 
-export type SeriesType = "candlestick";
+export type SeriesType = "candlestick" | "line" | "area" | "histogram";
 
 export type AgentAction = "buy" | "sell" | "hold";
 
@@ -96,6 +96,17 @@ export interface HoveredCandle {
 export interface SeriesOptions {
     id?: string;
     type?: SeriesType;
+    color?: string;
+    lineWidth?: number;
+    opacity?: number;
+    barWidthRatio?: number;
+}
+
+interface SeriesStyle {
+    color: string;
+    lineWidth: number;
+    opacity: number;
+    barWidthRatio: number;
 }
 
 export type IndicatorType = "sma" | "ema" | "rsi";
@@ -273,7 +284,7 @@ export class NexusCharts {
     private hoveredCandle: HoveredCandle | null = null;
     private selectedCandleIndex: number | null = null;
     private cleanupHandlers: Array<() => void> = [];
-    private readonly seriesStore = new Map<string, { type: SeriesType; data: CandleDataPoint[] }>();
+    private readonly seriesStore = new Map<string, { type: SeriesType; data: CandleDataPoint[]; style: SeriesStyle }>();
     private readonly drawingStore = new Map<string, StoredDrawing>();
     private readonly observerFrames: NormalizedObserverFrame[] = [];
     private readonly indicatorStore = new Map<string, IndicatorSeries>();
@@ -486,7 +497,13 @@ export class NexusCharts {
             throw new Error(`[NexusCharts] Series id '${id}' already exists.`);
         }
 
-        this.seriesStore.set(id, { type, data: [] });
+        const style: SeriesStyle = {
+            color: options.color ?? (type === "histogram" ? "#fbbf24" : "#60a5fa"),
+            lineWidth: options.lineWidth ?? (type === "histogram" ? 1 : 2),
+            opacity: options.opacity ?? (type === "area" ? 0.25 : 1),
+            barWidthRatio: this.clamp(options.barWidthRatio ?? 0.6, 0.1, 1),
+        };
+        this.seriesStore.set(id, { type, data: [], style });
 
         const setData = (data: CandleDataPoint[]) => {
             const series = this.seriesStore.get(id);
@@ -1912,6 +1929,7 @@ export class NexusCharts {
             ctx.restore();
         }
 
+        this.renderSeriesOverlay(ctx, width, height, geometry);
         this.renderAxesOverlay(ctx, width, height, geometry);
         this.renderIndicatorOverlay(ctx, width, height, geometry);
         this.renderAnalyticsOverlay(ctx, width, height, toCanvas);
@@ -1919,6 +1937,109 @@ export class NexusCharts {
         this.renderCrosshairOverlay(ctx, width, height);
         this.renderTooltipOverlay(ctx, width, height);
         this.renderControlBarOverlay(ctx, width, height);
+    }
+
+    private renderSeriesOverlay(
+        ctx: CanvasRenderingContext2D,
+        width: number,
+        height: number,
+        geometry: SeriesGeometry | null
+    ): void {
+        if (!geometry) {
+            return;
+        }
+
+        const candles = geometry.candles;
+        if (candles.length == 0) {
+            return;
+        }
+
+        const extraSeries = Array.from(this.seriesStore.values()).filter((series) => series.type !== "candlestick" && series.data.length > 0);
+        if (extraSeries.length === 0) {
+            return;
+        }
+
+        const screenXs: number[] = [];
+        for (const candle of candles) {
+            screenXs.push(this.worldToCanvasPoint(candle.x, candle.close, width, height).x);
+        }
+
+        let spacing = 10;
+        if (screenXs.length > 1) {
+            let sum = 0;
+            const limit = Math.min(screenXs.length - 1, 20);
+            for (let i = 1; i <= limit; i += 1) {
+                sum += Math.abs(screenXs[i] - screenXs[i - 1]);
+            }
+            spacing = sum / Math.max(1, limit);
+        }
+
+        const baseWorldY = this.priceToWorldY(geometry.minPrice, geometry);
+        const baseY = this.worldToCanvasPoint(candles[0].x, baseWorldY, width, height).y;
+
+        for (const series of extraSeries) {
+            const count = Math.min(series.data.length, candles.length);
+            if (count <= 0) {
+                continue;
+            }
+
+            const points: Array<{ x: number; y: number }> = [];
+            for (let i = 0; i < count; i += 1) {
+                const value = series.data[i].close;
+                if (!Number.isFinite(value ?? NaN)) {
+                    continue;
+                }
+                const worldY = this.priceToWorldY(value, geometry);
+                points.push({
+                    x: screenXs[i],
+                    y: this.worldToCanvasPoint(candles[i].x, worldY, width, height).y,
+                });
+            }
+
+            if (points.length == 0) {
+                continue;
+            }
+
+            ctx.save();
+            ctx.strokeStyle = series.style.color;
+            ctx.lineWidth = series.style.lineWidth;
+            ctx.lineJoin = "round";
+            ctx.lineCap = "round";
+
+            if (series.type === "line" || series.type === "area") {
+                ctx.beginPath();
+                ctx.moveTo(points[0].x, points[0].y);
+                for (let i = 1; i < points.length; i += 1) {
+                    ctx.lineTo(points[i].x, points[i].y);
+                }
+                ctx.stroke();
+
+                if (series.type === "area") {
+                    ctx.globalAlpha = series.style.opacity;
+                    ctx.fillStyle = series.style.color;
+                    ctx.beginPath();
+                    ctx.moveTo(points[0].x, points[0].y);
+                    for (let i = 1; i < points.length; i += 1) {
+                        ctx.lineTo(points[i].x, points[i].y);
+                    }
+                    ctx.lineTo(points[points.length - 1].x, baseY);
+                    ctx.lineTo(points[0].x, baseY);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            } else if (series.type === "histogram") {
+                const barWidth = Math.max(1, spacing * series.style.barWidthRatio);
+                ctx.fillStyle = series.style.color;
+                ctx.globalAlpha = series.style.opacity;
+                for (const point of points) {
+                    const topY = Math.min(point.y, baseY);
+                    const barHeight = Math.max(1, Math.abs(point.y - baseY));
+                    ctx.fillRect(point.x - (barWidth * 0.5), topY, barWidth, barHeight);
+                }
+            }
+
+            ctx.restore();
+        }
     }
 
     private renderAxesOverlay(

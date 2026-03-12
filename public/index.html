@@ -129,6 +129,15 @@
             const candles = generateCandles(42);
             series.setData(candles);
 
+            const lineSeries = chart.createSeries({ type: "line", color: "#7dd3fc", lineWidth: 2 });
+            lineSeries.setData(candles);
+
+            const areaSeries = chart.createSeries({ type: "area", color: "#22c55e", opacity: 0.12, lineWidth: 1.5 });
+            areaSeries.setData(candles);
+
+            const histSeries = chart.createSeries({ type: "histogram", color: "#f59e0b", opacity: 0.18, barWidthRatio: 0.45 });
+            histSeries.setData(candles);
+
             chart.addIndicator({ type: "sma", period: 8, color: "#fbbf24" });
             chart.addIndicator({ type: "ema", period: 13, color: "#7dd3fc" });
             chart.addIndicator({ type: "rsi", period: 14, color: "#a78bfa", pane: "lower" });
