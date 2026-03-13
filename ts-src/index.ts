@@ -329,6 +329,8 @@ export class NexusCharts {
     private hoveredDrawingId: string | null = null;
     private activeDrawingId: string | null = null;
     private activeDrawingDrag: DrawingDragState | null = null;
+    private contextMenu: HTMLDivElement | null = null;
+    private contextMenuTargetId: string | null = null;
     private readonly observerFrames: NormalizedObserverFrame[] = [];
     private readonly indicatorStore = new Map<string, IndicatorSeries>();
     private indicatorPaneHeightRatio: number = 0.26;
@@ -643,6 +645,15 @@ export class NexusCharts {
     public removeDrawing(id: string): boolean {
         const removed = this.drawingStore.delete(id);
         if (removed) {
+            if (this.hoveredDrawingId === id) {
+                this.hoveredDrawingId = null;
+            }
+            if (this.activeDrawingId === id) {
+                this.activeDrawingId = null;
+            }
+            if (this.activeDrawingDrag?.id === id) {
+                this.activeDrawingDrag = null;
+            }
             this.redrawDrawings();
         }
         return removed;
@@ -984,6 +995,28 @@ export class NexusCharts {
             this.zoom(zoomFactor);
         };
 
+        const onContextMenu = (event: MouseEvent) => {
+            event.preventDefault();
+            this.updateHoverFromClientPosition(event.clientX, event.clientY);
+            const targetId = this.hoveredDrawingId ?? this.activeDrawingId;
+            if (targetId) {
+                this.showContextMenu(event.clientX, event.clientY, targetId);
+            } else {
+                this.hideContextMenu();
+            }
+        };
+
+        const onGlobalDown = (event: MouseEvent) => {
+            if (!this.contextMenu || this.contextMenu.style.display === "none") {
+                return;
+            }
+            const target = event.target as Node | null;
+            if (target && this.contextMenu.contains(target)) {
+                return;
+            }
+            this.hideContextMenu();
+        };
+
         const onDoubleClick = () => {
             this.fitToData();
         };
@@ -1050,6 +1083,7 @@ export class NexusCharts {
                     break;
                 case "escape":
                     this.clearSelectedCandle();
+                    this.hideContextMenu();
                     event.preventDefault();
                     break;
                 default:
@@ -1083,8 +1117,10 @@ export class NexusCharts {
         canvas.addEventListener("click", onClick);
         canvas.addEventListener("dblclick", onDoubleClick);
         canvas.addEventListener("wheel", onWheel, { passive: false });
+        canvas.addEventListener("contextmenu", onContextMenu);
         window.addEventListener("resize", onResize);
         window.addEventListener("keydown", onKeyDown);
+        window.addEventListener("mousedown", onGlobalDown);
 
         this.cleanupHandlers.push(() => canvas.removeEventListener("mousedown", onMouseDown));
         this.cleanupHandlers.push(() => window.removeEventListener("mousemove", onMouseMove));
@@ -1094,8 +1130,10 @@ export class NexusCharts {
         this.cleanupHandlers.push(() => canvas.removeEventListener("click", onClick));
         this.cleanupHandlers.push(() => canvas.removeEventListener("dblclick", onDoubleClick));
         this.cleanupHandlers.push(() => canvas.removeEventListener("wheel", onWheel));
+        this.cleanupHandlers.push(() => canvas.removeEventListener("contextmenu", onContextMenu));
         this.cleanupHandlers.push(() => window.removeEventListener("resize", onResize));
         this.cleanupHandlers.push(() => window.removeEventListener("keydown", onKeyDown));
+        this.cleanupHandlers.push(() => window.removeEventListener("mousedown", onGlobalDown));
     }
 
     private detachInteractionHandlers(): void {
@@ -1628,6 +1666,36 @@ export class NexusCharts {
         return null;
     }
 
+    private showContextMenu(clientX: number, clientY: number, drawingId: string): void {
+        if (!this.contextMenu || !this.overlayCanvas) {
+            return;
+        }
+        const parent = this.overlayCanvas.parentElement;
+        if (!parent) {
+            return;
+        }
+
+        const rect = parent.getBoundingClientRect();
+        this.contextMenuTargetId = drawingId;
+        this.contextMenu.style.display = "block";
+
+        const menuRect = this.contextMenu.getBoundingClientRect();
+        const maxX = rect.width - menuRect.width - 6;
+        const maxY = rect.height - menuRect.height - 6;
+        const left = Math.max(6, Math.min(maxX, clientX - rect.left));
+        const top = Math.max(6, Math.min(maxY, clientY - rect.top));
+        this.contextMenu.style.left = `${left}px`;
+        this.contextMenu.style.top = `${top}px`;
+    }
+
+    private hideContextMenu(): void {
+        if (!this.contextMenu) {
+            return;
+        }
+        this.contextMenu.style.display = "none";
+        this.contextMenuTargetId = null;
+    }
+
     private updateHoveredDrawingFromCanvas(canvasX: number, canvasY: number, width: number, height: number): void {
         const world = this.canvasToWorldPoint(canvasX, canvasY, width, height);
         const hit = this.hitTestDrawing(world, width, height);
@@ -2101,6 +2169,48 @@ export class NexusCharts {
         overlay.style.width = "100%";
         overlay.style.height = "100%";
         overlay.style.pointerEvents = "none";
+
+        if (getComputedStyle(parent).position === "static") {
+            parent.style.position = "relative";
+        }
+
+        const menu = document.createElement("div");
+        menu.style.position = "absolute";
+        menu.style.display = "none";
+        menu.style.zIndex = "20";
+        menu.style.minWidth = "140px";
+        menu.style.background = "rgba(10, 24, 44, 0.96)";
+        menu.style.border = "1px solid rgba(120, 148, 188, 0.5)";
+        menu.style.borderRadius = "6px";
+        menu.style.padding = "4px";
+        menu.style.font = "12px 'Segoe UI', sans-serif";
+        menu.style.color = "#dce7ff";
+        menu.style.boxShadow = "0 8px 22px rgba(0, 0, 0, 0.35)";
+        menu.style.pointerEvents = "auto";
+
+        const deleteItem = document.createElement("div");
+        deleteItem.textContent = "Delete drawing";
+        deleteItem.style.padding = "6px 10px";
+        deleteItem.style.cursor = "pointer";
+        deleteItem.style.borderRadius = "4px";
+        deleteItem.onmouseenter = () => {
+            deleteItem.style.background = "rgba(255, 107, 122, 0.15)";
+        };
+        deleteItem.onmouseleave = () => {
+            deleteItem.style.background = "transparent";
+        };
+        deleteItem.onclick = (event) => {
+            event.stopPropagation();
+            const id = this.contextMenuTargetId;
+            if (id) {
+                this.removeDrawing(id);
+            }
+            this.hideContextMenu();
+        };
+        menu.appendChild(deleteItem);
+
+        parent.appendChild(menu);
+        this.contextMenu = menu;
 
         parent.appendChild(overlay);
         this.overlayCanvas = overlay;
