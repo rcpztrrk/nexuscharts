@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -96,6 +96,27 @@
             return candles;
         };
 
+        const generateNextCandle = (index, lastClose) => {
+            const wave = Math.sin(index * 0.32) * 1.4;
+            const pull = Math.cos(index * 0.19) * 0.9;
+            const noise = (Math.random() - 0.5) * 0.8;
+
+            const open = lastClose;
+            const close = open + wave + pull + noise;
+            const volumeBase = 180;
+            const volume = volumeBase + (Math.abs(close - open) * 420) + (Math.random() * 120);
+            const high = Math.max(open, close) + 0.7 + (Math.random() * 0.9);
+            const low = Math.min(open, close) - 0.7 - (Math.random() * 0.9);
+
+            return {
+                time: index + 1,
+                open: Number(open.toFixed(2)),
+                high: Number(high.toFixed(2)),
+                low: Number(low.toFixed(2)),
+                close: Number(close.toFixed(2)),
+                volume: Number(volume.toFixed(2))
+            };
+        };
         const buildObserverFrames = (candles) => {
             const frames = [];
             let cumulativePnl = 0;
@@ -192,35 +213,65 @@
             const initialFrames = buildObserverFrames(candles);
             chart.setObserverFrames(initialFrames);
 
+            const anchorStart = candles[Math.max(2, Math.floor(candles.length * 0.25))];
+            const anchorEnd = candles[Math.max(10, Math.floor(candles.length * 0.7))];
+
             chart.addDrawing({
                 type: "line",
-                points: [{ x: -0.8, y: -0.2 }, { x: 0.75, y: 0.45 }],
+                points: [
+                    { time: anchorStart.time, price: anchorStart.low - 0.6 },
+                    { time: anchorEnd.time, price: anchorEnd.high + 0.8 }
+                ],
                 style: { color: "#ffcc66", width: 2 }
             });
 
             chart.addDrawing({
                 type: "horizontal_line",
-                y: -0.35,
+                price: candles[Math.floor(candles.length * 0.5)].close - 1.2,
                 style: { color: "#5ea6ff", width: 1.5, dash: [6, 4] }
+            });
+
+            chart.addDrawing({
+                type: "vertical_line",
+                time: anchorEnd.time,
+                style: { color: "#5ea6ff", width: 1.2, dash: [4, 4] }
             });
 
             let streamIndex = initialFrames.length;
             let cumulativePnl = initialFrames.length ? initialFrames[initialFrames.length - 1].pnl : 0;
+            let liveIndex = candles.length;
+            let lastClose = candles[candles.length - 1].close;
 
             setInterval(() => {
-                const reward = Math.sin(streamIndex * 0.33) * 0.65 + ((Math.random() - 0.5) * 0.25);
+                const nextCandle = generateNextCandle(liveIndex, lastClose);
+                candles.push(nextCandle);
+                lastClose = nextCandle.close;
+
+                series.update(nextCandle);
+                lineSeries.update(nextCandle);
+                areaSeries.update(nextCandle);
+                histSeries.update(nextCandle);
+                volumeSeries.update(nextCandle);
+
+                const customPoint = {
+                    ...nextCandle,
+                    value: nextCandle.close + (Math.sin(liveIndex * 0.55) * 1.4)
+                };
+                customSeries.update(customPoint);
+
+                const reward = nextCandle.close - nextCandle.open;
                 cumulativePnl += reward;
 
                 let action = "hold";
-                if (reward > 0.12) action = "buy";
-                else if (reward < -0.12) action = "sell";
+                if (reward > 0.2) action = "buy";
+                else if (reward < -0.2) action = "sell";
 
-                const confidence = Math.min(1, 0.5 + (Math.abs(reward) / 0.85));
+                const confidence = Math.min(1, 0.45 + (Math.abs(reward) / 3.5));
                 const x = -0.9 + ((1.8 * (streamIndex % 180)) / 179);
                 const y = action === "buy" ? 0.48 : action === "sell" ? -0.48 : 0.0;
 
                 chart.pushObserverFrame({
-                    time: streamIndex + 1,
+                    time: nextCandle.time,
                     reward: Number(reward.toFixed(3)),
                     pnl: Number(cumulativePnl.toFixed(3)),
                     confidence: Number(confidence.toFixed(3)),
@@ -239,6 +290,7 @@
                 }
 
                 streamIndex += 1;
+                liveIndex += 1;
             }, 1200);
         });
 

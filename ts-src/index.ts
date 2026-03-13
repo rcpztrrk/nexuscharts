@@ -168,6 +168,8 @@ export interface SeriesApi {
 export interface DrawingPoint {
     x: number; // normalized screen space [-1, 1]
     y: number; // normalized screen space [-1, 1]
+    time?: number | string;
+    price?: number;
 }
 
 export interface DrawingStyle {
@@ -184,6 +186,8 @@ export interface DrawingDefinition {
     points?: DrawingPoint[];
     x?: number;
     y?: number;
+    time?: number | string;
+    price?: number;
     style?: DrawingStyle;
 }
 
@@ -485,6 +489,64 @@ export class NexusCharts {
             return null;
         }
         return this.worldToCanvasPoint(worldX, worldY, surface.width, surface.height);
+    }
+
+    public timeToWorldX(time: number | string): number | null {
+        const geometry = this.buildSeriesGeometry();
+        if (!geometry) {
+            return null;
+        }
+        return this.timeToWorldXInternal(time, geometry);
+    }
+
+    public worldXToTime(worldX: number): number | string | null {
+        const geometry = this.buildSeriesGeometry();
+        if (!geometry) {
+            return null;
+        }
+        return this.worldXToTimeInternal(worldX, geometry);
+    }
+
+    public priceToWorldY(price: number): number | null {
+        const geometry = this.buildSeriesGeometry();
+        if (!geometry || !Number.isFinite(price)) {
+            return null;
+        }
+        return this.priceToWorldYValue(price, geometry);
+    }
+
+    public worldYToPriceValue(worldY: number): number | null {
+        const geometry = this.buildSeriesGeometry();
+        if (!geometry || !Number.isFinite(worldY)) {
+            return null;
+        }
+        return this.worldYToPriceValueInternal(worldY, geometry);
+    }
+
+    public timeToScreen(time: number | string, price: number): ScreenPoint | null {
+        const geometry = this.buildSeriesGeometry();
+        const surface = this.overlayCanvas ?? this.canvas;
+        if (!geometry || !surface || !Number.isFinite(price)) {
+            return null;
+        }
+        const worldX = this.timeToWorldXInternal(time, geometry);
+        if (worldX === null) {
+            return null;
+        }
+        const worldY = this.priceToWorldYValue(price, geometry);
+        return this.worldToCanvasPoint(worldX, worldY, surface.width, surface.height);
+    }
+
+    public screenToTimePrice(clientX: number, clientY: number): { time: number | string | null; price: number | null } | null {
+        const geometry = this.buildSeriesGeometry();
+        const world = this.screenToWorld(clientX, clientY);
+        if (!geometry || !world) {
+            return null;
+        }
+        return {
+            time: this.worldXToTimeInternal(world.x, geometry),
+            price: this.worldYToPriceValueInternal(world.y, geometry),
+        };
     }
 
     public getHoveredCandle(): HoveredCandle | null {
@@ -861,23 +923,30 @@ export class NexusCharts {
             this.lastPointerX = event.clientX;
             this.lastPointerY = event.clientY;
             this.updateHoverFromClientPosition(event.clientX, event.clientY);
-
             const world = this.screenToWorld(event.clientX, event.clientY);
             const surface = this.overlayCanvas ?? canvas;
+            const geometry = this.buildSeriesGeometry();
             if (world && surface) {
-                const hit = this.hitTestDrawing(world, surface.width, surface.height);
+                const hit = this.hitTestDrawing(world, surface.width, surface.height, geometry);
                 if (hit) {
                     const drawing = this.drawingStore.get(hit.id);
                     if (drawing) {
+                        this.applyAnchorsToDrawing(drawing, geometry);
+                        const resolvedPoints = drawing.points
+                            ? drawing.points.map((point) => this.resolveDrawingPoint(point, geometry))
+                            : undefined;
+                        const resolvedX = this.resolveDrawingWorldX(drawing, geometry);
+                        const resolvedY = this.resolveDrawingWorldY(drawing, geometry);
+
                         this.activeDrawingId = hit.id;
                         this.activeDrawingDrag = {
                             id: hit.id,
                             mode: hit.mode,
                             pointIndex: hit.pointIndex,
                             startWorld: world,
-                            startPoints: drawing.points ? drawing.points.map((point) => ({ ...point })) : undefined,
-                            startX: drawing.x,
-                            startY: drawing.y,
+                            startPoints: resolvedPoints,
+                            startX: resolvedX ?? drawing.x,
+                            startY: resolvedY ?? drawing.y,
                         };
                         this.isDragging = false;
                         this.redrawDrawings();
@@ -885,7 +954,6 @@ export class NexusCharts {
                     }
                 }
             }
-
             this.activeDrawingId = null;
             this.activeDrawingDrag = null;
             this.isDragging = true;
@@ -904,6 +972,7 @@ export class NexusCharts {
                     return;
                 }
 
+                const geometry = this.buildSeriesGeometry();
                 const dx = world.x - drag.startWorld.x;
                 const dy = world.y - drag.startWorld.y;
                 this.draggedDuringPointer = true;
@@ -934,6 +1003,7 @@ export class NexusCharts {
                     drawing.x = drag.startX + dx;
                 }
 
+                this.syncDrawingAnchors(drawing, geometry);
                 this.hoveredDrawingId = drawing.id;
                 this.redrawDrawings();
                 return;
@@ -1621,7 +1691,112 @@ export class NexusCharts {
         return Math.sqrt((dx * dx) + (dy * dy));
     }
 
-    private hitTestDrawing(world: WorldPoint, width: number, height: number): { id: string; mode: DrawingDragMode; pointIndex?: number } | null {
+    private resolveDrawingPoint(point: DrawingPoint, geometry: SeriesGeometry | null): DrawingPoint {
+        if (!geometry) {
+            return point;
+        }
+        let x = point.x;
+        let y = point.y;
+        if (point.time !== undefined) {
+            const worldX = this.timeToWorldXInternal(point.time, geometry);
+            if (worldX !== null) {
+                x = worldX;
+            }
+        }
+        if (typeof point.price === "number" && Number.isFinite(point.price)) {
+            y = this.priceToWorldYValue(point.price, geometry);
+        }
+        return { ...point, x, y };
+    }
+
+    private resolveDrawingWorldX(drawing: StoredDrawing, geometry: SeriesGeometry | null): number | null {
+        if (geometry && drawing.time !== undefined) {
+            const worldX = this.timeToWorldXInternal(drawing.time, geometry);
+            if (worldX !== null) {
+                return worldX;
+            }
+        }
+        return typeof drawing.x === "number" ? drawing.x : null;
+    }
+
+    private resolveDrawingWorldY(drawing: StoredDrawing, geometry: SeriesGeometry | null): number | null {
+        if (geometry && typeof drawing.price === "number" && Number.isFinite(drawing.price)) {
+            return this.priceToWorldYValue(drawing.price, geometry);
+        }
+        return typeof drawing.y === "number" ? drawing.y : null;
+    }
+
+    private applyAnchorsToDrawing(drawing: StoredDrawing, geometry: SeriesGeometry | null): void {
+        if (!geometry) {
+            return;
+        }
+
+        if (drawing.points) {
+            drawing.points = drawing.points.map((point) => {
+                let x = point.x;
+                let y = point.y;
+                if (point.time !== undefined) {
+                    const worldX = this.timeToWorldXInternal(point.time, geometry);
+                    if (worldX !== null) {
+                        x = worldX;
+                    }
+                }
+                if (typeof point.price === "number" && Number.isFinite(point.price)) {
+                    y = this.priceToWorldYValue(point.price, geometry);
+                }
+                return { ...point, x, y };
+            });
+        }
+
+        if (drawing.type === "horizontal_line" && typeof drawing.price === "number" && Number.isFinite(drawing.price)) {
+            drawing.y = this.priceToWorldYValue(drawing.price, geometry);
+        }
+
+        if (drawing.type === "vertical_line" && drawing.time !== undefined) {
+            const worldX = this.timeToWorldXInternal(drawing.time, geometry);
+            if (worldX !== null) {
+                drawing.x = worldX;
+            }
+        }
+    }
+
+    private syncDrawingAnchors(drawing: StoredDrawing, geometry: SeriesGeometry | null): void {
+        if (!geometry) {
+            return;
+        }
+
+        if (drawing.points) {
+            drawing.points = drawing.points.map((point) => {
+                const time = this.worldXToTimeInternal(point.x, geometry);
+                const price = this.worldYToPriceValueInternal(point.y, geometry);
+                return {
+                    ...point,
+                    time: time ?? point.time,
+                    price: Number.isFinite(price) ? price : point.price,
+                };
+            });
+        }
+
+        if (drawing.type === "horizontal_line" && typeof drawing.y === "number") {
+            const price = this.worldYToPriceValueInternal(drawing.y, geometry);
+            if (Number.isFinite(price)) {
+                drawing.price = price;
+            }
+        }
+
+        if (drawing.type === "vertical_line" && typeof drawing.x === "number") {
+            const time = this.worldXToTimeInternal(drawing.x, geometry);
+            if (time !== null) {
+                drawing.time = time;
+            }
+        }
+    }
+private hitTestDrawing(
+        world: WorldPoint,
+        width: number,
+        height: number,
+        geometry: SeriesGeometry | null
+    ): { id: string; mode: DrawingDragMode; pointIndex?: number } | null {
         const units = this.getWorldUnitsPerPixel(width, height);
         const threshold = 6 * Math.max(units.x, units.y);
         const drawings = Array.from(this.drawingStore.values());
@@ -1629,8 +1804,8 @@ export class NexusCharts {
         for (let i = drawings.length - 1; i >= 0; i -= 1) {
             const drawing = drawings[i];
             if (drawing.type === "line" && drawing.points && drawing.points.length >= 2) {
-                const p0 = drawing.points[0];
-                const p1 = drawing.points[1];
+                const p0 = this.resolveDrawingPoint(drawing.points[0], geometry);
+                const p1 = this.resolveDrawingPoint(drawing.points[1], geometry);
                 if (Math.hypot(world.x - p0.x, world.y - p0.y) <= threshold) {
                     return { id: drawing.id, mode: "p0" };
                 }
@@ -1642,22 +1817,26 @@ export class NexusCharts {
                 }
             } else if (drawing.type === "polyline" && drawing.points && drawing.points.length >= 2) {
                 for (let p = 0; p < drawing.points.length; p += 1) {
-                    const point = drawing.points[p];
+                    const point = this.resolveDrawingPoint(drawing.points[p], geometry);
                     if (Math.hypot(world.x - point.x, world.y - point.y) <= threshold) {
                         return { id: drawing.id, mode: "poly_point", pointIndex: p };
                     }
                 }
                 for (let p = 0; p < drawing.points.length - 1; p += 1) {
-                    if (this.distancePointToSegment(world, drawing.points[p], drawing.points[p + 1]) <= threshold) {
+                    const p0 = this.resolveDrawingPoint(drawing.points[p], geometry);
+                    const p1 = this.resolveDrawingPoint(drawing.points[p + 1], geometry);
+                    if (this.distancePointToSegment(world, p0, p1) <= threshold) {
                         return { id: drawing.id, mode: "poly_move" };
                     }
                 }
-            } else if (drawing.type === "horizontal_line" && typeof drawing.y === "number") {
-                if (Math.abs(world.y - drawing.y) <= threshold) {
+            } else if (drawing.type === "horizontal_line") {
+                const y = this.resolveDrawingWorldY(drawing, geometry);
+                if (typeof y === "number" && Math.abs(world.y - y) <= threshold) {
                     return { id: drawing.id, mode: "hline" };
                 }
-            } else if (drawing.type === "vertical_line" && typeof drawing.x === "number") {
-                if (Math.abs(world.x - drawing.x) <= threshold) {
+            } else if (drawing.type === "vertical_line") {
+                const x = this.resolveDrawingWorldX(drawing, geometry);
+                if (typeof x === "number" && Math.abs(world.x - x) <= threshold) {
                     return { id: drawing.id, mode: "vline" };
                 }
             }
@@ -1698,7 +1877,8 @@ export class NexusCharts {
 
     private updateHoveredDrawingFromCanvas(canvasX: number, canvasY: number, width: number, height: number): void {
         const world = this.canvasToWorldPoint(canvasX, canvasY, width, height);
-        const hit = this.hitTestDrawing(world, width, height);
+        const geometry = this.buildSeriesGeometry();
+        const hit = this.hitTestDrawing(world, width, height, geometry);
         this.hoveredDrawingId = hit ? hit.id : null;
     }
 
@@ -1891,11 +2071,11 @@ export class NexusCharts {
         return String(value);
     }
 
-    private worldYToPrice(worldY: number, geometry: SeriesGeometry): number {
+    private worldYToPriceValueInternal(worldY: number, geometry: SeriesGeometry): number {
         return geometry.minPrice + ((worldY + 0.85) / geometry.scale);
     }
 
-    private priceToWorldY(price: number, geometry: SeriesGeometry): number {
+    private priceToWorldYValue(price: number, geometry: SeriesGeometry): number {
         return ((price - geometry.minPrice) * geometry.scale) - 0.85;
     }
 
@@ -1967,6 +2147,86 @@ export class NexusCharts {
         }
         const parsed = Number(value);
         return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    private buildTimeSeries(geometry: SeriesGeometry): Array<{ time: number | string; numeric: number | null; x: number }> {
+        return geometry.candles.map((candle) => ({
+            time: candle.source.time,
+            numeric: this.toNumericTime(candle.source.time),
+            x: candle.x,
+        }));
+    }
+
+    private timeToWorldXInternal(time: number | string, geometry: SeriesGeometry): number | null {
+        const series = this.buildTimeSeries(geometry);
+        if (series.length === 0) {
+            return null;
+        }
+
+        const numericTarget = this.toNumericTime(time);
+        if (numericTarget === null) {
+            const match = series.find((entry) => entry.time === time);
+            return match ? match.x : null;
+        }
+
+        const numericSeries = series.filter((entry) => entry.numeric !== null) as Array<{ time: number | string; numeric: number; x: number }>;
+        if (numericSeries.length === 0) {
+            return null;
+        }
+
+        let lower = numericSeries[0];
+        let upper = numericSeries[numericSeries.length - 1];
+
+        for (const entry of numericSeries) {
+            if (entry.numeric <= numericTarget && entry.numeric >= lower.numeric) {
+                lower = entry;
+            }
+            if (entry.numeric >= numericTarget && entry.numeric <= upper.numeric) {
+                upper = entry;
+            }
+        }
+
+        if (Math.abs(upper.numeric - lower.numeric) < 1e-9) {
+            return lower.x;
+        }
+
+        const t = (numericTarget - lower.numeric) / (upper.numeric - lower.numeric);
+        return lower.x + ((upper.x - lower.x) * t);
+    }
+
+    private worldXToTimeInternal(worldX: number, geometry: SeriesGeometry): number | string | null {
+        const candles = geometry.candles;
+        if (candles.length === 0) {
+            return null;
+        }
+        if (candles.length === 1) {
+            return candles[0].source.time;
+        }
+
+        const stepX = candles[1].x - candles[0].x;
+        if (Math.abs(stepX) < 1e-9) {
+            return candles[0].source.time;
+        }
+
+        const indexFloat = (worldX - candles[0].x) / stepX;
+        const lowerIndex = Math.max(0, Math.min(candles.length - 1, Math.floor(indexFloat)));
+        const upperIndex = Math.max(0, Math.min(candles.length - 1, Math.ceil(indexFloat)));
+        if (lowerIndex === upperIndex) {
+            return candles[lowerIndex].source.time;
+        }
+
+        const lower = candles[lowerIndex];
+        const upper = candles[upperIndex];
+        const lowerTime = this.toNumericTime(lower.source.time);
+        const upperTime = this.toNumericTime(upper.source.time);
+        if (lowerTime !== null && upperTime !== null) {
+            const t = (indexFloat - lowerIndex) / Math.max(1e-6, upperIndex - lowerIndex);
+            return lowerTime + ((upperTime - lowerTime) * t);
+        }
+
+        const nearest = Math.round(indexFloat);
+        const clamped = Math.max(0, Math.min(candles.length - 1, nearest));
+        return candles[clamped].source.time;
     }
 
     private buildVisibleTimeLabels(
@@ -2358,7 +2618,7 @@ export class NexusCharts {
         const volumeBottom = mainBottom - 6;
         const volumeTop = Math.max(6, volumeBottom - Math.max(24, mainHeight * 0.2));
 
-        const baseWorldY = this.priceToWorldY(geometry.minPrice, geometry);
+        const baseWorldY = this.priceToWorldYValue(geometry.minPrice, geometry);
         const baseY = this.worldToCanvasPoint(candles[0].x, baseWorldY, width, height).y;
 
         for (const series of extraSeries) {
@@ -2416,7 +2676,7 @@ export class NexusCharts {
                 if (!Number.isFinite(value ?? NaN)) {
                     continue;
                 }
-                const worldY = this.priceToWorldY(value as number, geometry);
+                const worldY = this.priceToWorldYValue(value as number, geometry);
                 points.push({
                     x: screenXs[i],
                     y: this.worldToCanvasPoint(candles[i].x, worldY, width, height).y,
@@ -2511,12 +2771,12 @@ export class NexusCharts {
 
         const topWorldY = this.currentCenterY + this.currentZoom;
         const bottomWorldY = this.currentCenterY - this.currentZoom;
-        const visibleMinPrice = this.worldYToPrice(bottomWorldY, geometry);
-        const visibleMaxPrice = this.worldYToPrice(topWorldY, geometry);
+        const visibleMinPrice = this.worldYToPriceValueInternal(bottomWorldY, geometry);
+        const visibleMaxPrice = this.worldYToPriceValueInternal(topWorldY, geometry);
         const priceTicks = this.buildNiceTicks(visibleMinPrice, visibleMaxPrice, tickCount);
 
         for (const price of priceTicks) {
-            const worldY = this.priceToWorldY(price, geometry);
+            const worldY = this.priceToWorldYValue(price, geometry);
             const canvasPoint = this.worldToCanvasPoint(this.currentCenterX, worldY, width, height);
             const labelY = Math.min(height - timeLabelHeight - 4, Math.max(10, canvasPoint.y));
 
@@ -2607,7 +2867,7 @@ export class NexusCharts {
 
         if (!hoverInLowerPane) {
             const worldAtCursor = this.canvasToWorldPoint(activeCandle.screenX, lineY, width, height);
-            const priceAtCursor = this.worldYToPrice(worldAtCursor.y, geometry);
+            const priceAtCursor = this.worldYToPriceValueInternal(worldAtCursor.y, geometry);
             const priceText = this.formatPrice(priceAtCursor);
             const priceTextWidth = ctx.measureText(priceText).width;
             const priceBoxWidth = priceTextWidth + 12;
@@ -2744,7 +3004,7 @@ export class NexusCharts {
             if (!Number.isFinite(value ?? NaN)) {
                 continue;
             }
-            const worldY = this.priceToWorldY(value as number, geometry);
+            const worldY = this.priceToWorldYValue(value as number, geometry);
             const point = this.worldToCanvasPoint(geometry.candles[i].x, worldY, width, height);
             if (!started) {
                 ctx.moveTo(point.x, point.y);
