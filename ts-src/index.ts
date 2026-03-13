@@ -191,6 +191,18 @@ interface StoredDrawing extends DrawingDefinition {
     id: string;
 }
 
+type DrawingDragMode = "move" | "p0" | "p1" | "poly_move" | "poly_point" | "hline" | "vline";
+
+interface DrawingDragState {
+    id: string;
+    mode: DrawingDragMode;
+    startWorld: WorldPoint;
+    startPoints?: DrawingPoint[];
+    startX?: number;
+    startY?: number;
+    pointIndex?: number;
+}
+
 interface NormalizedObserverFrame {
     time: number;
     reward: number;
@@ -314,6 +326,9 @@ export class NexusCharts {
     private cleanupHandlers: Array<() => void> = [];
     private readonly seriesStore = new Map<string, { type: SeriesType; data: CandleDataPoint[]; style: SeriesStyle; valueKey: SeriesValueKey; renderer?: CustomSeriesRenderer }>();
     private readonly drawingStore = new Map<string, StoredDrawing>();
+    private hoveredDrawingId: string | null = null;
+    private activeDrawingId: string | null = null;
+    private activeDrawingDrag: DrawingDragState | null = null;
     private readonly observerFrames: NormalizedObserverFrame[] = [];
     private readonly indicatorStore = new Map<string, IndicatorSeries>();
     private indicatorPaneHeightRatio: number = 0.26;
@@ -830,14 +845,89 @@ export class NexusCharts {
             if (this.getControlButtonAtClientPosition(event.clientX, event.clientY)) {
                 return;
             }
-            this.isDragging = true;
+
             this.draggedDuringPointer = false;
             this.lastPointerX = event.clientX;
             this.lastPointerY = event.clientY;
             this.updateHoverFromClientPosition(event.clientX, event.clientY);
+
+            const world = this.screenToWorld(event.clientX, event.clientY);
+            const surface = this.overlayCanvas ?? canvas;
+            if (world && surface) {
+                const hit = this.hitTestDrawing(world, surface.width, surface.height);
+                if (hit) {
+                    const drawing = this.drawingStore.get(hit.id);
+                    if (drawing) {
+                        this.activeDrawingId = hit.id;
+                        this.activeDrawingDrag = {
+                            id: hit.id,
+                            mode: hit.mode,
+                            pointIndex: hit.pointIndex,
+                            startWorld: world,
+                            startPoints: drawing.points ? drawing.points.map((point) => ({ ...point })) : undefined,
+                            startX: drawing.x,
+                            startY: drawing.y,
+                        };
+                        this.isDragging = false;
+                        this.redrawDrawings();
+                        return;
+                    }
+                }
+            }
+
+            this.activeDrawingId = null;
+            this.activeDrawingDrag = null;
+            this.isDragging = true;
         };
 
         const onMouseMove = (event: MouseEvent) => {
+            if (this.activeDrawingDrag) {
+                const world = this.screenToWorld(event.clientX, event.clientY);
+                if (!world) {
+                    return;
+                }
+                const drag = this.activeDrawingDrag;
+                const drawing = this.drawingStore.get(drag.id);
+                if (!drawing) {
+                    this.activeDrawingDrag = null;
+                    return;
+                }
+
+                const dx = world.x - drag.startWorld.x;
+                const dy = world.y - drag.startWorld.y;
+                this.draggedDuringPointer = true;
+
+                if (drawing.type === "line" && drawing.points && drag.startPoints && drag.startPoints.length >= 2) {
+                    if (drag.mode === "p0") {
+                        drawing.points[0] = { x: drag.startPoints[0].x + dx, y: drag.startPoints[0].y + dy };
+                    } else if (drag.mode === "p1") {
+                        drawing.points[1] = { x: drag.startPoints[1].x + dx, y: drag.startPoints[1].y + dy };
+                    } else {
+                        drawing.points = drag.startPoints.map((point) => ({ x: point.x + dx, y: point.y + dy }));
+                    }
+                } else if (drawing.type === "polyline" && drawing.points && drag.startPoints) {
+                    if (drag.mode === "poly_point" && drag.pointIndex !== undefined) {
+                        const index = drag.pointIndex;
+                        if (drag.startPoints[index]) {
+                            drawing.points[index] = {
+                                x: drag.startPoints[index].x + dx,
+                                y: drag.startPoints[index].y + dy,
+                            };
+                        }
+                    } else {
+                        drawing.points = drag.startPoints.map((point) => ({ x: point.x + dx, y: point.y + dy }));
+                    }
+                } else if (drawing.type === "horizontal_line" && typeof drag.startY === "number") {
+                    drawing.y = drag.startY + dy;
+                } else if (drawing.type === "vertical_line" && typeof drag.startX === "number") {
+                    drawing.x = drag.startX + dx;
+                }
+
+                this.hoveredDrawingId = drawing.id;
+                this.redrawDrawings();
+                return;
+            }
+
             if (this.isDragging) {
                 const dx = event.clientX - this.lastPointerX;
                 const dy = event.clientY - this.lastPointerY;
@@ -863,12 +953,21 @@ export class NexusCharts {
 
         const stopDragging = () => {
             this.isDragging = false;
+            if (this.activeDrawingDrag) {
+                this.activeDrawingDrag = null;
+            }
         };
 
         const onClick = (event: MouseEvent) => {
             if (this.handleControlBarClick(event.clientX, event.clientY)) {
                 return;
             }
+            if (this.hoveredDrawingId) {
+                this.activeDrawingId = this.hoveredDrawingId;
+                this.redrawDrawings();
+                return;
+            }
+            this.activeDrawingId = null;
             if (this.draggedDuringPointer || !this.hoveredCandle) {
                 return;
             }
@@ -972,6 +1071,7 @@ export class NexusCharts {
             this.hoverCanvasX = null;
             this.hoverCanvasY = null;
             this.hoveredCandle = null;
+            this.hoveredDrawingId = null;
             this.redrawDrawings();
         };
 
@@ -1454,6 +1554,86 @@ export class NexusCharts {
         };
     }
 
+    private getWorldUnitsPerPixel(width: number, height: number): { x: number; y: number } {
+        const safeWidth = Math.max(1, width);
+        const safeHeight = Math.max(1, height);
+        const aspect = safeWidth / safeHeight;
+        return {
+            x: (2.0 * this.currentZoom * aspect) / safeWidth,
+            y: (2.0 * this.currentZoom) / safeHeight,
+        };
+    }
+
+    private distancePointToSegment(point: WorldPoint, a: DrawingPoint, b: DrawingPoint): number {
+        const abx = b.x - a.x;
+        const aby = b.y - a.y;
+        const apx = point.x - a.x;
+        const apy = point.y - a.y;
+        const denom = (abx * abx) + (aby * aby);
+        if (denom <= 1e-8) {
+            const dx = point.x - a.x;
+            const dy = point.y - a.y;
+            return Math.sqrt((dx * dx) + (dy * dy));
+        }
+        const t = this.clamp(((apx * abx) + (apy * aby)) / denom, 0, 1);
+        const closestX = a.x + (abx * t);
+        const closestY = a.y + (aby * t);
+        const dx = point.x - closestX;
+        const dy = point.y - closestY;
+        return Math.sqrt((dx * dx) + (dy * dy));
+    }
+
+    private hitTestDrawing(world: WorldPoint, width: number, height: number): { id: string; mode: DrawingDragMode; pointIndex?: number } | null {
+        const units = this.getWorldUnitsPerPixel(width, height);
+        const threshold = 6 * Math.max(units.x, units.y);
+        const drawings = Array.from(this.drawingStore.values());
+
+        for (let i = drawings.length - 1; i >= 0; i -= 1) {
+            const drawing = drawings[i];
+            if (drawing.type === "line" && drawing.points && drawing.points.length >= 2) {
+                const p0 = drawing.points[0];
+                const p1 = drawing.points[1];
+                if (Math.hypot(world.x - p0.x, world.y - p0.y) <= threshold) {
+                    return { id: drawing.id, mode: "p0" };
+                }
+                if (Math.hypot(world.x - p1.x, world.y - p1.y) <= threshold) {
+                    return { id: drawing.id, mode: "p1" };
+                }
+                if (this.distancePointToSegment(world, p0, p1) <= threshold) {
+                    return { id: drawing.id, mode: "move" };
+                }
+            } else if (drawing.type === "polyline" && drawing.points && drawing.points.length >= 2) {
+                for (let p = 0; p < drawing.points.length; p += 1) {
+                    const point = drawing.points[p];
+                    if (Math.hypot(world.x - point.x, world.y - point.y) <= threshold) {
+                        return { id: drawing.id, mode: "poly_point", pointIndex: p };
+                    }
+                }
+                for (let p = 0; p < drawing.points.length - 1; p += 1) {
+                    if (this.distancePointToSegment(world, drawing.points[p], drawing.points[p + 1]) <= threshold) {
+                        return { id: drawing.id, mode: "poly_move" };
+                    }
+                }
+            } else if (drawing.type === "horizontal_line" && typeof drawing.y === "number") {
+                if (Math.abs(world.y - drawing.y) <= threshold) {
+                    return { id: drawing.id, mode: "hline" };
+                }
+            } else if (drawing.type === "vertical_line" && typeof drawing.x === "number") {
+                if (Math.abs(world.x - drawing.x) <= threshold) {
+                    return { id: drawing.id, mode: "vline" };
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private updateHoveredDrawingFromCanvas(canvasX: number, canvasY: number, width: number, height: number): void {
+        const world = this.canvasToWorldPoint(canvasX, canvasY, width, height);
+        const hit = this.hitTestDrawing(world, width, height);
+        this.hoveredDrawingId = hit ? hit.id : null;
+    }
+
     private getPrimaryCandlestickSeries(): CandleDataPoint[] {
         for (const series of this.seriesStore.values()) {
             if (series.type === "candlestick" && series.data.length > 0) {
@@ -1828,12 +2008,14 @@ export class NexusCharts {
         const surface = this.overlayCanvas ?? this.canvas;
         if (!surface) {
             this.hoveredCandle = null;
+            this.hoveredDrawingId = null;
             return;
         }
 
         const rect = surface.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) {
             this.hoveredCandle = null;
+            this.hoveredDrawingId = null;
             return;
         }
 
@@ -1843,6 +2025,7 @@ export class NexusCharts {
             this.hoverCanvasX = null;
             this.hoverCanvasY = null;
             this.hoveredCandle = null;
+            this.hoveredDrawingId = null;
             return;
         }
 
@@ -1879,6 +2062,8 @@ export class NexusCharts {
             screenY: closePoint.y,
             worldX: candle.x,
         };
+
+        this.updateHoveredDrawingFromCanvas(canvasX, canvasY, surface.width, surface.height);
     }
 
     private refreshHoverFromStoredPointer(): void {
@@ -1976,6 +2161,40 @@ export class NexusCharts {
             }
 
             ctx.restore();
+
+            if (drawing.id === this.hoveredDrawingId || drawing.id === this.activeDrawingId) {
+                const handlePoints: Array<{ x: number; y: number }> = [];
+                if ((drawing.type === "line" || drawing.type === "polyline") && drawing.points && drawing.points.length > 0) {
+                    const pointsToRender = drawing.type === "line"
+                        ? [drawing.points[0], drawing.points[1]].filter(Boolean)
+                        : drawing.points;
+                    for (const point of pointsToRender) {
+                        handlePoints.push(toCanvas(point));
+                    }
+                } else if (drawing.type === "horizontal_line" && typeof drawing.y === "number") {
+                    const handle = this.worldToCanvasPoint(this.currentCenterX, drawing.y, width, height);
+                    handlePoints.push(handle);
+                } else if (drawing.type === "vertical_line" && typeof drawing.x === "number") {
+                    const handle = this.worldToCanvasPoint(drawing.x, this.currentCenterY, width, height);
+                    handlePoints.push(handle);
+                }
+
+                if (handlePoints.length > 0) {
+                    ctx.save();
+                    ctx.fillStyle = drawing.id === this.activeDrawingId
+                        ? "rgba(255, 209, 102, 0.9)"
+                        : "rgba(138, 199, 255, 0.9)";
+                    ctx.strokeStyle = "rgba(15, 30, 50, 0.85)";
+                    ctx.lineWidth = 1;
+                    for (const handle of handlePoints) {
+                        ctx.beginPath();
+                        ctx.arc(handle.x, handle.y, 4, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                }
+            }
         }
 
         this.renderSeriesOverlay(ctx, width, height, geometry);

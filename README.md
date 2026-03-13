@@ -127,13 +127,12 @@ cmd /c npm run dev
 - [x] Phase 4: Developer Open API and package publishing
 - [x] Phase 5: RL analytics view: real-time agent decision heatmaps, reward/P&L curves, and WASM-based observer data stream.
 - [x] Phase 6: Chart UX refinement: polished time scale labels, crosshair axis labels, tooltip modes, and navigation ergonomics.
-- [ ] **Phase 7:** Indicator and pane engine: moving averages/oscillators, secondary panes, and synchronized scales (in progress).
-- [ ] Phase 8: Multi-series rendering (line/area/histogram) + volume histogram support.
-- [ ] Phase 9: Multi-pane layout with synchronized crosshair and independent scales.
+- [x] **Phase 7:** Indicator and pane engine: moving averages/oscillators, secondary panes, and synchronized scales.
+- [x] Phase 8: Multi-series rendering (line/area/histogram) + volume histogram support.
+- [x] Phase 9: Multi-pane layout with synchronized crosshair and independent scales.
 - [ ] Phase 10: Drawing tools (trend/fib/box/hline) with drag/resize + hit-testing.
 - [ ] Phase 11: Time/price anchoring for drawings and tooltips (not only normalized screen space).
 - [ ] Phase 12: Real-time updates (append candle, update last candle) + large dataset performance tuning.
-- [ ] Phase 13: Theme alignment with Borsa Terminali UI.
 
 ## License
 
