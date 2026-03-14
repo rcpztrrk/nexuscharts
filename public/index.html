@@ -39,6 +39,22 @@
             letter-spacing: 0.2px;
         }
 
+        #stream-toggle {
+            margin-top: 10px;
+            padding: 6px 12px;
+            border: 1px solid rgba(120, 148, 188, 0.4);
+            border-radius: 6px;
+            background: rgba(12, 22, 40, 0.85);
+            color: #dce7ff;
+            font-size: 12px;
+            letter-spacing: 0.2px;
+            cursor: pointer;
+        }
+
+        #stream-toggle.is-paused {
+            color: #ffcc66;
+            border-color: rgba(255, 204, 102, 0.6);
+        }
         #ux-hint {
             margin-top: 8px;
             color: #6f86aa;
@@ -50,6 +66,7 @@
 
 <body>
     <h2>NexusCharts (WASM/WebGL Demo)</h2>
+    <button id="stream-toggle">Stream: On</button>
     <div id="chart-container">
         <canvas id="canvas" width="800" height="600"></canvas>
     </div>
@@ -149,6 +166,15 @@
 
         chart.waitUntilReady().then(() => {
             const metricsLabel = document.getElementById("metrics-label");
+            const streamToggle = document.getElementById("stream-toggle");
+            let streamEnabled = true;
+            if (streamToggle) {
+                streamToggle.addEventListener("click", () => {
+                    streamEnabled = !streamEnabled;
+                    streamToggle.textContent = `Stream: ${streamEnabled ? "On" : "Off"}`;
+                    streamToggle.classList.toggle("is-paused", !streamEnabled);
+                });
+            }
             const series = chart.createSeries({ type: "candlestick" });
             const candles = generateCandles(42);
             series.setData(candles);
@@ -241,25 +267,68 @@
             let cumulativePnl = initialFrames.length ? initialFrames[initialFrames.length - 1].pnl : 0;
             let liveIndex = candles.length;
             let lastClose = candles[candles.length - 1].close;
+            let inProgressTicks = 0;
 
             setInterval(() => {
-                const nextCandle = generateNextCandle(liveIndex, lastClose);
-                candles.push(nextCandle);
-                lastClose = nextCandle.close;
+                if (!streamEnabled) {
+                    return;
+                }
+                let activeCandle;
 
-                series.update(nextCandle);
-                lineSeries.update(nextCandle);
-                areaSeries.update(nextCandle);
-                histSeries.update(nextCandle);
-                volumeSeries.update(nextCandle);
+                if (inProgressTicks < 2) {
+                    const last = candles[candles.length - 1];
+                    const drift = (Math.random() - 0.5) * 0.9;
+                    const close = last.close + drift;
+                    const high = Math.max(last.high, close);
+                    const low = Math.min(last.low, close);
+                    const volume = (last.volume ?? 0) + (Math.abs(drift) * 120) + (Math.random() * 30);
 
-                const customPoint = {
-                    ...nextCandle,
-                    value: nextCandle.close + (Math.sin(liveIndex * 0.55) * 1.4)
-                };
-                customSeries.update(customPoint);
+                    activeCandle = {
+                        ...last,
+                        close: Number(close.toFixed(2)),
+                        high: Number(high.toFixed(2)),
+                        low: Number(low.toFixed(2)),
+                        volume: Number(volume.toFixed(2))
+                    };
 
-                const reward = nextCandle.close - nextCandle.open;
+                    candles[candles.length - 1] = activeCandle;
+                    lastClose = activeCandle.close;
+
+                    series.updateLast(activeCandle);
+                    lineSeries.updateLast(activeCandle);
+                    areaSeries.updateLast(activeCandle);
+                    histSeries.updateLast(activeCandle);
+                    volumeSeries.updateLast(activeCandle);
+
+                    const customPoint = {
+                        ...activeCandle,
+                        value: activeCandle.close + (Math.sin((candles.length - 1) * 0.55) * 1.4)
+                    };
+                    customSeries.updateLast(customPoint);
+
+                    inProgressTicks += 1;
+                } else {
+                    activeCandle = generateNextCandle(liveIndex, lastClose);
+                    candles.push(activeCandle);
+                    lastClose = activeCandle.close;
+
+                    series.append(activeCandle);
+                    lineSeries.append(activeCandle);
+                    areaSeries.append(activeCandle);
+                    histSeries.append(activeCandle);
+                    volumeSeries.append(activeCandle);
+
+                    const customPoint = {
+                        ...activeCandle,
+                        value: activeCandle.close + (Math.sin(liveIndex * 0.55) * 1.4)
+                    };
+                    customSeries.append(customPoint);
+
+                    inProgressTicks = 0;
+                    liveIndex += 1;
+                }
+
+                const reward = activeCandle.close - activeCandle.open;
                 cumulativePnl += reward;
 
                 let action = "hold";
@@ -271,7 +340,7 @@
                 const y = action === "buy" ? 0.48 : action === "sell" ? -0.48 : 0.0;
 
                 chart.pushObserverFrame({
-                    time: nextCandle.time,
+                    time: activeCandle.time,
                     reward: Number(reward.toFixed(3)),
                     pnl: Number(cumulativePnl.toFixed(3)),
                     confidence: Number(confidence.toFixed(3)),
@@ -290,7 +359,6 @@
                 }
 
                 streamIndex += 1;
-                liveIndex += 1;
             }, 1200);
         });
 

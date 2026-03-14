@@ -160,7 +160,9 @@ export interface SeriesApi {
     id: string;
     type: SeriesType;
     setData: (data: CandleDataPoint[]) => void;
+    append: (point: CandleDataPoint) => void;
     update: (point: CandleDataPoint) => void;
+    updateLast: (point: Partial<CandleDataPoint>) => void;
     getData: () => CandleDataPoint[];
     clear: () => void;
 }
@@ -625,7 +627,7 @@ export class NexusCharts {
             this.redrawDrawings();
         };
 
-        const update = (point: CandleDataPoint) => {
+        const append = (point: CandleDataPoint) => {
             const series = this.seriesStore.get(id);
             if (!series) return;
             series.data.push(point);
@@ -634,6 +636,33 @@ export class NexusCharts {
             this.autoScaleVisibleY();
             this.refreshHoverFromStoredPointer();
             this.redrawDrawings();
+        };
+
+        const updateLast = (point: Partial<CandleDataPoint>) => {
+            const series = this.seriesStore.get(id);
+            if (!series) return;
+
+            if (series.data.length === 0) {
+                if (!this.isCompleteCandle(point)) {
+                    console.warn("[NexusCharts] updateLast requires a full candle when no data exists.", { id, point });
+                    return;
+                }
+                series.data.push(point);
+            } else {
+                const lastIndex = series.data.length - 1;
+                const last = series.data[lastIndex];
+                series.data[lastIndex] = { ...last, ...point };
+            }
+
+            this.syncSeriesToEngine(id);
+            this.recomputeIndicators();
+            this.autoScaleVisibleY();
+            this.refreshHoverFromStoredPointer();
+            this.redrawDrawings();
+        };
+
+        const update = (point: CandleDataPoint) => {
+            append(point);
         };
 
         const getData = (): CandleDataPoint[] => {
@@ -652,7 +681,7 @@ export class NexusCharts {
             this.redrawDrawings();
         };
 
-        return { id, type, setData, update, getData, clear };
+        return { id, type, setData, append, update, updateLast, getData, clear };
     }
 
     public addIndicator(definition: IndicatorDefinition): string {
@@ -2098,6 +2127,16 @@ private hitTestDrawing(
         }
     }
 
+    private isCompleteCandle(point: Partial<CandleDataPoint>): point is CandleDataPoint {
+        if (!point || point.time === undefined || point.time === null) {
+            return false;
+        }
+        const open = Number(point.open);
+        const high = Number(point.high);
+        const low = Number(point.low);
+        const close = Number(point.close);
+        return Number.isFinite(open) && Number.isFinite(high) && Number.isFinite(low) && Number.isFinite(close);
+    }
     private niceStep(rawStep: number): number {
         if (!Number.isFinite(rawStep) || rawStep <= 0) {
             return 1;
