@@ -11,7 +11,11 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Phase 4 completed: public API surface, drawing overlay layer, and WASM series data bridge (`createSeries().setData()`).
 - Phase 5 completed: observer analytics overlay, WASM observer stream bridge, and live metrics readback.
 - Phase 6 completed: chart UX foundation (axes, crosshair axis labels, tooltip modes, candle selection/navigation, control bar, and keyboard shortcuts).
-- Phase 7 in progress: technical indicators and multi-pane composition layer.
+- Phase 7 completed: technical indicators and multi-pane composition layer.
+- Phase 8 completed: drawing tools with hit-testing, drag/resize, and context actions.
+- Phase 9 completed: time/price anchoring for drawings and tooltips.
+- Phase 12 completed: realtime updates (append/update last candle) + perf instrumentation.
+- Phase 13 in progress: large dataset performance tuning and optimization.
 
 ## Core Capabilities
 
@@ -26,6 +30,8 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Optional Y-axis auto-scale for the visible window (autoScaleY).
 - Persistent UI preferences (`localStorage`) and tooltip mode switching (`follow` / `fixed`).
 - Indicator engine (SMA/EMA/RSI) with a secondary pane overlay.
+- Real-time updates via `append` and `updateLast` helpers for live candles.
+- Performance metrics via `getPerfMetrics()` (avg/max/last redraw and heap telemetry where available).
 - Development demo page served from `public/`.
 
 ## API Snapshot
@@ -130,11 +136,14 @@ cmd /c npm run dev
 - [x] **Phase 7:** Indicator and pane engine: moving averages/oscillators, secondary panes, and synchronized scales.
 - [x] Phase 8: Multi-series rendering (line/area/histogram) + volume histogram support.
 - [x] Phase 9: Multi-pane layout with synchronized crosshair and independent scales.
-- [ ] Phase 10: Drawing tools (trend/fib/box/hline) with drag/resize + hit-testing.
-- [ ] Phase 11: Time/price anchoring for drawings and tooltips (not only normalized screen space).
-- [ ] Phase 12: Real-time updates (append candle, update last candle) + large dataset performance tuning.
+- [x] Phase 10: Drawing tools (trend/fib/box/hline) with drag/resize + hit-testing.
+- [x] Phase 11: Time/price anchoring for drawings and tooltips (not only normalized screen space).
+- [x] Phase 12: Real-time updates (append candle, update last candle) + perf instrumentation.
+- [ ] Phase 13: Large dataset performance tuning + GC/memory optimization.
 
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE).
+
+
 

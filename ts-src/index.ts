@@ -1,4 +1,4 @@
-export interface InitOptions {
+﻿export interface InitOptions {
     canvasId: string;
     width?: number;
     height?: number;
@@ -71,6 +71,15 @@ export interface ObserverMetrics {
     lastPnl: number;
     averageReward: number;
     source: "wasm" | "js";
+}
+export interface PerfMetrics {
+    redrawCount: number;
+    lastRedrawMs: number;
+    avgRedrawMs: number;
+    maxRedrawMs: number;
+    heapUsedMB: number | null;
+    heapTotalMB: number | null;
+    sampleCount: number;
 }
 
 export interface WorldPoint {
@@ -360,6 +369,13 @@ export class NexusCharts {
     };
     private warnMissingSetSeriesData: boolean = true;
     private warnMissingObserverBridge: boolean = true;
+    private perfSamples: number[] = [];
+    private perfSampleLimit: number = 360;
+    private lastRedrawMs: number = 0;
+    private maxRedrawMs: number = 0;
+    private redrawCount: number = 0;
+    private lastHeapUsedMB: number | null = null;
+    private lastHeapTotalMB: number | null = null;
     private idCounter: number = 0;
     private readonly readyPromise: Promise<void>;
     private resolveReady!: () => void;
@@ -872,6 +888,46 @@ export class NexusCharts {
             lastPnl: last.pnl,
             averageReward: rewardSum / span,
             source: "js",
+        };
+    }
+
+    public getPerfMetrics(window: number = 60): PerfMetrics {
+        const sanitizedWindow = Number.isFinite(window)
+            ? Math.max(0, Math.floor(window))
+            : 0;
+        const sampleCount = this.perfSamples.length;
+        if (sampleCount === 0) {
+            return {
+                redrawCount: this.redrawCount,
+                lastRedrawMs: 0,
+                avgRedrawMs: 0,
+                maxRedrawMs: 0,
+                heapUsedMB: this.lastHeapUsedMB,
+                heapTotalMB: this.lastHeapTotalMB,
+                sampleCount: 0,
+            };
+        }
+
+        const span = sanitizedWindow > 0 ? Math.min(sanitizedWindow, sampleCount) : sampleCount;
+        const start = sampleCount - span;
+        let total = 0;
+        let max = 0;
+        for (let i = start; i < sampleCount; i += 1) {
+            const sample = this.perfSamples[i];
+            total += sample;
+            if (sample > max) {
+                max = sample;
+            }
+        }
+
+        return {
+            redrawCount: this.redrawCount,
+            lastRedrawMs: this.lastRedrawMs,
+            avgRedrawMs: total / span,
+            maxRedrawMs: max,
+            heapUsedMB: this.lastHeapUsedMB,
+            heapTotalMB: this.lastHeapTotalMB,
+            sampleCount: span,
         };
     }
 
@@ -2516,10 +2572,40 @@ private hitTestDrawing(
         this.overlayCtx = overlay.getContext("2d");
     }
 
+    private nowMs(): number {
+        if (typeof performance !== "undefined" && typeof performance.now === "function") {
+            return performance.now();
+        }
+        return Date.now();
+    }
+
+    private recordPerfSample(durationMs: number): void {
+        const sample = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0;
+        this.lastRedrawMs = sample;
+        this.redrawCount += 1;
+        if (sample > this.maxRedrawMs) {
+            this.maxRedrawMs = sample;
+        }
+        this.perfSamples.push(sample);
+        if (this.perfSamples.length > this.perfSampleLimit) {
+            this.perfSamples.splice(0, this.perfSamples.length - this.perfSampleLimit);
+        }
+        if (typeof performance !== "undefined") {
+            const memory = (performance as { memory?: { usedJSHeapSize?: number; totalJSHeapSize?: number } }).memory;
+            if (memory && typeof memory.usedJSHeapSize === "number") {
+                this.lastHeapUsedMB = memory.usedJSHeapSize / (1024 * 1024);
+            }
+            if (memory && typeof memory.totalJSHeapSize === "number") {
+                this.lastHeapTotalMB = memory.totalJSHeapSize / (1024 * 1024);
+            }
+        }
+    }
     private redrawDrawings(): void {
         if (!this.overlayCanvas || !this.overlayCtx) {
             return;
         }
+
+        const startMs = this.nowMs();
 
         const ctx = this.overlayCtx;
         const width = this.overlayCanvas.width;
@@ -2614,6 +2700,7 @@ private hitTestDrawing(
         this.renderCrosshairOverlay(ctx, width, height);
         this.renderTooltipOverlay(ctx, width, height);
         this.renderControlBarOverlay(ctx, width, height);
+        this.recordPerfSample(this.nowMs() - startMs);
     }
 
     private renderSeriesOverlay(
@@ -3641,3 +3728,5 @@ private hitTestDrawing(
         return `${prefix}_${this.idCounter}`;
     }
 }
+
+

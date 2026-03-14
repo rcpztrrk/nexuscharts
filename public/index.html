@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -39,6 +39,13 @@
             letter-spacing: 0.2px;
         }
 
+        #perf-label {
+            margin-top: 6px;
+            color: #7fa1d0;
+            font-size: 12px;
+            letter-spacing: 0.2px;
+        }
+
         #stream-toggle {
             margin-top: 10px;
             padding: 6px 12px;
@@ -55,6 +62,7 @@
             color: #ffcc66;
             border-color: rgba(255, 204, 102, 0.6);
         }
+
         #ux-hint {
             margin-top: 8px;
             color: #6f86aa;
@@ -71,6 +79,7 @@
         <canvas id="canvas" width="800" height="600"></canvas>
     </div>
     <div id="metrics-label">Observer stream waiting...</div>
+    <div id="perf-label">Perf: waiting...</div>
     <div id="ux-hint">Hover for OHLC tooltip, click to select candle, drag to pan, wheel to zoom, double click to fit. Shortcuts: F/A/C/T/Y/M/H/G, arrows, Home/End, Esc.</div>
 
     <script type="module">
@@ -166,6 +175,7 @@
 
         chart.waitUntilReady().then(() => {
             const metricsLabel = document.getElementById("metrics-label");
+            const perfLabel = document.getElementById("perf-label");
             const streamToggle = document.getElementById("stream-toggle");
             let streamEnabled = true;
             if (streamToggle) {
@@ -358,6 +368,17 @@
                         `avg60: ${metrics.averageReward.toFixed(3)}`;
                 }
 
+                const perf = chart.getPerfMetrics(60);
+                if (perfLabel) {
+                    const heap = (perf.heapUsedMB !== null && perf.heapTotalMB !== null)
+                        ? `${perf.heapUsedMB.toFixed(1)}/${perf.heapTotalMB.toFixed(1)} MB`
+                        : "n/a";
+                    perfLabel.textContent =
+                        `Redraw ms (avg/max/last): ${perf.avgRedrawMs.toFixed(2)} / ` +
+                        `${perf.maxRedrawMs.toFixed(2)} / ${perf.lastRedrawMs.toFixed(2)} | ` +
+                        `samples: ${perf.sampleCount} | heap: ${heap}`;
+                }
+
                 streamIndex += 1;
             }, 1200);
         });
@@ -367,3 +388,9 @@
 </body>
 
 </html>
+
+
+
+
+
+
