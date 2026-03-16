@@ -39,17 +39,13 @@ import { renderControlBar, type ControlButtonState } from "./ui/ControlBar";
 import { renderCrosshairOverlay as renderCrosshairOverlayUi } from "./ui/CrosshairOverlay";
 import { renderTooltipOverlay as renderTooltipOverlayUi } from "./ui/TooltipOverlay";
 import { loadPersistedChartState, persistChartState } from "./ui/Persistence";
-
-
-interface NormalizedObserverFrame {
-    time: number;
-    reward: number;
-    pnl: number;
-    confidence: number;
-    action: AgentAction;
-    x: number;
-    y: number;
-}
+import {
+    getAnalyticsPanelBounds as getAnalyticsPanelBoundsUi,
+    normalizeObserverFrame as normalizeObserverFrameUi,
+    renderAnalyticsOverlay as renderAnalyticsOverlayUi,
+    trimObserverFramesToLimit as trimObserverFramesToLimitUi,
+    type NormalizedObserverFrame,
+} from "./analytics/ObserverAnalytics";
 
 interface OverlayRect {
     x: number;
@@ -551,18 +547,23 @@ export class NexusCharts {
 
     public configureAnalytics(options: AnalyticsOptions): void {
         this.analyticsOptions = this.normalizeAnalyticsOptions(options);
-        this.trimObserverFramesToLimit();
+        trimObserverFramesToLimitUi(this.observerFrames, this.analyticsOptions.maxFrames);
         persistChartState(this.canvasId, this.uiOptions, this.analyticsOptions);
         this.redrawDrawings();
     }
 
     public pushObserverFrame(frame: ObserverFrame): void {
-        const normalized = this.normalizeObserverFrame(frame, this.observerFrames.length);
+        const normalized = normalizeObserverFrameUi(
+            frame,
+            this.observerFrames.length,
+            this.analyticsOptions.maxFrames,
+            this.clamp.bind(this)
+        );
         if (!normalized) {
             return;
         }
         this.observerFrames.push(normalized);
-        this.trimObserverFramesToLimit();
+        trimObserverFramesToLimitUi(this.observerFrames, this.analyticsOptions.maxFrames);
         this.syncObserverFrameToEngine(normalized);
         this.redrawDrawings();
     }
@@ -570,12 +571,17 @@ export class NexusCharts {
     public setObserverFrames(frames: ObserverFrame[]): void {
         this.observerFrames.length = 0;
         for (let i = 0; i < frames.length; i += 1) {
-            const normalized = this.normalizeObserverFrame(frames[i], i);
+            const normalized = normalizeObserverFrameUi(
+                frames[i],
+                i,
+                this.analyticsOptions.maxFrames,
+                this.clamp.bind(this)
+            );
             if (normalized) {
                 this.observerFrames.push(normalized);
             }
         }
-        this.trimObserverFramesToLimit();
+        trimObserverFramesToLimitUi(this.observerFrames, this.analyticsOptions.maxFrames);
         this.syncAllObserverFramesToEngine();
         this.redrawDrawings();
     }
@@ -2085,7 +2091,7 @@ export class NexusCharts {
             worldToCanvasPoint: this.worldToCanvasPoint.bind(this),
             priceToWorldYValue: this.priceToWorldYValue.bind(this),
         });
-        this.renderAnalyticsOverlay(ctx, width, height, toCanvas);
+        renderAnalyticsOverlayUi(ctx, width, height, this.observerFrames, this.analyticsOptions, toCanvas);
         this.renderSelectionOverlay(ctx, width, height, geometry);
         this.renderCrosshairOverlay(ctx, width, height);
         this.renderTooltipOverlay(ctx, width, height);
@@ -2445,44 +2451,6 @@ export class NexusCharts {
         };
     }
 
-    private normalizeObserverFrame(frame: ObserverFrame, sequenceIndex: number): NormalizedObserverFrame | null {
-        const reward = Number(frame.reward);
-        const pnl = Number(frame.pnl);
-        if (!Number.isFinite(reward) || !Number.isFinite(pnl)) {
-            return null;
-        }
-
-        const parsedTime = Number(frame.time);
-        const time = Number.isFinite(parsedTime) ? parsedTime : sequenceIndex;
-        const confidenceRaw = Number(frame.confidence ?? 0.65);
-        const confidence = this.clamp(Number.isFinite(confidenceRaw) ? confidenceRaw : 0.65, 0, 1);
-
-        const action: AgentAction = frame.action ?? (reward > 0 ? "buy" : reward < 0 ? "sell" : "hold");
-        const xRaw = Number(frame.x);
-        const yRaw = Number(frame.y);
-
-        const x = Number.isFinite(xRaw)
-            ? this.clamp(xRaw, -1, 1)
-            : this.defaultObserverX(sequenceIndex);
-        const y = Number.isFinite(yRaw)
-            ? this.clamp(yRaw, -1, 1)
-            : this.defaultObserverY(action);
-
-        return { time, reward, pnl, confidence, action, x, y };
-    }
-
-    private defaultObserverX(sequenceIndex: number): number {
-        const span = Math.max(1, this.analyticsOptions.maxFrames - 1);
-        const wrapped = sequenceIndex % this.analyticsOptions.maxFrames;
-        return this.clamp(-0.9 + ((1.8 * wrapped) / span), -0.95, 0.95);
-    }
-
-    private defaultObserverY(action: AgentAction): number {
-        if (action === "buy") return 0.45;
-        if (action === "sell") return -0.45;
-        return 0.0;
-    }
-
     private clamp(value: number, minValue: number, maxValue: number): number {
         return Math.min(maxValue, Math.max(minValue, value));
     }
@@ -2497,21 +2465,7 @@ export class NexusCharts {
     }
 
     private getAnalyticsPanelBounds(width: number, height: number): OverlayRect | null {
-        if (this.observerFrames.length === 0) {
-            return null;
-        }
-        if (!this.analyticsOptions.showRewardCurve && !this.analyticsOptions.showPnlCurve) {
-            return null;
-        }
-
-        const panelWidth = Math.max(220, Math.min(340, width * 0.36));
-        const panelHeight = Math.max(120, Math.min(180, height * 0.30));
-        return {
-            x: width - panelWidth - 12,
-            y: 12,
-            width: panelWidth,
-            height: panelHeight,
-        };
+        return getAnalyticsPanelBoundsUi(this.observerFrames.length, this.analyticsOptions, width, height);
     }
 
     private getIndicatorPaneBounds(width: number, height: number): PaneRect | null {
@@ -2535,156 +2489,6 @@ export class NexusCharts {
             innerWidth: Math.max(0, panelWidth - (padding * 2)),
             innerHeight: Math.max(0, panelHeight - (padding * 2)),
         };
-    }
-
-    private trimObserverFramesToLimit(): void {
-        const overflow = this.observerFrames.length - this.analyticsOptions.maxFrames;
-        if (overflow > 0) {
-            this.observerFrames.splice(0, overflow);
-        }
-    }
-
-    private renderAnalyticsOverlay(
-        ctx: CanvasRenderingContext2D,
-        width: number,
-        height: number,
-        toCanvas: (point: DrawingPoint) => { x: number; y: number }
-    ): void {
-        if (this.observerFrames.length === 0) {
-            return;
-        }
-
-        const frames = this.observerFrames.slice(-this.analyticsOptions.maxFrames);
-
-        if (this.analyticsOptions.showHeatmap) {
-            for (const frame of frames) {
-                const point = toCanvas({ x: frame.x, y: frame.y });
-                const radius = 2.5 + (frame.confidence * 4.5);
-                let color = "#ffd166";
-                if (frame.action === "buy") color = "#39d98a";
-                if (frame.action === "sell") color = "#ff5c70";
-
-                ctx.save();
-                ctx.globalAlpha = 0.12 + (frame.confidence * 0.35);
-                ctx.fillStyle = color;
-                ctx.beginPath();
-                ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
-            }
-        }
-
-        if (!this.analyticsOptions.showRewardCurve && !this.analyticsOptions.showPnlCurve) {
-            return;
-        }
-
-        const analyticsPanel = this.getAnalyticsPanelBounds(width, height);
-        if (!analyticsPanel) {
-            return;
-        }
-        const panelWidth = analyticsPanel.width;
-        const panelHeight = analyticsPanel.height;
-        const panelX = analyticsPanel.x;
-        const panelY = analyticsPanel.y;
-
-        const plotPadL = 12;
-        const plotPadR = 8;
-        const plotPadT = 26;
-        const plotPadB = 24;
-        const plotX = panelX + plotPadL;
-        const plotY = panelY + plotPadT;
-        const plotW = panelWidth - plotPadL - plotPadR;
-        const plotH = panelHeight - plotPadT - plotPadB;
-
-        let minValue = Number.POSITIVE_INFINITY;
-        let maxValue = Number.NEGATIVE_INFINITY;
-        for (const frame of frames) {
-            if (this.analyticsOptions.showRewardCurve) {
-                minValue = Math.min(minValue, frame.reward);
-                maxValue = Math.max(maxValue, frame.reward);
-            }
-            if (this.analyticsOptions.showPnlCurve) {
-                minValue = Math.min(minValue, frame.pnl);
-                maxValue = Math.max(maxValue, frame.pnl);
-            }
-        }
-
-        if (!Number.isFinite(minValue) || !Number.isFinite(maxValue)) {
-            return;
-        }
-
-        if (Math.abs(maxValue - minValue) < 1e-6) {
-            maxValue += 1;
-            minValue -= 1;
-        }
-
-        const xForIndex = (index: number): number => {
-            const d = Math.max(1, frames.length - 1);
-            return plotX + ((index / d) * plotW);
-        };
-        const yForValue = (value: number): number => {
-            const t = (value - minValue) / (maxValue - minValue);
-            return plotY + ((1 - t) * plotH);
-        };
-
-        ctx.save();
-        ctx.fillStyle = "rgba(6, 15, 30, 0.72)";
-        ctx.strokeStyle = "rgba(120, 148, 188, 0.45)";
-        ctx.lineWidth = 1;
-        ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
-        ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
-
-        if (minValue <= 0 && maxValue >= 0) {
-            ctx.strokeStyle = "rgba(115, 138, 171, 0.35)";
-            ctx.setLineDash([4, 3]);
-            const y0 = yForValue(0);
-            ctx.beginPath();
-            ctx.moveTo(plotX, y0);
-            ctx.lineTo(plotX + plotW, y0);
-            ctx.stroke();
-            ctx.setLineDash([]);
-        }
-
-        const drawCurve = (extract: (frame: NormalizedObserverFrame) => number, color: string) => {
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            for (let i = 0; i < frames.length; i += 1) {
-                const x = xForIndex(i);
-                const y = yForValue(extract(frames[i]));
-                if (i === 0) {
-                    ctx.moveTo(x, y);
-                } else {
-                    ctx.lineTo(x, y);
-                }
-            }
-            ctx.stroke();
-        };
-
-        if (this.analyticsOptions.showRewardCurve) {
-            drawCurve((frame) => frame.reward, "#57d4ff");
-        }
-        if (this.analyticsOptions.showPnlCurve) {
-            drawCurve((frame) => frame.pnl, "#ffb86b");
-        }
-
-        const last = frames[frames.length - 1];
-        ctx.font = "12px 'Segoe UI', sans-serif";
-        ctx.fillStyle = "#dce7ff";
-        ctx.fillText("Observer Analytics", panelX + 10, panelY + 16);
-
-        let metricsX = panelX + 10;
-        if (this.analyticsOptions.showRewardCurve) {
-            ctx.fillStyle = "#57d4ff";
-            ctx.fillText(`R ${last.reward.toFixed(2)}`, metricsX, panelY + panelHeight - 8);
-            metricsX += 70;
-        }
-        if (this.analyticsOptions.showPnlCurve) {
-            ctx.fillStyle = "#ffb86b";
-            ctx.fillText(`P ${last.pnl.toFixed(2)}`, metricsX, panelY + panelHeight - 8);
-        }
-
-        ctx.restore();
     }
 
     private nextId(prefix: "series" | "drawing" | "indicator"): string {
