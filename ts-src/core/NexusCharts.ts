@@ -1088,23 +1088,18 @@ export class NexusCharts {
         scratch.lows.length = 0;
         scratch.closes.length = 0;
 
-        if (series.data.length > 0) {
-            const geometry = this.buildSeriesGeometry();
-            const candles = geometry?.candles ?? [];
-            for (const candle of candles) {
-                const point = candle.source;
-                const open = Number(point.open);
-                const highRaw = Number(point.high);
-                const lowRaw = Number(point.low);
-                const close = Number(point.close);
-                if (!Number.isFinite(open) || !Number.isFinite(highRaw) || !Number.isFinite(lowRaw) || !Number.isFinite(close)) {
-                    continue;
-                }
-                scratch.opens.push(open);
-                scratch.highs.push(Math.max(highRaw, open, close, lowRaw));
-                scratch.lows.push(Math.min(lowRaw, open, close, highRaw));
-                scratch.closes.push(close);
+        for (const point of series.data) {
+            const open = Number(point.open);
+            const highRaw = Number(point.high);
+            const lowRaw = Number(point.low);
+            const close = Number(point.close);
+            if (!Number.isFinite(open) || !Number.isFinite(highRaw) || !Number.isFinite(lowRaw) || !Number.isFinite(close)) {
+                continue;
             }
+            scratch.opens.push(open);
+            scratch.highs.push(Math.max(highRaw, open, close, lowRaw));
+            scratch.lows.push(Math.min(lowRaw, open, close, highRaw));
+            scratch.closes.push(close);
         }
 
         try {
@@ -1324,18 +1319,16 @@ export class NexusCharts {
         }
         const width = surface.width || 1;
         const height = surface.height || 1;
-        const aspect = width / Math.max(1, height);
-        const halfWidth = this.currentZoom * aspect;
-        const left = this.currentCenterX - halfWidth;
-        const right = this.currentCenterX + halfWidth;
+        const range = this.getVisibleCandleIndexRange(geometry, width, height, 3);
+        if (range.end < range.start) {
+            return;
+        }
 
         let minY = Number.POSITIVE_INFINITY;
         let maxY = Number.NEGATIVE_INFINITY;
         let count = 0;
-        for (const candle of geometry.candles) {
-            if (candle.x < left || candle.x > right) {
-                continue;
-            }
+        for (let i = range.start; i <= range.end; i += 1) {
+            const candle = geometry.candles[i];
             minY = Math.min(minY, candle.low, candle.open, candle.close, candle.high);
             maxY = Math.max(maxY, candle.high, candle.open, candle.close, candle.low);
             count += 1;
@@ -1458,6 +1451,41 @@ export class NexusCharts {
             x: left + ((canvasX / safeWidth) * halfWidth * 2.0),
             y: bottom + (((safeHeight - canvasY) / safeHeight) * halfHeight * 2.0),
         };
+    }
+
+    private getVisibleCandleIndexRange(
+        geometry: SeriesGeometry,
+        width: number,
+        height: number,
+        padding: number = 2
+    ): { start: number; end: number } {
+        const candles = geometry.candles;
+        const count = candles.length;
+        if (count === 0) {
+            return { start: 0, end: -1 };
+        }
+        if (count === 1) {
+            return { start: 0, end: 0 };
+        }
+
+        const safeWidth = Math.max(1, width);
+        const safeHeight = Math.max(1, height);
+        const aspect = safeWidth / safeHeight;
+        const halfWidth = this.currentZoom * aspect;
+        const left = this.currentCenterX - halfWidth;
+        const right = this.currentCenterX + halfWidth;
+
+        const startX = candles[0].x;
+        const stepX = candles[1].x - startX;
+        if (Math.abs(stepX) < 1e-9) {
+            return { start: 0, end: count - 1 };
+        }
+
+        const rawStart = Math.floor((left - startX) / stepX) - padding;
+        const rawEnd = Math.ceil((right - startX) / stepX) + padding;
+        const start = Math.max(0, Math.min(count - 1, rawStart));
+        const end = Math.max(0, Math.min(count - 1, rawEnd));
+        return start <= end ? { start, end } : { start: 0, end: -1 };
     }
 
     private getWorldUnitsPerPixel(width: number, height: number): { x: number; y: number } {
@@ -1885,23 +1913,60 @@ export class NexusCharts {
         height: number,
         targetCount: number
     ): TimeAxisLabel[] {
-        const visible = geometry.candles
-            .map((candle, index) => ({
-                index,
-                candle,
-                x: this.worldToCanvasPoint(candle.x, candle.close, width, height).x,
-                timeValue: this.toNumericTime(candle.source.time),
-            }))
-            .filter((item) => item.x >= 0 && item.x <= width);
+        const candles = geometry.candles;
+        if (candles.length === 0) {
+            return [];
+        }
 
-        const source = visible.length > 0
-            ? visible
-            : geometry.candles.map((candle, index) => ({
-                index,
-                candle,
-                x: this.worldToCanvasPoint(candle.x, candle.close, width, height).x,
-                timeValue: this.toNumericTime(candle.source.time),
-            }));
+        const range = this.getVisibleCandleIndexRange(geometry, width, height, 0);
+        const rangeSize = Math.max(0, (range.end - range.start) + 1);
+        const desiredSource = Math.max(24, Math.min(rangeSize, Math.max(120, targetCount * 12)));
+        const sampleStep = rangeSize > 0 ? Math.max(1, Math.floor(rangeSize / desiredSource)) : 1;
+
+        const source: Array<{ index: number; candle: NormalizedCandleDataPoint; x: number; timeValue: number | null }> = [];
+        if (rangeSize > 0) {
+            for (let i = range.start; i <= range.end; i += sampleStep) {
+                const candle = candles[i];
+                source.push({
+                    index: i,
+                    candle,
+                    x: this.worldToCanvasPoint(candle.x, 0, width, height).x,
+                    timeValue: this.toNumericTime(candle.source.time),
+                });
+            }
+            if (source.length > 0 && source[source.length - 1].index !== range.end) {
+                const candle = candles[range.end];
+                source.push({
+                    index: range.end,
+                    candle,
+                    x: this.worldToCanvasPoint(candle.x, 0, width, height).x,
+                    timeValue: this.toNumericTime(candle.source.time),
+                });
+            }
+        }
+
+        if (source.length === 0) {
+            // Fallback: sample across the full dataset (O(targetCount), avoids O(N)).
+            const step = Math.max(1, Math.floor(candles.length / Math.max(2, targetCount)));
+            for (let i = 0; i < candles.length; i += step) {
+                const candle = candles[i];
+                source.push({
+                    index: i,
+                    candle,
+                    x: this.worldToCanvasPoint(candle.x, 0, width, height).x,
+                    timeValue: this.toNumericTime(candle.source.time),
+                });
+            }
+            if (source.length > 0 && source[source.length - 1].index !== (candles.length - 1)) {
+                const candle = candles[candles.length - 1];
+                source.push({
+                    index: candles.length - 1,
+                    candle,
+                    x: this.worldToCanvasPoint(candle.x, 0, width, height).x,
+                    timeValue: this.toNumericTime(candle.source.time),
+                });
+            }
+        }
 
         if (source.length === 0) {
             return [];
@@ -2016,30 +2081,19 @@ export class NexusCharts {
             return;
         }
 
-        let nearestIndex = 0;
-        let nearestDistance = Number.POSITIVE_INFINITY;
-        for (let i = 0; i < geometry.candles.length; i += 1) {
-            const screen = this.worldToCanvasPoint(geometry.candles[i].x, geometry.candles[i].close, surface.width, surface.height);
-            const distance = Math.abs(screen.x - canvasX);
-            if (distance < nearestDistance) {
-                nearestDistance = distance;
-                nearestIndex = i;
+        const candles = geometry.candles;
+        let index = 0;
+        if (candles.length > 1) {
+            const world = this.canvasToWorldPoint(canvasX, canvasY, surface.width, surface.height);
+            const startX = candles[0].x;
+            const stepX = candles[1].x - startX;
+            if (Math.abs(stepX) > 1e-9) {
+                index = Math.round((world.x - startX) / stepX);
+                index = Math.max(0, Math.min(candles.length - 1, index));
             }
         }
 
-        const candle = geometry.candles[nearestIndex];
-        const closePoint = this.worldToCanvasPoint(candle.x, candle.close, surface.width, surface.height);
-        this.hoveredCandle = {
-            index: nearestIndex,
-            time: candle.source.time,
-            open: candle.source.open,
-            high: candle.source.high,
-            low: candle.source.low,
-            close: candle.source.close,
-            screenX: closePoint.x,
-            screenY: closePoint.y,
-            worldX: candle.x,
-        };
+        this.hoveredCandle = this.getCandleByIndex(index, geometry);
 
         this.updateHoveredDrawingFromCanvas(canvasX, canvasY, surface.width, surface.height);
     }
