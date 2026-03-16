@@ -129,7 +129,27 @@ export class NexusCharts {
     private hoveredCandle: HoveredCandle | null = null;
     private selectedCandleIndex: number | null = null;
     private cleanupHandlers: Array<() => void> = [];
-    private readonly seriesStore = new Map<string, { type: SeriesType; data: CandleDataPoint[]; style: SeriesStyle; valueKey: SeriesValueKey; renderer?: CustomSeriesRenderer }>();
+    private readonly seriesStore = new Map<
+        string,
+        {
+            type: SeriesType;
+            data: CandleDataPoint[];
+            style: SeriesStyle;
+            valueKey: SeriesValueKey;
+            renderer?: CustomSeriesRenderer;
+            revision: number;
+        }
+    >();
+    private geometryCache: { seriesId: string; revision: number; geometry: SeriesGeometry | null } | null = null;
+    private timeSeriesCache:
+        | { seriesId: string; revision: number; series: Array<{ time: number | string; numeric: number | null; x: number }> }
+        | null = null;
+    private readonly seriesSyncScratch = {
+        opens: [] as number[],
+        highs: [] as number[],
+        lows: [] as number[],
+        closes: [] as number[],
+    };
     private readonly drawingManager = new DrawingManager();
     private readonly observerFrames: NormalizedObserverFrame[] = [];
     private readonly indicatorEngine = new IndicatorEngine();
@@ -409,12 +429,13 @@ export class NexusCharts {
         };
         const valueKey: SeriesValueKey = options.valueKey
             ?? (type === "volume" ? "volume" : "close");
-        this.seriesStore.set(id, { type, data: [], style, valueKey, renderer: options.renderer });
+        this.seriesStore.set(id, { type, data: [], style, valueKey, renderer: options.renderer, revision: 0 });
 
         const setData = (data: CandleDataPoint[]) => {
             const series = this.seriesStore.get(id);
             if (!series) return;
             series.data = [...data];
+            series.revision += 1;
             this.syncSeriesToEngine(id);
             this.recomputeIndicators();
             this.autoScaleVisibleY();
@@ -426,6 +447,7 @@ export class NexusCharts {
             const series = this.seriesStore.get(id);
             if (!series) return;
             series.data.push(point);
+            series.revision += 1;
             this.syncSeriesToEngine(id);
             this.recomputeIndicators();
             this.autoScaleVisibleY();
@@ -449,6 +471,7 @@ export class NexusCharts {
                 series.data[lastIndex] = { ...last, ...point };
             }
 
+            series.revision += 1;
             this.syncSeriesToEngine(id);
             this.recomputeIndicators();
             this.autoScaleVisibleY();
@@ -469,6 +492,7 @@ export class NexusCharts {
             const series = this.seriesStore.get(id);
             if (!series) return;
             series.data = [];
+            series.revision += 1;
             this.syncSeriesToEngine(id);
             this.recomputeIndicators();
             this.autoScaleVisibleY();
@@ -1043,6 +1067,13 @@ export class NexusCharts {
             return;
         }
 
+        // WASM backend currently supports a single primary candlestick series.
+        // If multiple candlestick series exist, only the primary one is synced.
+        const primary = this.getPrimaryCandlestickSeriesEntry();
+        if (primary && primary.id !== seriesId) {
+            return;
+        }
+
         if (typeof this.module.setSeriesData !== "function") {
             if (this.warnMissingSetSeriesData) {
                 console.warn("[NexusCharts] WASM export 'setSeriesData' is not available.");
@@ -1051,27 +1082,33 @@ export class NexusCharts {
             return;
         }
 
-        const opens: number[] = [];
-        const highs: number[] = [];
-        const lows: number[] = [];
-        const closes: number[] = [];
+        const scratch = this.seriesSyncScratch;
+        scratch.opens.length = 0;
+        scratch.highs.length = 0;
+        scratch.lows.length = 0;
+        scratch.closes.length = 0;
 
-        for (const point of series.data) {
-            const open = Number(point.open);
-            const high = Number(point.high);
-            const low = Number(point.low);
-            const close = Number(point.close);
-            if (!Number.isFinite(open) || !Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) {
-                continue;
+        if (series.data.length > 0) {
+            const geometry = this.buildSeriesGeometry();
+            const candles = geometry?.candles ?? [];
+            for (const candle of candles) {
+                const point = candle.source;
+                const open = Number(point.open);
+                const highRaw = Number(point.high);
+                const lowRaw = Number(point.low);
+                const close = Number(point.close);
+                if (!Number.isFinite(open) || !Number.isFinite(highRaw) || !Number.isFinite(lowRaw) || !Number.isFinite(close)) {
+                    continue;
+                }
+                scratch.opens.push(open);
+                scratch.highs.push(Math.max(highRaw, open, close, lowRaw));
+                scratch.lows.push(Math.min(lowRaw, open, close, highRaw));
+                scratch.closes.push(close);
             }
-            opens.push(open);
-            highs.push(high);
-            lows.push(low);
-            closes.push(close);
         }
 
         try {
-            this.module.setSeriesData(opens, highs, lows, closes);
+            this.module.setSeriesData(scratch.opens, scratch.highs, scratch.lows, scratch.closes);
         } catch (error) {
             console.warn(
                 "[NexusCharts] Failed to push series data to WASM.",
@@ -1565,20 +1602,31 @@ export class NexusCharts {
         this.drawingManager.setHoveredDrawingId(hit ? hit.id : null);
     }
 
-    private getPrimaryCandlestickSeries(): CandleDataPoint[] {
-        for (const series of this.seriesStore.values()) {
+    private getPrimaryCandlestickSeriesEntry(): { id: string; data: CandleDataPoint[]; revision: number } | null {
+        for (const [id, series] of this.seriesStore) {
             if (series.type === "candlestick" && series.data.length > 0) {
-                return series.data;
+                return { id, data: series.data, revision: series.revision };
             }
         }
-        return [];
+        return null;
+    }
+
+    private getPrimaryCandlestickSeries(): CandleDataPoint[] {
+        const entry = this.getPrimaryCandlestickSeriesEntry();
+        return entry ? entry.data : [];
     }
 
     private buildSeriesGeometry(): SeriesGeometry | null {
-        const source = this.getPrimaryCandlestickSeries();
-        if (source.length === 0) {
+        const entry = this.getPrimaryCandlestickSeriesEntry();
+        if (!entry) {
             return null;
         }
+
+        if (this.geometryCache && this.geometryCache.seriesId === entry.id && this.geometryCache.revision === entry.revision) {
+            return this.geometryCache.geometry;
+        }
+
+        const source = entry.data;
 
         let minPrice = Number.POSITIVE_INFINITY;
         let maxPrice = Number.NEGATIVE_INFINITY;
@@ -1601,6 +1649,8 @@ export class NexusCharts {
         }
 
         if (valid.length === 0) {
+            this.geometryCache = { seriesId: entry.id, revision: entry.revision, geometry: null };
+            this.timeSeriesCache = null;
             return null;
         }
 
@@ -1619,7 +1669,10 @@ export class NexusCharts {
             close: normalizeY(point.close),
         }));
 
-        return { candles, minPrice, maxPrice, scale };
+        const geometry: SeriesGeometry = { candles, minPrice, maxPrice, scale };
+        this.geometryCache = { seriesId: entry.id, revision: entry.revision, geometry };
+        this.timeSeriesCache = null;
+        return geometry;
     }
 
     private recomputeIndicators(): void {
@@ -1729,11 +1782,29 @@ export class NexusCharts {
     }
 
     private buildTimeSeries(geometry: SeriesGeometry): Array<{ time: number | string; numeric: number | null; x: number }> {
-        return geometry.candles.map((candle) => ({
+        const geometryCache = this.geometryCache;
+        const cache = this.timeSeriesCache;
+        if (
+            geometryCache
+            && geometryCache.geometry === geometry
+            && cache
+            && cache.seriesId === geometryCache.seriesId
+            && cache.revision === geometryCache.revision
+        ) {
+            return cache.series;
+        }
+
+        const series = geometry.candles.map((candle) => ({
             time: candle.source.time,
             numeric: this.toNumericTime(candle.source.time),
             x: candle.x,
         }));
+
+        if (geometryCache && geometryCache.geometry === geometry) {
+            this.timeSeriesCache = { seriesId: geometryCache.seriesId, revision: geometryCache.revision, series };
+        }
+
+        return series;
     }
 
     private timeToWorldXInternal(time: number | string, geometry: SeriesGeometry): number | null {
