@@ -289,6 +289,227 @@ void UploadInstances(GLuint instanceVbo, const std::vector<RenderInstance>& inst
     *outCount = static_cast<GLsizei>(instances.size());
 }
 
+struct VisibleRange {
+    int start = 0;
+    int end = -1;
+};
+
+VisibleRange ComputeVisibleRange(const Camera* camera, int viewportWidth, int viewportHeight, int candleCount) {
+    if (candleCount <= 0) {
+        return {};
+    }
+    if (candleCount == 1) {
+        return {0, 0};
+    }
+
+    // If camera is missing, render everything.
+    if (camera == nullptr) {
+        return {0, candleCount - 1};
+    }
+
+    const float zoom = camera->GetZoom();
+    const float centerX = camera->GetCenterX();
+    const float aspect = static_cast<float>(viewportWidth) / std::max(1.0f, static_cast<float>(viewportHeight));
+    const float halfWidth = zoom * aspect;
+    const float left = centerX - halfWidth;
+    const float right = centerX + halfWidth;
+
+    constexpr float kStartX = -0.92f;
+    constexpr float kSpanX = 1.84f;
+    const float stepX = kSpanX / static_cast<float>(candleCount - 1);
+    if (std::abs(stepX) < 1e-8f) {
+        return {0, candleCount - 1};
+    }
+
+    constexpr int kPadding = 6;
+    const int rawStart = static_cast<int>(std::floor((left - kStartX) / stepX)) - kPadding;
+    const int rawEnd = static_cast<int>(std::ceil((right - kStartX) / stepX)) + kPadding;
+    const int start = std::max(0, std::min(candleCount - 1, rawStart));
+    const int end = std::max(0, std::min(candleCount - 1, rawEnd));
+    if (start > end) {
+        return {0, -1};
+    }
+    return {start, end};
+}
+
+void BuildRenderInstancesRange(
+    const std::vector<CandleOhlc>& ohlc,
+    const VisibleRange& range,
+    std::vector<RenderInstance>* bodyInstances,
+    std::vector<RenderInstance>* wickInstances
+) {
+    constexpr float kBodyHalfWidth = 0.020f;
+    constexpr float kWickHalfWidth = 0.004f;
+
+    bodyInstances->clear();
+    wickInstances->clear();
+    if (range.end < range.start) {
+        return;
+    }
+
+    const int count = static_cast<int>(ohlc.size());
+    const int start = std::max(0, std::min(count - 1, range.start));
+    const int end = std::max(0, std::min(count - 1, range.end));
+    const int span = std::max(0, (end - start) + 1);
+    bodyInstances->reserve(static_cast<size_t>(span));
+    wickInstances->reserve(static_cast<size_t>(span));
+
+    for (int i = start; i <= end; ++i) {
+        const CandleOhlc& candle = ohlc[static_cast<size_t>(i)];
+        const bool isUp = candle.close >= candle.open;
+
+        bodyInstances->push_back({
+            candle.x,
+            candle.open,
+            candle.close,
+            kBodyHalfWidth,
+            isUp ? 0.18f : 0.92f,
+            isUp ? 0.80f : 0.28f,
+            isUp ? 0.34f : 0.30f
+        });
+
+        wickInstances->push_back({
+            candle.x,
+            candle.low,
+            candle.high,
+            kWickHalfWidth,
+            0.78f,
+            0.82f,
+            0.90f
+        });
+    }
+}
+
+bool BuildWindowedInstancesFromDataManager(
+    const DataManager* dataManager,
+    const Camera* camera,
+    int viewportWidth,
+    int viewportHeight,
+    std::vector<RenderInstance>* bodyInstances,
+    std::vector<RenderInstance>* wickInstances,
+    VisibleRange* outRange
+) {
+    if (dataManager == nullptr) {
+        const std::vector<CandleOhlc> sample = BuildSampleCandles();
+        const VisibleRange range = ComputeVisibleRange(camera, viewportWidth, viewportHeight, static_cast<int>(sample.size()));
+        BuildRenderInstancesRange(sample, range, bodyInstances, wickInstances);
+        if (outRange) {
+            *outRange = range;
+        }
+        return true;
+    }
+
+    const std::vector<DataManager::Candle>& source = dataManager->GetCandles();
+    if (source.empty()) {
+        if (dataManager->GetRevision() == 0) {
+            const std::vector<CandleOhlc> sample = BuildSampleCandles();
+            const VisibleRange range = ComputeVisibleRange(camera, viewportWidth, viewportHeight, static_cast<int>(sample.size()));
+            BuildRenderInstancesRange(sample, range, bodyInstances, wickInstances);
+            if (outRange) {
+                *outRange = range;
+            }
+            return true;
+        }
+
+        bodyInstances->clear();
+        wickInstances->clear();
+        if (outRange) {
+            *outRange = {};
+        }
+        return true;
+    }
+
+    float minLow = std::numeric_limits<float>::max();
+    float maxHigh = std::numeric_limits<float>::lowest();
+    for (const DataManager::Candle& candle : source) {
+        const float low = std::min({candle.low, candle.open, candle.close, candle.high});
+        const float high = std::max({candle.high, candle.open, candle.close, candle.low});
+        if (!std::isfinite(low) || !std::isfinite(high)) {
+            continue;
+        }
+        minLow = std::min(minLow, low);
+        maxHigh = std::max(maxHigh, high);
+    }
+
+    if (!std::isfinite(minLow) || !std::isfinite(maxHigh) || maxHigh <= minLow) {
+        bodyInstances->clear();
+        wickInstances->clear();
+        if (outRange) {
+            *outRange = {};
+        }
+        return true;
+    }
+
+    const float rangeY = std::max(maxHigh - minLow, 1e-5f);
+    const float scaleY = 1.7f / rangeY;
+    const auto normalizeY = [minLow, scaleY](float value) -> float {
+        return ((value - minLow) * scaleY) - 0.85f;
+    };
+
+    const int count = static_cast<int>(source.size());
+    const VisibleRange range = ComputeVisibleRange(camera, viewportWidth, viewportHeight, count);
+    if (outRange) {
+        *outRange = range;
+    }
+
+    bodyInstances->clear();
+    wickInstances->clear();
+    if (range.end < range.start) {
+        return true;
+    }
+
+    constexpr float kStartX = -0.92f;
+    constexpr float kSpanX = 1.84f;
+    const float stepX = (count > 1) ? (kSpanX / static_cast<float>(count - 1)) : 0.0f;
+
+    const int span = std::max(0, (range.end - range.start) + 1);
+    bodyInstances->reserve(static_cast<size_t>(span));
+    wickInstances->reserve(static_cast<size_t>(span));
+
+    constexpr float kBodyHalfWidth = 0.020f;
+    constexpr float kWickHalfWidth = 0.004f;
+
+    for (int i = range.start; i <= range.end; ++i) {
+        const DataManager::Candle& candle = source[static_cast<size_t>(i)];
+        const float open = candle.open;
+        const float close = candle.close;
+        const float high = std::max({candle.high, candle.open, candle.close, candle.low});
+        const float low = std::min({candle.low, candle.open, candle.close, candle.high});
+        if (!std::isfinite(open) || !std::isfinite(close) || !std::isfinite(high) || !std::isfinite(low)) {
+            continue;
+        }
+
+        const float x = kStartX + (stepX * static_cast<float>(i));
+        const float nOpen = normalizeY(open);
+        const float nClose = normalizeY(close);
+        const float nHigh = normalizeY(high);
+        const float nLow = normalizeY(low);
+        const bool isUp = nClose >= nOpen;
+
+        bodyInstances->push_back({
+            x,
+            nOpen,
+            nClose,
+            kBodyHalfWidth,
+            isUp ? 0.18f : 0.92f,
+            isUp ? 0.80f : 0.28f,
+            isUp ? 0.34f : 0.30f
+        });
+
+        wickInstances->push_back({
+            x,
+            nLow,
+            nHigh,
+            kWickHalfWidth,
+            0.78f,
+            0.82f,
+            0.90f
+        });
+    }
+
+    return true;
+}
+
 std::array<float, 16> BuildIdentityMatrix() {
     return {
         1.0f, 0.0f, 0.0f, 0.0f,
@@ -339,6 +560,7 @@ void RenderingEngine::SetCamera(const Camera* camera) {
 void RenderingEngine::SetDataManager(const DataManager* dataManager) {
     dataManager_ = dataManager;
     hasAppliedDataRevision_ = false;
+    hasAppliedVisibleRange_ = false;
 }
 
 void RenderingEngine::SetViewportSize(int width, int height) {
@@ -382,7 +604,16 @@ bool RenderingEngine::InitializePipeline() {
 
     std::vector<RenderInstance> bodyInstances;
     std::vector<RenderInstance> wickInstances;
-    BuildRenderInstances(BuildCandlesFromDataManager(dataManager_), &bodyInstances, &wickInstances);
+    VisibleRange visibleRange;
+    BuildWindowedInstancesFromDataManager(
+        dataManager_,
+        camera_,
+        viewportWidth_,
+        viewportHeight_,
+        &bodyInstances,
+        &wickInstances,
+        &visibleRange
+    );
 
     bodyInstanceCount_ = static_cast<GLsizei>(bodyInstances.size());
     wickInstanceCount_ = static_cast<GLsizei>(wickInstances.size());
@@ -444,6 +675,10 @@ bool RenderingEngine::InitializePipeline() {
         hasAppliedDataRevision_ = false;
     }
 
+    appliedVisibleStart_ = visibleRange.start;
+    appliedVisibleEnd_ = visibleRange.end;
+    hasAppliedVisibleRange_ = true;
+
     initialized_ = true;
     std::cout << "[NexusCharts] Phase 2 pipeline initialized. Bodies: " << bodyInstanceCount_
               << ", Wicks: " << wickInstanceCount_ << std::endl;
@@ -456,13 +691,28 @@ void RenderingEngine::RefreshInstanceBuffersIfNeeded() {
     }
 
     const std::uint64_t revision = dataManager_->GetRevision();
-    if (hasAppliedDataRevision_ && revision == appliedDataRevision_) {
+    const int candleCount = static_cast<int>(dataManager_->GetCandles().size());
+    const VisibleRange visibleRange = ComputeVisibleRange(camera_, viewportWidth_, viewportHeight_, candleCount);
+    const bool rangeChanged = !hasAppliedVisibleRange_
+        || visibleRange.start != appliedVisibleStart_
+        || visibleRange.end != appliedVisibleEnd_;
+
+    if (hasAppliedDataRevision_ && revision == appliedDataRevision_ && !rangeChanged) {
         return;
     }
 
     std::vector<RenderInstance> bodyInstances;
     std::vector<RenderInstance> wickInstances;
-    BuildRenderInstances(BuildCandlesFromDataManager(dataManager_), &bodyInstances, &wickInstances);
+    VisibleRange builtRange;
+    BuildWindowedInstancesFromDataManager(
+        dataManager_,
+        camera_,
+        viewportWidth_,
+        viewportHeight_,
+        &bodyInstances,
+        &wickInstances,
+        &builtRange
+    );
 
     UploadInstances(bodyInstanceVbo_, bodyInstances, &bodyInstanceCount_);
     UploadInstances(wickInstanceVbo_, wickInstances, &wickInstanceCount_);
@@ -470,6 +720,9 @@ void RenderingEngine::RefreshInstanceBuffersIfNeeded() {
 
     appliedDataRevision_ = revision;
     hasAppliedDataRevision_ = true;
+    appliedVisibleStart_ = builtRange.start;
+    appliedVisibleEnd_ = builtRange.end;
+    hasAppliedVisibleRange_ = true;
 }
 
 void RenderingEngine::Render() {

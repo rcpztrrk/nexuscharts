@@ -36,4 +36,7 @@ private:
     const DataManager* dataManager_ = nullptr;
     std::uint64_t appliedDataRevision_ = 0;
     bool hasAppliedDataRevision_ = false;
+    int appliedVisibleStart_ = 0;
+    int appliedVisibleEnd_ = -1;
+    bool hasAppliedVisibleRange_ = false;
 };
