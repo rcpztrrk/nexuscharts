@@ -38,6 +38,7 @@ import { renderIndicatorOverlay } from "./indicators/IndicatorOverlayRenderer";
 import { renderControlBar, type ControlButtonState } from "./ui/ControlBar";
 import { renderCrosshairOverlay as renderCrosshairOverlayUi } from "./ui/CrosshairOverlay";
 import { renderTooltipOverlay as renderTooltipOverlayUi } from "./ui/TooltipOverlay";
+import { loadPersistedChartState, persistChartState } from "./ui/Persistence";
 
 
 interface NormalizedObserverFrame {
@@ -67,11 +68,6 @@ interface PaneRect extends OverlayRect {
     innerY: number;
     innerWidth: number;
     innerHeight: number;
-}
-
-interface PersistedChartState {
-    ui: Pick<UiState, "showAxes" | "showCrosshair" | "showTooltip" | "showControlBar" | "tooltipMode" | "persistState" | "autoScaleY">;
-    analytics: Pick<AnalyticsOptions, "showHeatmap" | "showRewardCurve" | "showPnlCurve">;
 }
 
 interface NexusWasmModule {
@@ -176,7 +172,7 @@ export class NexusCharts {
         this.wasmBinaryPath = options.wasmBinaryPath ?? "wasm/nexuscharts.wasm";
         this.enableInteraction = options.enableInteraction ?? true;
         this.onReadyCallback = options.onReady;
-        const persisted = this.loadPersistedChartState();
+        const persisted = loadPersistedChartState(this.canvasId);
         if (persisted?.ui) {
             this.uiOptions = this.normalizeUiOptions(persisted.ui);
         }
@@ -535,7 +531,7 @@ export class NexusCharts {
         if (!this.uiOptions.showControlBar) {
             this.controlButtons = [];
         }
-        this.persistChartState();
+        persistChartState(this.canvasId, this.uiOptions, this.analyticsOptions);
         this.redrawDrawings();
     }
 
@@ -556,7 +552,7 @@ export class NexusCharts {
     public configureAnalytics(options: AnalyticsOptions): void {
         this.analyticsOptions = this.normalizeAnalyticsOptions(options);
         this.trimObserverFramesToLimit();
-        this.persistChartState();
+        persistChartState(this.canvasId, this.uiOptions, this.analyticsOptions);
         this.redrawDrawings();
     }
 
@@ -1196,7 +1192,7 @@ export class NexusCharts {
             ...this.uiOptions,
             [flag]: !this.uiOptions[flag],
         };
-        this.persistChartState();
+        persistChartState(this.canvasId, this.uiOptions, this.analyticsOptions);
         this.redrawDrawings();
     }
 
@@ -1205,7 +1201,7 @@ export class NexusCharts {
             ...this.uiOptions,
             tooltipMode: this.uiOptions.tooltipMode === "follow" ? "fixed" : "follow",
         };
-        this.persistChartState();
+        persistChartState(this.canvasId, this.uiOptions, this.analyticsOptions);
         this.redrawDrawings();
     }
 
@@ -1214,7 +1210,7 @@ export class NexusCharts {
             ...this.uiOptions,
             autoScaleY: !this.uiOptions.autoScaleY,
         };
-        this.persistChartState();
+        persistChartState(this.canvasId, this.uiOptions, this.analyticsOptions);
         this.autoScaleVisibleY();
         this.redrawDrawings();
     }
@@ -1224,7 +1220,7 @@ export class NexusCharts {
             ...this.analyticsOptions,
             [flag]: !this.analyticsOptions[flag],
         };
-        this.persistChartState();
+        persistChartState(this.canvasId, this.uiOptions, this.analyticsOptions);
         this.redrawDrawings();
     }
 
@@ -1235,66 +1231,8 @@ export class NexusCharts {
             showRewardCurve: !isVisible,
             showPnlCurve: !isVisible,
         };
-        this.persistChartState();
+        persistChartState(this.canvasId, this.uiOptions, this.analyticsOptions);
         this.redrawDrawings();
-    }
-
-    private getStorageKey(): string {
-        return `nexuscharts:ui:${this.canvasId}`;
-    }
-
-    private loadPersistedChartState(): PersistedChartState | null {
-        if (typeof window === "undefined" || !window.localStorage) {
-            return null;
-        }
-        try {
-            const raw = window.localStorage.getItem(this.getStorageKey());
-            if (!raw) {
-                return null;
-            }
-            const parsed = JSON.parse(raw) as PersistedChartState;
-            if (!parsed || typeof parsed !== "object") {
-                return null;
-            }
-            return parsed;
-        } catch {
-            return null;
-        }
-    }
-
-    private persistChartState(): void {
-        if (typeof window === "undefined" || !window.localStorage) {
-            return;
-        }
-        if (!this.uiOptions.persistState) {
-            try {
-                window.localStorage.removeItem(this.getStorageKey());
-            } catch {
-                // Ignore storage failures.
-            }
-            return;
-        }
-        const state: PersistedChartState = {
-            ui: {
-                showAxes: this.uiOptions.showAxes,
-                showCrosshair: this.uiOptions.showCrosshair,
-                showTooltip: this.uiOptions.showTooltip,
-                showControlBar: this.uiOptions.showControlBar,
-                tooltipMode: this.uiOptions.tooltipMode,
-                persistState: this.uiOptions.persistState,
-            autoScaleY: this.uiOptions.autoScaleY,
-            },
-            analytics: {
-                showHeatmap: this.analyticsOptions.showHeatmap,
-                showRewardCurve: this.analyticsOptions.showRewardCurve,
-                showPnlCurve: this.analyticsOptions.showPnlCurve,
-            },
-        };
-        try {
-            window.localStorage.setItem(this.getStorageKey(), JSON.stringify(state));
-        } catch {
-            // Ignore storage quota/privacy mode failures and keep runtime behavior.
-        }
     }
 
     private setSelectedCandleIndex(index: number | null): void {
