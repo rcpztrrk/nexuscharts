@@ -5,17 +5,12 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 
 ## Project Status
 
-- Phase 1 completed: WebAssembly runtime, WebGL2 context, render loop, and integration baseline.
-- Phase 2 completed: candlestick body and wick rendering with instancing, plus 2D camera matrix integration.
-- Phase 3 completed: mouse drag pan and wheel zoom interaction from TypeScript to WASM camera controls.
-- Phase 4 completed: public API surface, drawing overlay layer, and WASM series data bridge (`createSeries().setData()`).
-- Phase 5 completed: observer analytics overlay, WASM observer stream bridge, and live metrics readback.
-- Phase 6 completed: chart UX foundation (axes, crosshair axis labels, tooltip modes, candle selection/navigation, control bar, and keyboard shortcuts).
-- Phase 7 completed: technical indicators and multi-pane composition layer.
-- Phase 8 completed: drawing tools with hit-testing, drag/resize, and context actions.
-- Phase 9 completed: time/price anchoring for drawings and tooltips.
-- Phase 12 completed: realtime updates (append/update last candle) + perf instrumentation.
-- Phase 13 in progress: large dataset performance tuning and optimization.
+- Phase 1-8 completed: WASM/WebGL2 core, instanced candlesticks, interaction, API, indicators, multipane UX, drawings, and time/price anchoring.
+- Phase 9 largely complete: realtime updates (append/update last candle), perf metrics, and large dataset render optimizations.
+- Phase 10 in progress: theme alignment (single theme object and full overlay/WASM application pending).
+- Phase 11 in progress: codebase modularization (NexusCharts.ts split into focused modules).
+- Phase 12 in progress: performance tuning (benchmark/profiling for 500K-1M candles).
+- Demo now supports benchmark mode for large datasets (50k+), reducing overlay load to keep interaction responsive.
 
 ## Core Capabilities
 
@@ -124,22 +119,6 @@ On Windows PowerShell systems with restricted script execution, run npm commands
 cmd /c npm run build
 cmd /c npm run dev
 ```
-
-## Development Roadmap
-
-- [x] Phase 1: Runtime and context bootstrap
-- [x] Phase 2: Candlestick pipeline completion (wicks, camera integration)
-- [x] Phase 3: Interactive pan and zoom
-- [x] Phase 4: Developer Open API and package publishing
-- [x] Phase 5: RL analytics view: real-time agent decision heatmaps, reward/P&L curves, and WASM-based observer data stream.
-- [x] Phase 6: Chart UX refinement: polished time scale labels, crosshair axis labels, tooltip modes, and navigation ergonomics.
-- [x] **Phase 7:** Indicator and pane engine: moving averages/oscillators, secondary panes, and synchronized scales.
-- [x] Phase 8: Multi-series rendering (line/area/histogram) + volume histogram support.
-- [x] Phase 9: Multi-pane layout with synchronized crosshair and independent scales.
-- [x] Phase 10: Drawing tools (trend/fib/box/hline) with drag/resize + hit-testing.
-- [x] Phase 11: Time/price anchoring for drawings and tooltips (not only normalized screen space).
-- [x] Phase 12: Real-time updates (append candle, update last candle) + perf instrumentation.
-- [ ] Phase 13: Large dataset performance tuning + GC/memory optimization.
 
 ## License
 

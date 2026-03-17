@@ -47,7 +47,7 @@
         }
 
         #stream-toggle {
-            margin-top: 10px;
+            margin-top: 0;
             padding: 6px 12px;
             border: 1px solid rgba(120, 148, 188, 0.4);
             border-radius: 6px;
@@ -63,6 +63,57 @@
             border-color: rgba(255, 204, 102, 0.6);
         }
 
+        #toolbar {
+            margin-top: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        #benchmark-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border: 1px solid rgba(120, 148, 188, 0.4);
+            border-radius: 6px;
+            background: rgba(12, 22, 40, 0.85);
+            color: #dce7ff;
+            font-size: 12px;
+            letter-spacing: 0.2px;
+        }
+
+        #dataset-size {
+            padding: 4px 6px;
+            border-radius: 4px;
+            border: 1px solid rgba(120, 148, 188, 0.4);
+            background: rgba(7, 14, 27, 0.95);
+            color: #dce7ff;
+            font-size: 12px;
+        }
+
+        #dataset-load {
+            padding: 4px 10px;
+            border-radius: 4px;
+            border: 1px solid rgba(120, 148, 188, 0.4);
+            background: rgba(20, 34, 60, 0.95);
+            color: #dce7ff;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        #dataset-load:hover {
+            border-color: rgba(156, 186, 232, 0.7);
+        }
+
+        #dataset-status {
+            color: #9bb3d6;
+            font-size: 11px;
+            letter-spacing: 0.2px;
+        }
+
         #ux-hint {
             margin-top: 8px;
             color: #6f86aa;
@@ -74,7 +125,24 @@
 
 <body>
     <h2>NexusCharts (WASM/WebGL Demo)</h2>
-    <button id="stream-toggle">Stream: On</button>
+    <div id="toolbar">
+        <div id="benchmark-bar">
+            <span>Dataset</span>
+            <select id="dataset-size">
+                <option value="200">200</option>
+                <option value="2000">2,000</option>
+                <option value="10000">10,000</option>
+                <option value="50000">50,000</option>
+                <option value="100000">100,000</option>
+                <option value="250000">250,000</option>
+                <option value="500000">500,000</option>
+                <option value="1000000">1,000,000 (slow)</option>
+            </select>
+            <button id="dataset-load">Load</button>
+            <span id="dataset-status">Size: 42</span>
+        </div>
+        <button id="stream-toggle">Stream: On</button>
+    </div>
     <div id="chart-container">
         <canvas id="canvas" width="800" height="600"></canvas>
     </div>
@@ -143,10 +211,17 @@
                 volume: Number(volume.toFixed(2))
             };
         };
-        const buildObserverFrames = (candles) => {
+        const maxObserverFrames = 180;
+        const buildObserverFrames = (candles, maxFrames = maxObserverFrames) => {
             const frames = [];
+            if (!candles.length) {
+                return frames;
+            }
+            const total = candles.length;
+            const span = Math.min(maxFrames, total);
+            const start = total - span;
             let cumulativePnl = 0;
-            for (let i = 0; i < candles.length; i += 1) {
+            for (let i = start; i < total; i += 1) {
                 const candle = candles[i];
                 const delta = candle.close - candle.open;
                 const reward = delta;
@@ -157,7 +232,8 @@
                 else if (delta < -0.2) action = "sell";
 
                 const confidence = Math.min(1, 0.45 + (Math.abs(delta) / 3.5));
-                const x = -0.9 + ((1.8 * i) / Math.max(1, candles.length - 1));
+                const frameIndex = i - start;
+                const x = -0.9 + ((1.8 * frameIndex) / Math.max(1, span - 1));
                 const y = action === "buy" ? 0.48 : action === "sell" ? -0.48 : 0.0;
 
                 frames.push({
@@ -177,31 +253,35 @@
             const metricsLabel = document.getElementById("metrics-label");
             const perfLabel = document.getElementById("perf-label");
             const streamToggle = document.getElementById("stream-toggle");
+            const datasetSelect = document.getElementById("dataset-size");
+            const datasetLoad = document.getElementById("dataset-load");
+            const datasetStatus = document.getElementById("dataset-status");
+            const datasetThreshold = 50000;
             let streamEnabled = true;
-            if (streamToggle) {
-                streamToggle.addEventListener("click", () => {
-                    streamEnabled = !streamEnabled;
+            let overlaysEnabled = true;
+            let analyticsEnabled = true;
+
+            const setStreamState = (nextState) => {
+                streamEnabled = nextState;
+                if (streamToggle) {
                     streamToggle.textContent = `Stream: ${streamEnabled ? "On" : "Off"}`;
                     streamToggle.classList.toggle("is-paused", !streamEnabled);
+                }
+            };
+
+            if (streamToggle) {
+                streamToggle.addEventListener("click", () => {
+                    setStreamState(!streamEnabled);
                 });
             }
+
             const series = chart.createSeries({ type: "candlestick" });
-            const candles = generateCandles(42);
-            series.setData(candles);
-
             const lineSeries = chart.createSeries({ type: "line", color: "#7dd3fc", lineWidth: 2 });
-            lineSeries.setData(candles);
-
             const areaSeries = chart.createSeries({ type: "area", color: "#22c55e", opacity: 0.12, lineWidth: 1.5 });
-            areaSeries.setData(candles);
-
             const histSeries = chart.createSeries({ type: "histogram", color: "#f59e0b", opacity: 0.18, barWidthRatio: 0.45 });
-            histSeries.setData(candles);
-
             const volumeSeries = chart.createSeries({ type: "volume", color: "#38bdf8", opacity: 0.22, barWidthRatio: 0.55 });
-            volumeSeries.setData(candles);
 
-            const customData = candles.map((c, i) => ({
+            const buildCustomData = (source) => source.map((c, i) => ({
                 ...c,
                 value: c.close + (Math.sin(i * 0.55) * 1.4)
             }));
@@ -234,50 +314,129 @@
                     ctx.restore();
                 }
             });
-            customSeries.setData(customData);
 
-            chart.addIndicator({ type: "sma", period: 8, color: "#fbbf24" });
-            chart.addIndicator({ type: "ema", period: 13, color: "#7dd3fc" });
-            chart.addIndicator({ type: "rsi", period: 14, color: "#a78bfa", pane: "lower" });
-
-            chart.configureAnalytics({
-                showHeatmap: true,
-                showRewardCurve: true,
-                showPnlCurve: true,
-                maxFrames: 180
-            });
-            const initialFrames = buildObserverFrames(candles);
-            chart.setObserverFrames(initialFrames);
-
-            const anchorStart = candles[Math.max(2, Math.floor(candles.length * 0.25))];
-            const anchorEnd = candles[Math.max(10, Math.floor(candles.length * 0.7))];
-
-            chart.addDrawing({
-                type: "line",
-                points: [
-                    { time: anchorStart.time, price: anchorStart.low - 0.6 },
-                    { time: anchorEnd.time, price: anchorEnd.high + 0.8 }
-                ],
-                style: { color: "#ffcc66", width: 2 }
-            });
-
-            chart.addDrawing({
-                type: "horizontal_line",
-                price: candles[Math.floor(candles.length * 0.5)].close - 1.2,
-                style: { color: "#5ea6ff", width: 1.5, dash: [6, 4] }
-            });
-
-            chart.addDrawing({
-                type: "vertical_line",
-                time: anchorEnd.time,
-                style: { color: "#5ea6ff", width: 1.2, dash: [4, 4] }
-            });
-
-            let streamIndex = initialFrames.length;
-            let cumulativePnl = initialFrames.length ? initialFrames[initialFrames.length - 1].pnl : 0;
-            let liveIndex = candles.length;
-            let lastClose = candles[candles.length - 1].close;
+            let candles = [];
+            let streamIndex = 0;
+            let cumulativePnl = 0;
+            let liveIndex = 0;
+            let lastClose = 102;
             let inProgressTicks = 0;
+
+            const updateDatasetStatus = () => {
+                if (datasetStatus) {
+                    const modeLabel = overlaysEnabled ? "Full" : "Benchmark";
+                    datasetStatus.textContent = `Size: ${candles.length.toLocaleString()} | Mode: ${modeLabel}`;
+                }
+            };
+
+            const applyDrawings = (dataset) => {
+                chart.clearDrawings();
+                if (!dataset.length) {
+                    return;
+                }
+                const clampIndex = (index) => Math.min(Math.max(0, index), dataset.length - 1);
+                const anchorStart = dataset[clampIndex(Math.max(2, Math.floor(dataset.length * 0.25)))];
+                const anchorEnd = dataset[clampIndex(Math.max(10, Math.floor(dataset.length * 0.7)))];
+
+                chart.addDrawing({
+                    type: "line",
+                    points: [
+                        { time: anchorStart.time, price: anchorStart.low - 0.6 },
+                        { time: anchorEnd.time, price: anchorEnd.high + 0.8 }
+                    ],
+                    style: { color: "#ffcc66", width: 2 }
+                });
+
+                chart.addDrawing({
+                    type: "horizontal_line",
+                    price: dataset[Math.floor(dataset.length * 0.5)].close - 1.2,
+                    style: { color: "#5ea6ff", width: 1.5, dash: [6, 4] }
+                });
+
+                chart.addDrawing({
+                    type: "vertical_line",
+                    time: anchorEnd.time,
+                    style: { color: "#5ea6ff", width: 1.2, dash: [4, 4] }
+                });
+            };
+
+            const applySeriesData = (dataset, enableOverlays) => {
+                series.setData(dataset);
+                if (enableOverlays) {
+                    lineSeries.setData(dataset);
+                    areaSeries.setData(dataset);
+                    histSeries.setData(dataset);
+                    volumeSeries.setData(dataset);
+
+                    const customData = buildCustomData(dataset);
+                    customSeries.setData(customData);
+                } else {
+                    lineSeries.setData([]);
+                    areaSeries.setData([]);
+                    histSeries.setData([]);
+                    volumeSeries.setData([]);
+                    customSeries.setData([]);
+                }
+            };
+
+            const applyIndicators = (enableOverlays) => {
+                chart.clearIndicators();
+                if (!enableOverlays) {
+                    return;
+                }
+                chart.addIndicator({ type: "sma", period: 8, color: "#fbbf24" });
+                chart.addIndicator({ type: "ema", period: 13, color: "#7dd3fc" });
+                chart.addIndicator({ type: "rsi", period: 14, color: "#a78bfa", pane: "lower" });
+            };
+
+            const applyDataset = (count, pauseStream = true) => {
+                overlaysEnabled = count < datasetThreshold;
+                analyticsEnabled = overlaysEnabled;
+                const nextCandles = generateCandles(count);
+                candles = nextCandles;
+
+                applyIndicators(overlaysEnabled);
+                applySeriesData(candles, overlaysEnabled);
+
+                chart.configureAnalytics({
+                    showHeatmap: analyticsEnabled,
+                    showRewardCurve: analyticsEnabled,
+                    showPnlCurve: analyticsEnabled,
+                    maxFrames: maxObserverFrames
+                });
+                const frames = analyticsEnabled ? buildObserverFrames(candles, maxObserverFrames) : [];
+                chart.setObserverFrames(frames);
+                if (overlaysEnabled) {
+                    applyDrawings(candles);
+                } else {
+                    chart.clearDrawings();
+                }
+
+                streamIndex = frames.length;
+                cumulativePnl = frames.length ? frames[frames.length - 1].pnl : 0;
+                liveIndex = candles.length;
+                lastClose = candles.length ? candles[candles.length - 1].close : 102;
+                inProgressTicks = 0;
+
+                updateDatasetStatus();
+
+                if (pauseStream) {
+                    setStreamState(false);
+                }
+            };
+
+            if (datasetLoad && datasetSelect) {
+                datasetLoad.addEventListener("click", () => {
+                    const size = Number(datasetSelect.value) || 200;
+                    applyDataset(size, true);
+                });
+            }
+
+            const defaultDatasetSize = 200;
+            if (datasetSelect) {
+                datasetSelect.value = String(defaultDatasetSize);
+            }
+            applyDataset(defaultDatasetSize, false);
 
             setInterval(() => {
                 if (!streamEnabled) {
@@ -305,16 +464,18 @@
                     lastClose = activeCandle.close;
 
                     series.updateLast(activeCandle);
-                    lineSeries.updateLast(activeCandle);
-                    areaSeries.updateLast(activeCandle);
-                    histSeries.updateLast(activeCandle);
-                    volumeSeries.updateLast(activeCandle);
+                    if (overlaysEnabled) {
+                        lineSeries.updateLast(activeCandle);
+                        areaSeries.updateLast(activeCandle);
+                        histSeries.updateLast(activeCandle);
+                        volumeSeries.updateLast(activeCandle);
 
-                    const customPoint = {
-                        ...activeCandle,
-                        value: activeCandle.close + (Math.sin((candles.length - 1) * 0.55) * 1.4)
-                    };
-                    customSeries.updateLast(customPoint);
+                        const customPoint = {
+                            ...activeCandle,
+                            value: activeCandle.close + (Math.sin((candles.length - 1) * 0.55) * 1.4)
+                        };
+                        customSeries.updateLast(customPoint);
+                    }
 
                     inProgressTicks += 1;
                 } else {
@@ -323,16 +484,18 @@
                     lastClose = activeCandle.close;
 
                     series.append(activeCandle);
-                    lineSeries.append(activeCandle);
-                    areaSeries.append(activeCandle);
-                    histSeries.append(activeCandle);
-                    volumeSeries.append(activeCandle);
+                    if (overlaysEnabled) {
+                        lineSeries.append(activeCandle);
+                        areaSeries.append(activeCandle);
+                        histSeries.append(activeCandle);
+                        volumeSeries.append(activeCandle);
 
-                    const customPoint = {
-                        ...activeCandle,
-                        value: activeCandle.close + (Math.sin(liveIndex * 0.55) * 1.4)
-                    };
-                    customSeries.append(customPoint);
+                        const customPoint = {
+                            ...activeCandle,
+                            value: activeCandle.close + (Math.sin(liveIndex * 0.55) * 1.4)
+                        };
+                        customSeries.append(customPoint);
+                    }
 
                     inProgressTicks = 0;
                     liveIndex += 1;
@@ -346,26 +509,30 @@
                 else if (reward < -0.2) action = "sell";
 
                 const confidence = Math.min(1, 0.45 + (Math.abs(reward) / 3.5));
-                const x = -0.9 + ((1.8 * (streamIndex % 180)) / 179);
+                const x = -0.9 + ((1.8 * (streamIndex % maxObserverFrames)) / Math.max(1, maxObserverFrames - 1));
                 const y = action === "buy" ? 0.48 : action === "sell" ? -0.48 : 0.0;
 
-                chart.pushObserverFrame({
-                    time: activeCandle.time,
-                    reward: Number(reward.toFixed(3)),
-                    pnl: Number(cumulativePnl.toFixed(3)),
-                    confidence: Number(confidence.toFixed(3)),
-                    action,
-                    x: Number(x.toFixed(3)),
-                    y
-                });
+                if (analyticsEnabled) {
+                    chart.pushObserverFrame({
+                        time: activeCandle.time,
+                        reward: Number(reward.toFixed(3)),
+                        pnl: Number(cumulativePnl.toFixed(3)),
+                        confidence: Number(confidence.toFixed(3)),
+                        action,
+                        x: Number(x.toFixed(3)),
+                        y
+                    });
 
-                const metrics = chart.getObserverMetrics(60);
-                if (metricsLabel) {
-                    metricsLabel.textContent =
-                        `Observer stream (${metrics.source}) | frames: ${metrics.frameCount} | ` +
-                        `R: ${metrics.lastReward.toFixed(3)} | ` +
-                        `P: ${metrics.lastPnl.toFixed(3)} | ` +
-                        `avg60: ${metrics.averageReward.toFixed(3)}`;
+                    const metrics = chart.getObserverMetrics(60);
+                    if (metricsLabel) {
+                        metricsLabel.textContent =
+                            `Observer stream (${metrics.source}) | frames: ${metrics.frameCount} | ` +
+                            `R: ${metrics.lastReward.toFixed(3)} | ` +
+                            `P: ${metrics.lastPnl.toFixed(3)} | ` +
+                            `avg60: ${metrics.averageReward.toFixed(3)}`;
+                    }
+                } else if (metricsLabel) {
+                    metricsLabel.textContent = "Observer stream disabled (benchmark mode).";
                 }
 
                 const perf = chart.getPerfMetrics(60);
