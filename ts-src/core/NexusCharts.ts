@@ -16,8 +16,6 @@
     SeriesValueKey,
     CustomSeriesPoint,
     CustomSeriesContext,
-    CustomSeriesRenderer,
-    SeriesStyle,
     SeriesGeometry,
     NormalizedCandleDataPoint,
     IndicatorType,
@@ -35,6 +33,7 @@ import { DrawingManager, type StoredDrawing } from "./drawings/DrawingManager";
 import { renderDrawingOverlay } from "./drawings/DrawingOverlayRenderer";
 import { IndicatorEngine } from "./indicators/IndicatorEngine";
 import { renderIndicatorOverlay } from "./indicators/IndicatorOverlayRenderer";
+import { SeriesManager } from "./series/SeriesManager";
 import { renderControlBar, type ControlButtonState } from "./ui/ControlBar";
 import { renderCrosshairOverlay as renderCrosshairOverlayUi } from "./ui/CrosshairOverlay";
 import { renderTooltipOverlay as renderTooltipOverlayUi } from "./ui/TooltipOverlay";
@@ -129,17 +128,7 @@ export class NexusCharts {
     private hoveredCandle: HoveredCandle | null = null;
     private selectedCandleIndex: number | null = null;
     private cleanupHandlers: Array<() => void> = [];
-    private readonly seriesStore = new Map<
-        string,
-        {
-            type: SeriesType;
-            data: CandleDataPoint[];
-            style: SeriesStyle;
-            valueKey: SeriesValueKey;
-            renderer?: CustomSeriesRenderer;
-            revision: number;
-        }
-    >();
+    private readonly seriesManager = new SeriesManager();
     private geometryCache: { seriesId: string; revision: number; geometry: SeriesGeometry | null } | null = null;
     private timeSeriesCache:
         | { seriesId: string; revision: number; series: Array<{ time: number | string; numeric: number | null; x: number }> }
@@ -414,93 +403,17 @@ export class NexusCharts {
     }
 
     public createSeries(options: SeriesOptions = {}): SeriesApi {
-        const type: SeriesType = options.type ?? "candlestick";
-        const id = options.id ?? this.nextId("series");
-
-        if (this.seriesStore.has(id)) {
-            throw new Error(`[NexusCharts] Series id '${id}' already exists.`);
-        }
-
-        const style: SeriesStyle = {
-            color: options.color ?? (type === "histogram" ? "#fbbf24" : type === "volume" ? "#38bdf8" : type === "custom" ? "#f472b6" : "#60a5fa"),
-            lineWidth: options.lineWidth ?? (type === "histogram" || type === "volume" ? 1 : 2),
-            opacity: options.opacity ?? (type === "area" ? 0.25 : type === "volume" ? 0.22 : 1),
-            barWidthRatio: this.clamp(options.barWidthRatio ?? (type === "volume" ? 0.55 : 0.6), 0.1, 1),
-        };
-        const valueKey: SeriesValueKey = options.valueKey
-            ?? (type === "volume" ? "volume" : "close");
-        this.seriesStore.set(id, { type, data: [], style, valueKey, renderer: options.renderer, revision: 0 });
-
-        const setData = (data: CandleDataPoint[]) => {
-            const series = this.seriesStore.get(id);
-            if (!series) return;
-            series.data = [...data];
-            series.revision += 1;
-            this.syncSeriesToEngine(id);
-            this.recomputeIndicators();
-            this.autoScaleVisibleY();
-            this.refreshHoverFromStoredPointer();
-            this.redrawDrawings();
-        };
-
-        const append = (point: CandleDataPoint) => {
-            const series = this.seriesStore.get(id);
-            if (!series) return;
-            series.data.push(point);
-            series.revision += 1;
-            this.syncSeriesToEngine(id);
-            this.recomputeIndicators();
-            this.autoScaleVisibleY();
-            this.refreshHoverFromStoredPointer();
-            this.redrawDrawings();
-        };
-
-        const updateLast = (point: Partial<CandleDataPoint>) => {
-            const series = this.seriesStore.get(id);
-            if (!series) return;
-
-            if (series.data.length === 0) {
-                if (!this.isCompleteCandle(point)) {
-                    console.warn("[NexusCharts] updateLast requires a full candle when no data exists.", { id, point });
-                    return;
-                }
-                series.data.push(point);
-            } else {
-                const lastIndex = series.data.length - 1;
-                const last = series.data[lastIndex];
-                series.data[lastIndex] = { ...last, ...point };
-            }
-
-            series.revision += 1;
-            this.syncSeriesToEngine(id);
-            this.recomputeIndicators();
-            this.autoScaleVisibleY();
-            this.refreshHoverFromStoredPointer();
-            this.redrawDrawings();
-        };
-
-        const update = (point: CandleDataPoint) => {
-            append(point);
-        };
-
-        const getData = (): CandleDataPoint[] => {
-            const series = this.seriesStore.get(id);
-            return series ? [...series.data] : [];
-        };
-
-        const clear = () => {
-            const series = this.seriesStore.get(id);
-            if (!series) return;
-            series.data = [];
-            series.revision += 1;
-            this.syncSeriesToEngine(id);
-            this.recomputeIndicators();
-            this.autoScaleVisibleY();
-            this.refreshHoverFromStoredPointer();
-            this.redrawDrawings();
-        };
-
-        return { id, type, setData, append, update, updateLast, getData, clear };
+        return this.seriesManager.createSeries(options, {
+            createId: () => this.nextId("series"),
+            isCompleteCandle: (point): point is CandleDataPoint => this.isCompleteCandle(point),
+            onSeriesMutated: (seriesId) => {
+                this.syncSeriesToEngine(seriesId);
+                this.recomputeIndicators();
+                this.autoScaleVisibleY();
+                this.refreshHoverFromStoredPointer();
+                this.redrawDrawings();
+            },
+        });
     }
 
     public addIndicator(definition: IndicatorDefinition): string {
@@ -1062,7 +975,7 @@ export class NexusCharts {
             return;
         }
 
-        const series = this.seriesStore.get(seriesId);
+        const series = this.seriesManager.get(seriesId);
         if (!series || series.type !== "candlestick") {
             return;
         }
@@ -1113,7 +1026,7 @@ export class NexusCharts {
     }
 
     private syncAllSeriesToEngine(): void {
-        for (const [seriesId] of this.seriesStore) {
+        for (const [seriesId] of this.seriesManager.entries()) {
             this.syncSeriesToEngine(seriesId);
         }
     }
@@ -1631,7 +1544,7 @@ export class NexusCharts {
     }
 
     private getPrimaryCandlestickSeriesEntry(): { id: string; data: CandleDataPoint[]; revision: number } | null {
-        for (const [id, series] of this.seriesStore) {
+        for (const [id, series] of this.seriesManager.entries()) {
             if (series.type === "candlestick" && series.data.length > 0) {
                 return { id, data: series.data, revision: series.revision };
             }
@@ -2239,7 +2152,7 @@ export class NexusCharts {
             return;
         }
 
-        const extraSeries = Array.from(this.seriesStore.values()).filter((series) => series.type !== "candlestick" && series.data.length > 0);
+        const extraSeries = Array.from(this.seriesManager.values()).filter((series) => series.type !== "candlestick" && series.data.length > 0);
         if (extraSeries.length === 0) {
             return;
         }
