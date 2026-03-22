@@ -18,7 +18,6 @@
     CustomSeriesContext,
     SeriesGeometry,
     NormalizedCandleDataPoint,
-    IndicatorType,
     IndicatorDefinition,
     IndicatorSeries,
     SeriesApi,
@@ -31,7 +30,8 @@
 import { PerfTracker } from "./perf/PerfTracker";
 import { DrawingManager, type StoredDrawing } from "./drawings/DrawingManager";
 import { renderDrawingOverlay } from "./drawings/DrawingOverlayRenderer";
-import { IndicatorEngine } from "./indicators/IndicatorEngine";
+import { IndicatorPaneManager } from "./indicators/IndicatorPaneManager";
+import type { IndicatorPaneRect } from "./indicators/IndicatorOverlayRenderer";
 import { renderIndicatorOverlay } from "./indicators/IndicatorOverlayRenderer";
 import { SeriesManager } from "./series/SeriesManager";
 import { renderControlBar, type ControlButtonState } from "./ui/ControlBar";
@@ -56,13 +56,6 @@ interface OverlayRect {
 interface TimeAxisLabel {
     x: number;
     text: string;
-}
-
-interface PaneRect extends OverlayRect {
-    innerX: number;
-    innerY: number;
-    innerWidth: number;
-    innerHeight: number;
 }
 
 interface NexusWasmModule {
@@ -141,8 +134,7 @@ export class NexusCharts {
     };
     private readonly drawingManager = new DrawingManager();
     private readonly observerFrames: NormalizedObserverFrame[] = [];
-    private readonly indicatorEngine = new IndicatorEngine();
-    private indicatorPaneHeightRatio: number = 0.26;
+    private readonly indicatorPaneManager = new IndicatorPaneManager();
     private controlButtons: ControlButtonState[] = [];
     private analyticsOptions: Required<AnalyticsOptions> = {
         showRewardCurve: true,
@@ -417,14 +409,14 @@ export class NexusCharts {
     }
 
     public addIndicator(definition: IndicatorDefinition): string {
-        const id = this.indicatorEngine.addIndicator(definition, () => this.nextId("indicator"));
+        const id = this.indicatorPaneManager.addIndicator(definition, () => this.nextId("indicator"));
         this.recomputeIndicators();
         this.redrawDrawings();
         return id;
     }
 
     public removeIndicator(id: string): boolean {
-        const removed = this.indicatorEngine.removeIndicator(id);
+        const removed = this.indicatorPaneManager.removeIndicator(id);
         if (removed) {
             this.redrawDrawings();
         }
@@ -432,12 +424,12 @@ export class NexusCharts {
     }
 
     public clearIndicators(): void {
-        this.indicatorEngine.clearIndicators();
+        this.indicatorPaneManager.clearIndicators();
         this.redrawDrawings();
     }
 
     public getIndicators(): IndicatorSeries[] {
-        return this.indicatorEngine.getIndicators();
+        return this.indicatorPaneManager.getIndicators();
     }
 
     public addDrawing(definition: DrawingDefinition): string {
@@ -1617,7 +1609,7 @@ export class NexusCharts {
     }
 
     private recomputeIndicators(): void {
-        this.indicatorEngine.recompute(this.getPrimaryCandlestickSeries());
+        this.indicatorPaneManager.recompute(this.getPrimaryCandlestickSeries());
     }
 
     private formatPrice(value: number): string {
@@ -2124,7 +2116,7 @@ export class NexusCharts {
 
         this.renderSeriesOverlay(ctx, width, height, geometry);
         this.renderAxesOverlay(ctx, width, height, geometry);
-        renderIndicatorOverlay(ctx, width, height, geometry, this.indicatorEngine.values(), {
+        renderIndicatorOverlay(ctx, width, height, geometry, this.indicatorPaneManager.values(), {
             getIndicatorPaneBounds: this.getIndicatorPaneBounds.bind(this),
             worldToCanvasPoint: this.worldToCanvasPoint.bind(this),
             priceToWorldYValue: this.priceToWorldYValue.bind(this),
@@ -2392,7 +2384,7 @@ export class NexusCharts {
             activeY,
             hoverCanvasY: this.hoverCanvasY,
             indicatorPane,
-            lowerIndicators: this.indicatorEngine.getLowerIndicators(),
+            lowerIndicators: this.indicatorPaneManager.getLowerIndicators(),
         }, {
             clamp: this.clamp.bind(this),
             canvasToWorldPoint: this.canvasToWorldPoint.bind(this),
@@ -2466,7 +2458,7 @@ export class NexusCharts {
             hoverCanvasX: this.hoverCanvasX,
             hoverCanvasY: this.hoverCanvasY,
             indicatorPane: this.getIndicatorPaneBounds(width, height),
-            lowerIndicators: this.indicatorEngine.getLowerIndicators(),
+            lowerIndicators: this.indicatorPaneManager.getLowerIndicators(),
         }, {
             formatPrice: this.formatPrice.bind(this),
             rectsOverlap: this.rectsOverlap.bind(this),
@@ -2506,27 +2498,8 @@ export class NexusCharts {
         return getAnalyticsPanelBoundsUi(this.observerFrames.length, this.analyticsOptions, width, height);
     }
 
-    private getIndicatorPaneBounds(width: number, height: number): PaneRect | null {
-        const hasLowerPane = this.indicatorEngine.hasLowerPane();
-        if (!hasLowerPane) {
-            return null;
-        }
-        const panelHeight = Math.max(110, Math.min(200, height * this.indicatorPaneHeightRatio));
-        const panelY = height - panelHeight;
-        const panelX = 0;
-        const panelWidth = width;
-        const padding = 10;
-
-        return {
-            x: panelX,
-            y: panelY,
-            width: panelWidth,
-            height: panelHeight,
-            innerX: panelX + padding,
-            innerY: panelY + padding,
-            innerWidth: Math.max(0, panelWidth - (padding * 2)),
-            innerHeight: Math.max(0, panelHeight - (padding * 2)),
-        };
+    private getIndicatorPaneBounds(width: number, height: number): IndicatorPaneRect | null {
+        return this.indicatorPaneManager.getPaneBounds(width, height);
     }
 
     private nextId(prefix: "series" | "drawing" | "indicator"): string {
