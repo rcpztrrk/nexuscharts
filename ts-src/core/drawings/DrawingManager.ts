@@ -97,6 +97,15 @@ export class DrawingManager {
         this.hoveredDrawingId = id;
     }
 
+    public activateHoveredDrawing(): boolean {
+        if (!this.hoveredDrawingId) {
+            return false;
+        }
+
+        this.activeDrawingId = this.hoveredDrawingId;
+        return true;
+    }
+
     public getActiveDrawingId(): string | null {
         return this.activeDrawingId;
     }
@@ -113,12 +122,13 @@ export class DrawingManager {
         this.activeDrawingDrag = state;
     }
 
-    public getContextMenu(): HTMLDivElement | null {
-        return this.contextMenu;
+    public clearActiveDrawing(): void {
+        this.activeDrawingId = null;
     }
 
-    public getContextMenuTargetId(): string | null {
-        return this.contextMenuTargetId;
+    public clearActiveInteraction(): void {
+        this.activeDrawingId = null;
+        this.activeDrawingDrag = null;
     }
 
     public showContextMenu(clientX: number, clientY: number, drawingId: string): void {
@@ -143,12 +153,41 @@ export class DrawingManager {
         this.contextMenu.style.top = `${top}px`;
     }
 
+    public showContextMenuForSelection(clientX: number, clientY: number): boolean {
+        const targetId = this.hoveredDrawingId ?? this.activeDrawingId;
+        if (!targetId) {
+            this.hideContextMenu();
+            return false;
+        }
+
+        this.showContextMenu(clientX, clientY, targetId);
+        return true;
+    }
+
     public hideContextMenu(): void {
         if (!this.contextMenu) {
             return;
         }
         this.contextMenu.style.display = "none";
         this.contextMenuTargetId = null;
+    }
+
+    public dismissContextMenuIfOutside(target: Node | null): boolean {
+        if (!this.contextMenu || this.contextMenu.style.display === "none") {
+            return false;
+        }
+        if (target && this.contextMenu.contains(target)) {
+            return false;
+        }
+
+        this.hideContextMenu();
+        return true;
+    }
+
+    public consumeContextMenuTarget(): string | null {
+        const targetId = this.contextMenuTargetId;
+        this.hideContextMenu();
+        return targetId;
     }
 
     public hitTestDrawing(
@@ -206,4 +245,3 @@ export class DrawingManager {
         return null;
     }
 }
-

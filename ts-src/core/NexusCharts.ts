@@ -28,7 +28,17 @@
 } from "../types";
 
 import { PerfTracker } from "./perf/PerfTracker";
-import { DrawingManager, type StoredDrawing } from "./drawings/DrawingManager";
+import { DrawingManager, type DrawingHitTestApi } from "./drawings/DrawingManager";
+import {
+    applyAnchorsToDrawing,
+    applyDragToDrawing,
+    distancePointToSegment,
+    resolveDrawingPoint,
+    resolveDrawingWorldX,
+    resolveDrawingWorldY,
+    type DrawingCoordinateApi,
+} from "./drawings/DrawingEngine";
+import { createDrawingContextMenu } from "./drawings/DrawingMenu";
 import { renderDrawingOverlay } from "./drawings/DrawingOverlayRenderer";
 import { IndicatorPaneManager } from "./indicators/IndicatorPaneManager";
 import type { IndicatorPaneRect } from "./indicators/IndicatorOverlayRenderer";
@@ -36,6 +46,12 @@ import { renderIndicatorOverlay } from "./indicators/IndicatorOverlayRenderer";
 import { SeriesManager } from "./series/SeriesManager";
 import { renderControlBar, type ControlButtonState } from "./ui/ControlBar";
 import { renderCrosshairOverlay as renderCrosshairOverlayUi } from "./ui/CrosshairOverlay";
+import {
+    renderSelectedCandleOverlay,
+    resolveBoundarySelectionIndex,
+    resolveClickedSelectionIndex,
+    resolveSteppedSelectionIndex,
+} from "./ui/CandleSelection";
 import { renderTooltipOverlay as renderTooltipOverlayUi } from "./ui/TooltipOverlay";
 import { loadPersistedChartState, persistChartState } from "./ui/Persistence";
 import {
@@ -133,6 +149,19 @@ export class NexusCharts {
         closes: [] as number[],
     };
     private readonly drawingManager = new DrawingManager();
+    private readonly drawingCoordinateApi: DrawingCoordinateApi = {
+        timeToWorldX: (time, geometry) => this.timeToWorldXInternal(time, geometry),
+        worldXToTime: (worldX, geometry) => this.worldXToTimeInternal(worldX, geometry),
+        priceToWorldY: (price, geometry) => this.priceToWorldYValue(price, geometry),
+        worldYToPrice: (worldY, geometry) => this.worldYToPriceValueInternal(worldY, geometry),
+    };
+    private readonly drawingHitTestApi: DrawingHitTestApi = {
+        getWorldUnitsPerPixel: (width, height) => this.getWorldUnitsPerPixel(width, height),
+        resolveDrawingPoint: (point, geometry) => resolveDrawingPoint(point, geometry, this.drawingCoordinateApi),
+        resolveDrawingWorldX: (drawing, geometry) => resolveDrawingWorldX(drawing, geometry, this.drawingCoordinateApi),
+        resolveDrawingWorldY: (drawing, geometry) => resolveDrawingWorldY(drawing, geometry, this.drawingCoordinateApi),
+        distancePointToSegment,
+    };
     private readonly observerFrames: NormalizedObserverFrame[] = [];
     private readonly indicatorPaneManager = new IndicatorPaneManager();
     private controlButtons: ControlButtonState[] = [];
@@ -666,22 +695,22 @@ export class NexusCharts {
             const surface = this.overlayCanvas ?? canvas;
             const geometry = this.buildSeriesGeometry();
             if (world && surface) {
-                const hit = this.drawingManager.hitTestDrawing(world, surface.width, surface.height, geometry, {
-                    getWorldUnitsPerPixel: this.getWorldUnitsPerPixel.bind(this),
-                    resolveDrawingPoint: this.resolveDrawingPoint.bind(this),
-                    resolveDrawingWorldX: this.resolveDrawingWorldX.bind(this),
-                    resolveDrawingWorldY: this.resolveDrawingWorldY.bind(this),
-                    distancePointToSegment: this.distancePointToSegment.bind(this),
-                });
+                const hit = this.drawingManager.hitTestDrawing(
+                    world,
+                    surface.width,
+                    surface.height,
+                    geometry,
+                    this.drawingHitTestApi
+                );
                 if (hit) {
                     const drawing = this.drawingManager.getDrawing(hit.id);
                     if (drawing) {
-                        this.applyAnchorsToDrawing(drawing, geometry);
+                        applyAnchorsToDrawing(drawing, geometry, this.drawingCoordinateApi);
                         const resolvedPoints = drawing.points
-                            ? drawing.points.map((point) => this.resolveDrawingPoint(point, geometry))
+                            ? drawing.points.map((point) => resolveDrawingPoint(point, geometry, this.drawingCoordinateApi))
                             : undefined;
-                        const resolvedX = this.resolveDrawingWorldX(drawing, geometry);
-                        const resolvedY = this.resolveDrawingWorldY(drawing, geometry);
+                        const resolvedX = resolveDrawingWorldX(drawing, geometry, this.drawingCoordinateApi);
+                        const resolvedY = resolveDrawingWorldY(drawing, geometry, this.drawingCoordinateApi);
 
                         this.drawingManager.setActiveDrawingId(hit.id);
                         this.drawingManager.setActiveDrag({
@@ -699,8 +728,7 @@ export class NexusCharts {
                     }
                 }
             }
-            this.drawingManager.setActiveDrawingId(null);
-            this.drawingManager.setActiveDrag(null);
+            this.drawingManager.clearActiveInteraction();
             this.isDragging = true;
         };
 
@@ -714,42 +742,13 @@ export class NexusCharts {
                 const drag = activeDrag;
                 const drawing = this.drawingManager.getDrawing(drag.id);
                 if (!drawing) {
-                    this.drawingManager.setActiveDrag(null);
+                    this.drawingManager.clearActiveInteraction();
                     return;
                 }
 
                 const geometry = this.buildSeriesGeometry();
-                const dx = world.x - drag.startWorld.x;
-                const dy = world.y - drag.startWorld.y;
                 this.draggedDuringPointer = true;
-
-                if (drawing.type === "line" && drawing.points && drag.startPoints && drag.startPoints.length >= 2) {
-                    if (drag.mode === "p0") {
-                        drawing.points[0] = { x: drag.startPoints[0].x + dx, y: drag.startPoints[0].y + dy };
-                    } else if (drag.mode === "p1") {
-                        drawing.points[1] = { x: drag.startPoints[1].x + dx, y: drag.startPoints[1].y + dy };
-                    } else {
-                        drawing.points = drag.startPoints.map((point) => ({ x: point.x + dx, y: point.y + dy }));
-                    }
-                } else if (drawing.type === "polyline" && drawing.points && drag.startPoints) {
-                    if (drag.mode === "poly_point" && drag.pointIndex !== undefined) {
-                        const index = drag.pointIndex;
-                        if (drag.startPoints[index]) {
-                            drawing.points[index] = {
-                                x: drag.startPoints[index].x + dx,
-                                y: drag.startPoints[index].y + dy,
-                            };
-                        }
-                    } else {
-                        drawing.points = drag.startPoints.map((point) => ({ x: point.x + dx, y: point.y + dy }));
-                    }
-                } else if (drawing.type === "horizontal_line" && typeof drag.startY === "number") {
-                    drawing.y = drag.startY + dy;
-                } else if (drawing.type === "vertical_line" && typeof drag.startX === "number") {
-                    drawing.x = drag.startX + dx;
-                }
-
-                this.syncDrawingAnchors(drawing, geometry);
+                applyDragToDrawing(drawing, drag, world, geometry, this.drawingCoordinateApi);
                 this.drawingManager.setHoveredDrawingId(drawing.id);
                 this.redrawDrawings();
                 return;
@@ -789,19 +788,19 @@ export class NexusCharts {
             if (this.handleControlBarClick(event.clientX, event.clientY)) {
                 return;
             }
-            const hoveredDrawingId = this.drawingManager.getHoveredDrawingId();
-            if (hoveredDrawingId) {
-                this.drawingManager.setActiveDrawingId(hoveredDrawingId);
+            if (this.drawingManager.activateHoveredDrawing()) {
                 this.redrawDrawings();
                 return;
             }
-            this.drawingManager.setActiveDrawingId(null);
-            if (this.draggedDuringPointer || !this.hoveredCandle) {
+            this.drawingManager.clearActiveDrawing();
+            const nextIndex = resolveClickedSelectionIndex(
+                this.selectedCandleIndex,
+                this.hoveredCandle,
+                this.draggedDuringPointer
+            );
+            if (nextIndex === undefined) {
                 return;
             }
-            const nextIndex = this.selectedCandleIndex === this.hoveredCandle.index
-                ? null
-                : this.hoveredCandle.index;
             this.setSelectedCandleIndex(nextIndex);
         };
 
@@ -815,24 +814,12 @@ export class NexusCharts {
         const onContextMenu = (event: MouseEvent) => {
             event.preventDefault();
             this.updateHoverFromClientPosition(event.clientX, event.clientY);
-            const targetId = this.drawingManager.getHoveredDrawingId() ?? this.drawingManager.getActiveDrawingId();
-            if (targetId) {
-                this.drawingManager.showContextMenu(event.clientX, event.clientY, targetId);
-            } else {
-                this.drawingManager.hideContextMenu();
-            }
+            this.drawingManager.showContextMenuForSelection(event.clientX, event.clientY);
         };
 
         const onGlobalDown = (event: MouseEvent) => {
-            const menu = this.drawingManager.getContextMenu();
-            if (!menu || menu.style.display === "none") {
-                return;
-            }
             const target = event.target as Node | null;
-            if (target && menu.contains(target)) {
-                return;
-            }
-            this.drawingManager.hideContextMenu();
+            this.drawingManager.dismissContextMenuIfOutside(target);
         };
 
         const onDoubleClick = () => {
@@ -1191,26 +1178,21 @@ export class NexusCharts {
         if (!geometry || geometry.candles.length === 0) {
             return;
         }
-        const count = geometry.candles.length;
-        let nextIndex = this.selectedCandleIndex;
-        if (nextIndex === null) {
-            if (this.hoveredCandle) {
-                nextIndex = this.hoveredCandle.index;
-            } else {
-                nextIndex = step >= 0 ? 0 : (count - 1);
-            }
-        } else {
-            nextIndex = Math.max(0, Math.min(count - 1, nextIndex + step));
-        }
+        const nextIndex = resolveSteppedSelectionIndex(
+            this.selectedCandleIndex,
+            this.hoveredCandle,
+            geometry.candles.length,
+            step
+        );
         this.setSelectedCandleIndex(nextIndex);
     }
 
-        private jumpSelection(to: "start" | "end"): void {
+    private jumpSelection(to: "start" | "end"): void {
         const geometry = this.buildSeriesGeometry();
         if (!geometry || geometry.candles.length === 0) {
             return;
         }
-        this.setSelectedCandleIndex(to === "start" ? 0 : (geometry.candles.length - 1));
+        this.setSelectedCandleIndex(resolveBoundarySelectionIndex(geometry.candles.length, to));
     }
 
     private autoScaleVisibleY(): void {
@@ -1403,135 +1385,10 @@ export class NexusCharts {
         };
     }
 
-    private distancePointToSegment(point: WorldPoint, a: DrawingPoint, b: DrawingPoint): number {
-        const abx = b.x - a.x;
-        const aby = b.y - a.y;
-        const apx = point.x - a.x;
-        const apy = point.y - a.y;
-        const denom = (abx * abx) + (aby * aby);
-        if (denom <= 1e-8) {
-            const dx = point.x - a.x;
-            const dy = point.y - a.y;
-            return Math.sqrt((dx * dx) + (dy * dy));
-        }
-        const t = this.clamp(((apx * abx) + (apy * aby)) / denom, 0, 1);
-        const closestX = a.x + (abx * t);
-        const closestY = a.y + (aby * t);
-        const dx = point.x - closestX;
-        const dy = point.y - closestY;
-        return Math.sqrt((dx * dx) + (dy * dy));
-    }
-
-    private resolveDrawingPoint(point: DrawingPoint, geometry: SeriesGeometry | null): DrawingPoint {
-        if (!geometry) {
-            return point;
-        }
-        let x = point.x;
-        let y = point.y;
-        if (point.time !== undefined) {
-            const worldX = this.timeToWorldXInternal(point.time, geometry);
-            if (worldX !== null) {
-                x = worldX;
-            }
-        }
-        if (typeof point.price === "number" && Number.isFinite(point.price)) {
-            y = this.priceToWorldYValue(point.price, geometry);
-        }
-        return { ...point, x, y };
-    }
-
-    private resolveDrawingWorldX(drawing: StoredDrawing, geometry: SeriesGeometry | null): number | null {
-        if (geometry && drawing.time !== undefined) {
-            const worldX = this.timeToWorldXInternal(drawing.time, geometry);
-            if (worldX !== null) {
-                return worldX;
-            }
-        }
-        return typeof drawing.x === "number" ? drawing.x : null;
-    }
-
-    private resolveDrawingWorldY(drawing: StoredDrawing, geometry: SeriesGeometry | null): number | null {
-        if (geometry && typeof drawing.price === "number" && Number.isFinite(drawing.price)) {
-            return this.priceToWorldYValue(drawing.price, geometry);
-        }
-        return typeof drawing.y === "number" ? drawing.y : null;
-    }
-
-    private applyAnchorsToDrawing(drawing: StoredDrawing, geometry: SeriesGeometry | null): void {
-        if (!geometry) {
-            return;
-        }
-
-        if (drawing.points) {
-            drawing.points = drawing.points.map((point) => {
-                let x = point.x;
-                let y = point.y;
-                if (point.time !== undefined) {
-                    const worldX = this.timeToWorldXInternal(point.time, geometry);
-                    if (worldX !== null) {
-                        x = worldX;
-                    }
-                }
-                if (typeof point.price === "number" && Number.isFinite(point.price)) {
-                    y = this.priceToWorldYValue(point.price, geometry);
-                }
-                return { ...point, x, y };
-            });
-        }
-
-        if (drawing.type === "horizontal_line" && typeof drawing.price === "number" && Number.isFinite(drawing.price)) {
-            drawing.y = this.priceToWorldYValue(drawing.price, geometry);
-        }
-
-        if (drawing.type === "vertical_line" && drawing.time !== undefined) {
-            const worldX = this.timeToWorldXInternal(drawing.time, geometry);
-            if (worldX !== null) {
-                drawing.x = worldX;
-            }
-        }
-    }
-
-    private syncDrawingAnchors(drawing: StoredDrawing, geometry: SeriesGeometry | null): void {
-        if (!geometry) {
-            return;
-        }
-
-        if (drawing.points) {
-            drawing.points = drawing.points.map((point) => {
-                const time = this.worldXToTimeInternal(point.x, geometry);
-                const price = this.worldYToPriceValueInternal(point.y, geometry);
-                return {
-                    ...point,
-                    time: time ?? point.time,
-                    price: Number.isFinite(price) ? price : point.price,
-                };
-            });
-        }
-
-        if (drawing.type === "horizontal_line" && typeof drawing.y === "number") {
-            const price = this.worldYToPriceValueInternal(drawing.y, geometry);
-            if (Number.isFinite(price)) {
-                drawing.price = price;
-            }
-        }
-
-        if (drawing.type === "vertical_line" && typeof drawing.x === "number") {
-            const time = this.worldXToTimeInternal(drawing.x, geometry);
-            if (time !== null) {
-                drawing.time = time;
-            }
-        }
-    }
     private updateHoveredDrawingFromCanvas(canvasX: number, canvasY: number, width: number, height: number): void {
         const world = this.canvasToWorldPoint(canvasX, canvasY, width, height);
         const geometry = this.buildSeriesGeometry();
-        const hit = this.drawingManager.hitTestDrawing(world, width, height, geometry, {
-            getWorldUnitsPerPixel: this.getWorldUnitsPerPixel.bind(this),
-            resolveDrawingPoint: this.resolveDrawingPoint.bind(this),
-            resolveDrawingWorldX: this.resolveDrawingWorldX.bind(this),
-            resolveDrawingWorldY: this.resolveDrawingWorldY.bind(this),
-            distancePointToSegment: this.distancePointToSegment.bind(this),
-        });
+        const hit = this.drawingManager.hitTestDrawing(world, width, height, geometry, this.drawingHitTestApi);
         this.drawingManager.setHoveredDrawingId(hit ? hit.id : null);
     }
 
@@ -2043,40 +1900,12 @@ export class NexusCharts {
             parent.style.position = "relative";
         }
 
-        const menu = document.createElement("div");
-        menu.style.position = "absolute";
-        menu.style.display = "none";
-        menu.style.zIndex = "20";
-        menu.style.minWidth = "140px";
-        menu.style.background = "rgba(10, 24, 44, 0.96)";
-        menu.style.border = "1px solid rgba(120, 148, 188, 0.5)";
-        menu.style.borderRadius = "6px";
-        menu.style.padding = "4px";
-        menu.style.font = "12px 'Segoe UI', sans-serif";
-        menu.style.color = "#dce7ff";
-        menu.style.boxShadow = "0 8px 22px rgba(0, 0, 0, 0.35)";
-        menu.style.pointerEvents = "auto";
-
-        const deleteItem = document.createElement("div");
-        deleteItem.textContent = "Delete drawing";
-        deleteItem.style.padding = "6px 10px";
-        deleteItem.style.cursor = "pointer";
-        deleteItem.style.borderRadius = "4px";
-        deleteItem.onmouseenter = () => {
-            deleteItem.style.background = "rgba(255, 107, 122, 0.15)";
-        };
-        deleteItem.onmouseleave = () => {
-            deleteItem.style.background = "transparent";
-        };
-        deleteItem.onclick = (event) => {
-            event.stopPropagation();
-            const id = this.drawingManager.getContextMenuTargetId();
+        const menu = createDrawingContextMenu(() => {
+            const id = this.drawingManager.consumeContextMenuTarget();
             if (id) {
                 this.removeDrawing(id);
             }
-            this.drawingManager.hideContextMenu();
-        };
-        menu.appendChild(deleteItem);
+        });
 
         parent.appendChild(menu);
 
@@ -2122,7 +1951,7 @@ export class NexusCharts {
             priceToWorldYValue: this.priceToWorldYValue.bind(this),
         });
         renderAnalyticsOverlayUi(ctx, width, height, this.observerFrames, this.analyticsOptions, toCanvas);
-        this.renderSelectionOverlay(ctx, width, height, geometry);
+        renderSelectedCandleOverlay(ctx, height, this.getCandleByIndex(this.selectedCandleIndex, geometry));
         this.renderCrosshairOverlay(ctx, width, height);
         this.renderTooltipOverlay(ctx, width, height);
         this.renderControlBarOverlay(ctx, width, height);
@@ -2392,42 +2221,6 @@ export class NexusCharts {
             formatPrice: this.formatPrice.bind(this),
             formatTimeLabel: this.formatTimeLabel.bind(this),
         });
-    }
-
-    private renderSelectionOverlay(
-        ctx: CanvasRenderingContext2D,
-        width: number,
-        height: number,
-        geometry: SeriesGeometry | null
-    ): void {
-        const selectedCandle = this.getCandleByIndex(this.selectedCandleIndex, geometry);
-        if (!selectedCandle) {
-            return;
-        }
-
-        ctx.save();
-        ctx.fillStyle = "rgba(255, 204, 102, 0.08)";
-        ctx.strokeStyle = "rgba(255, 204, 102, 0.6)";
-        ctx.lineWidth = 1;
-        ctx.fillRect(selectedCandle.screenX - 14, 0, 28, height);
-
-        ctx.beginPath();
-        ctx.moveTo(selectedCandle.screenX, 0);
-        ctx.lineTo(selectedCandle.screenX, height);
-        ctx.stroke();
-
-        const label = `Selected #${selectedCandle.index + 1}`;
-        ctx.font = "12px 'Segoe UI', sans-serif";
-        const textWidth = ctx.measureText(label).width;
-        const boxWidth = textWidth + 10;
-        const boxX = 12;
-        const boxY = 12;
-
-        ctx.fillStyle = "rgba(18, 28, 47, 0.92)";
-        ctx.fillRect(boxX, boxY, boxWidth, 18);
-        ctx.fillStyle = "#ffcc66";
-        ctx.fillText(label, boxX + 5, boxY + 13);
-        ctx.restore();
     }
 
     private renderControlBarOverlay(ctx: CanvasRenderingContext2D, width: number, _height: number): void {
