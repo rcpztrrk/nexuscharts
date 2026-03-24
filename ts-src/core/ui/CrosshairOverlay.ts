@@ -1,5 +1,6 @@
-import type { HoveredCandle, IndicatorSeries, SeriesGeometry } from "../../types";
+import type { ChartTheme, HoveredCandle, IndicatorSeries, SeriesGeometry } from "../../types";
 import type { IndicatorPaneRect } from "../indicators/IndicatorOverlayRenderer";
+import { fontSpec } from "../theme/ChartTheme";
 
 export interface CrosshairOverlayApi {
     clamp(value: number, min: number, max: number): number;
@@ -17,6 +18,7 @@ export interface CrosshairOverlayParams {
     hoverCanvasY: number | null;
     indicatorPane: IndicatorPaneRect | null;
     lowerIndicators: IndicatorSeries[];
+    theme: ChartTheme;
 }
 
 export function renderCrosshairOverlay(
@@ -42,7 +44,7 @@ export function renderCrosshairOverlay(
     const lineY = api.clamp(params.activeY, paneTop + 2, paneBottom - 2);
 
     ctx.save();
-    ctx.strokeStyle = "rgba(120, 188, 255, 0.55)";
+    ctx.strokeStyle = params.theme.crosshair.line;
     ctx.lineWidth = 1;
     ctx.setLineDash([5, 5]);
 
@@ -62,14 +64,14 @@ export function renderCrosshairOverlay(
     ctx.restore();
 
     ctx.setLineDash([]);
-    ctx.fillStyle = "rgba(87, 212, 255, 0.9)";
+    ctx.fillStyle = params.theme.crosshair.point;
     ctx.beginPath();
     ctx.arc(params.activeCandle.screenX, lineY, 3, 0, Math.PI * 2);
     ctx.fill();
 
     const timeText = api.formatTimeLabel(params.activeCandle.time);
 
-    ctx.font = "11px 'Segoe UI', sans-serif";
+    ctx.font = fontSpec(params.theme.typography.crosshairSize, params.theme);
 
     if (!hoverInLowerPane) {
         const worldAtCursor = api.canvasToWorldPoint(params.activeCandle.screenX, lineY, width, height);
@@ -81,12 +83,12 @@ export function renderCrosshairOverlay(
         const priceBoxX = width - priceBoxWidth - 4;
         const priceBoxY = Math.max(4, Math.min(height - priceBoxHeight - 24, lineY - 9));
 
-        ctx.fillStyle = "rgba(10, 24, 44, 0.95)";
-        ctx.strokeStyle = "rgba(120, 188, 255, 0.55)";
+        ctx.fillStyle = params.theme.crosshair.labelBackground;
+        ctx.strokeStyle = params.theme.crosshair.labelBorder;
         ctx.lineWidth = 1;
         ctx.fillRect(priceBoxX, priceBoxY, priceBoxWidth, priceBoxHeight);
         ctx.strokeRect(priceBoxX, priceBoxY, priceBoxWidth, priceBoxHeight);
-        ctx.fillStyle = "#8fd8ff";
+        ctx.fillStyle = params.theme.crosshair.labelText;
         ctx.fillText(priceText, priceBoxX + 6, priceBoxY + 13);
     } else if (params.indicatorPane && params.lowerIndicators.length > 0) {
         let minValue = Number.POSITIVE_INFINITY;
@@ -130,11 +132,11 @@ export function renderCrosshairOverlay(
                 Math.min(params.indicatorPane.y + params.indicatorPane.height - labelHeight - 4, lineY - 9)
             );
 
-            ctx.fillStyle = "rgba(10, 24, 44, 0.95)";
-            ctx.strokeStyle = "rgba(120, 188, 255, 0.5)";
+            ctx.fillStyle = params.theme.crosshair.labelBackground;
+            ctx.strokeStyle = params.theme.crosshair.labelBorder;
             ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
             ctx.strokeRect(labelX, labelY, labelWidth, labelHeight);
-            ctx.fillStyle = "#9dc7f5";
+            ctx.fillStyle = params.theme.crosshair.labelText;
             ctx.fillText(labelText, labelX + 6, labelY + 13);
         }
     }
@@ -145,12 +147,11 @@ export function renderCrosshairOverlay(
     const timeBoxX = Math.max(4, Math.min(width - timeBoxWidth - 4, params.activeCandle.screenX - (timeBoxWidth * 0.5)));
     const timeBoxY = height - timeBoxHeight - 2;
 
-    ctx.fillStyle = "rgba(10, 24, 44, 0.95)";
-    ctx.strokeStyle = "rgba(120, 188, 255, 0.5)";
+    ctx.fillStyle = params.theme.crosshair.labelBackground;
+    ctx.strokeStyle = params.theme.crosshair.labelBorder;
     ctx.fillRect(timeBoxX, timeBoxY, timeBoxWidth, timeBoxHeight);
     ctx.strokeRect(timeBoxX, timeBoxY, timeBoxWidth, timeBoxHeight);
-    ctx.fillStyle = "#9dc7f5";
+    ctx.fillStyle = params.theme.crosshair.labelText;
     ctx.fillText(timeText, timeBoxX + 6, timeBoxY + 12);
     ctx.restore();
 }
-

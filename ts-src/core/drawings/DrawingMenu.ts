@@ -1,25 +1,32 @@
-export function createDrawingContextMenu(onDelete: () => void): HTMLDivElement {
-    const menu = document.createElement("div");
+import type { ChartTheme } from "../../types";
+import { fontSpec } from "../theme/ChartTheme";
+
+export function applyDrawingContextMenuTheme(menu: HTMLDivElement, theme: ChartTheme): void {
+    menu.dataset.deleteHover = theme.drawings.menuDeleteHover;
     menu.style.position = "absolute";
     menu.style.display = "none";
     menu.style.zIndex = "20";
     menu.style.minWidth = "140px";
-    menu.style.background = "rgba(10, 24, 44, 0.96)";
-    menu.style.border = "1px solid rgba(120, 148, 188, 0.5)";
+    menu.style.background = theme.surface.menuBackground;
+    menu.style.border = `1px solid ${theme.surface.menuBorder}`;
     menu.style.borderRadius = "6px";
     menu.style.padding = "4px";
-    menu.style.font = "12px 'Segoe UI', sans-serif";
-    menu.style.color = "#dce7ff";
-    menu.style.boxShadow = "0 8px 22px rgba(0, 0, 0, 0.35)";
+    menu.style.font = fontSpec(theme.typography.tooltipSize, theme);
+    menu.style.color = theme.surface.menuText;
+    menu.style.boxShadow = theme.surface.menuShadow;
     menu.style.pointerEvents = "auto";
+}
 
+export function createDrawingContextMenu(theme: ChartTheme, onDelete: () => void): HTMLDivElement {
+    const menu = document.createElement("div");
+    applyDrawingContextMenuTheme(menu, theme);
     const deleteItem = document.createElement("div");
     deleteItem.textContent = "Delete drawing";
     deleteItem.style.padding = "6px 10px";
     deleteItem.style.cursor = "pointer";
     deleteItem.style.borderRadius = "4px";
     deleteItem.onmouseenter = () => {
-        deleteItem.style.background = "rgba(255, 107, 122, 0.15)";
+        deleteItem.style.background = menu.dataset.deleteHover ?? "transparent";
     };
     deleteItem.onmouseleave = () => {
         deleteItem.style.background = "transparent";

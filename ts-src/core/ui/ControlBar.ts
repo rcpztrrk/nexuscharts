@@ -1,3 +1,6 @@
+import type { ChartTheme } from "../../types";
+import { fontSpec } from "../theme/ChartTheme";
+
 export type ControlButtonId =
     | "fit"
     | "axes"
@@ -30,6 +33,7 @@ export interface ControlBarRenderParams {
     autoScaleY: boolean;
     showHeatmap: boolean;
     showAnalyticsPanel: boolean;
+    theme: ChartTheme;
 }
 
 export function renderControlBar(
@@ -67,7 +71,7 @@ export function renderControlBar(
     const controlButtons: ControlButtonState[] = [];
 
     ctx.save();
-    ctx.font = "11px 'Segoe UI', sans-serif";
+    ctx.font = fontSpec(params.theme.typography.controlBarSize, params.theme);
 
     let cursorX = 12;
     const cursorY = params.selectedCandleIndex !== null ? 36 : 12;
@@ -93,13 +97,13 @@ export function renderControlBar(
 
     for (const button of controlButtons) {
         const fill = button.kind === "action"
-            ? "rgba(18, 28, 47, 0.92)"
+            ? params.theme.controls.actionFill
             : button.active
-                ? "rgba(21, 69, 119, 0.88)"
-                : "rgba(18, 28, 47, 0.78)";
+                ? params.theme.controls.toggleActiveFill
+                : params.theme.controls.toggleInactiveFill;
         const stroke = button.active
-            ? "rgba(120, 188, 255, 0.55)"
-            : "rgba(120, 148, 188, 0.28)";
+            ? params.theme.controls.activeStroke
+            : params.theme.controls.inactiveStroke;
 
         ctx.fillStyle = fill;
         ctx.strokeStyle = stroke;
@@ -108,18 +112,17 @@ export function renderControlBar(
         ctx.strokeRect(button.x, button.y, button.width, button.height);
 
         ctx.fillStyle = button.kind === "action"
-            ? "#dce7ff"
+            ? params.theme.controls.actionText
             : button.active
-                ? "#eef6ff"
-                : "#9bb3d6";
+                ? params.theme.controls.toggleActiveText
+                : params.theme.controls.toggleInactiveText;
         ctx.fillText(button.label, button.x + 6, button.y + 13);
 
         const hintWidth = ctx.measureText(button.hint).width;
-        ctx.fillStyle = button.active ? "rgba(255, 209, 102, 0.95)" : "rgba(173, 191, 221, 0.72)";
+        ctx.fillStyle = button.active ? params.theme.controls.activeHint : params.theme.controls.inactiveHint;
         ctx.fillText(button.hint, button.x + button.width - hintWidth - 6, button.y + 13);
     }
 
     ctx.restore();
     return controlButtons;
 }
-

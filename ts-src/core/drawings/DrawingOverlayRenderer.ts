@@ -1,4 +1,4 @@
-import type { DrawingPoint } from "../../types";
+import type { ChartTheme, DrawingPoint } from "../../types";
 import type { StoredDrawing } from "./DrawingManager";
 
 export interface DrawingOverlayRenderOptions {
@@ -6,6 +6,7 @@ export interface DrawingOverlayRenderOptions {
     activeDrawingId: string | null;
     currentCenterX: number;
     currentCenterY: number;
+    theme: ChartTheme;
     worldToCanvas: (x: number, y: number) => { x: number; y: number };
 }
 
@@ -19,7 +20,7 @@ export function renderDrawingOverlay(
     for (const drawing of drawings) {
         const style = drawing.style ?? {};
         ctx.save();
-        ctx.strokeStyle = style.color ?? "#8ea6c9";
+        ctx.strokeStyle = style.color ?? options.theme.drawings.line;
         ctx.lineWidth = style.width ?? 1.5;
         ctx.setLineDash(style.dash ?? []);
 
@@ -79,9 +80,9 @@ export function renderDrawingOverlay(
 
         ctx.save();
         ctx.fillStyle = drawing.id === options.activeDrawingId
-            ? "rgba(255, 209, 102, 0.9)"
-            : "rgba(138, 199, 255, 0.9)";
-        ctx.strokeStyle = "rgba(15, 30, 50, 0.85)";
+            ? options.theme.drawings.activeHandle
+            : options.theme.drawings.hoveredHandle;
+        ctx.strokeStyle = options.theme.drawings.handleStroke;
         ctx.lineWidth = 1;
         for (const handle of handlePoints) {
             ctx.beginPath();
@@ -92,4 +93,3 @@ export function renderDrawingOverlay(
         ctx.restore();
     }
 }
-

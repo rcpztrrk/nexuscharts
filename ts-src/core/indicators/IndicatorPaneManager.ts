@@ -1,4 +1,4 @@
-import type { CandleDataPoint, IndicatorDefinition, IndicatorSeries } from "../../types";
+import type { CandleDataPoint, ChartTheme, IndicatorDefinition, IndicatorSeries } from "../../types";
 import { IndicatorEngine } from "./IndicatorEngine";
 import type { IndicatorPaneRect } from "./IndicatorOverlayRenderer";
 
@@ -10,8 +10,8 @@ export class IndicatorPaneManager {
         return this.engine.values();
     }
 
-    public addIndicator(definition: IndicatorDefinition, createId: () => string): string {
-        return this.engine.addIndicator(definition, createId);
+    public addIndicator(definition: IndicatorDefinition, createId: () => string, theme: ChartTheme): string {
+        return this.engine.addIndicator(definition, createId, theme);
     }
 
     public removeIndicator(id: string): boolean {
@@ -32,6 +32,10 @@ export class IndicatorPaneManager {
 
     public recompute(sourceCandles: CandleDataPoint[]): void {
         this.engine.recompute(sourceCandles);
+    }
+
+    public applyTheme(theme: ChartTheme): void {
+        this.engine.applyTheme(theme);
     }
 
     public getPaneBounds(width: number, height: number): IndicatorPaneRect | null {

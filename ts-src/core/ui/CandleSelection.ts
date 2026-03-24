@@ -1,4 +1,5 @@
-import type { HoveredCandle } from "../../types";
+import type { ChartTheme, HoveredCandle } from "../../types";
+import { fontSpec } from "../theme/ChartTheme";
 
 export function resolveClickedSelectionIndex(
     currentSelectedIndex: number | null,
@@ -45,15 +46,16 @@ export function resolveBoundarySelectionIndex(count: number, to: "start" | "end"
 export function renderSelectedCandleOverlay(
     ctx: CanvasRenderingContext2D,
     height: number,
-    selectedCandle: HoveredCandle | null
+    selectedCandle: HoveredCandle | null,
+    theme: ChartTheme
 ): void {
     if (!selectedCandle) {
         return;
     }
 
     ctx.save();
-    ctx.fillStyle = "rgba(255, 204, 102, 0.08)";
-    ctx.strokeStyle = "rgba(255, 204, 102, 0.6)";
+    ctx.fillStyle = theme.selection.fill;
+    ctx.strokeStyle = theme.selection.stroke;
     ctx.lineWidth = 1;
     ctx.fillRect(selectedCandle.screenX - 14, 0, 28, height);
 
@@ -63,15 +65,15 @@ export function renderSelectedCandleOverlay(
     ctx.stroke();
 
     const label = `Selected #${selectedCandle.index + 1}`;
-    ctx.font = "12px 'Segoe UI', sans-serif";
+    ctx.font = fontSpec(theme.typography.selectionSize, theme);
     const textWidth = ctx.measureText(label).width;
     const boxWidth = textWidth + 10;
     const boxX = 12;
     const boxY = 12;
 
-    ctx.fillStyle = "rgba(18, 28, 47, 0.92)";
+    ctx.fillStyle = theme.selection.labelBackground;
     ctx.fillRect(boxX, boxY, boxWidth, 18);
-    ctx.fillStyle = "#ffcc66";
+    ctx.fillStyle = theme.selection.labelText;
     ctx.fillText(label, boxX + 5, boxY + 13);
     ctx.restore();
 }

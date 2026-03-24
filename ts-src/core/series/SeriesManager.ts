@@ -1,5 +1,6 @@
 import type {
     CandleDataPoint,
+    ChartTheme,
     CustomSeriesRenderer,
     SeriesApi,
     SeriesOptions,
@@ -12,6 +13,7 @@ export interface StoredSeries {
     type: SeriesType;
     data: CandleDataPoint[];
     style: SeriesStyle;
+    usesDefaultColor: boolean;
     valueKey: SeriesValueKey;
     renderer?: CustomSeriesRenderer;
     revision: number;
@@ -42,7 +44,7 @@ export class SeriesManager {
         return this.store.values();
     }
 
-    public createSeries(options: SeriesOptions = {}, hooks: SeriesManagerHooks): SeriesApi {
+    public createSeries(options: SeriesOptions = {}, hooks: SeriesManagerHooks, theme: ChartTheme): SeriesApi {
         const type: SeriesType = options.type ?? "candlestick";
         const id = options.id ?? hooks.createId();
 
@@ -50,9 +52,17 @@ export class SeriesManager {
             throw new Error(`[NexusCharts] Series id '${id}' already exists.`);
         }
 
-        const style = this.buildStyle(type, options);
+        const style = this.buildStyle(type, options, theme);
         const valueKey: SeriesValueKey = options.valueKey ?? (type === "volume" ? "volume" : "close");
-        this.store.set(id, { type, data: [], style, valueKey, renderer: options.renderer, revision: 0 });
+        this.store.set(id, {
+            type,
+            data: [],
+            style,
+            usesDefaultColor: !options.color,
+            valueKey,
+            renderer: options.renderer,
+            revision: 0,
+        });
 
         const setData = (data: CandleDataPoint[]) => {
             const series = this.store.get(id);
@@ -118,26 +128,37 @@ export class SeriesManager {
         return { id, type, setData, append, update, updateLast, getData, clear };
     }
 
-    private buildStyle(type: SeriesType, options: SeriesOptions): SeriesStyle {
+    public applyTheme(theme: ChartTheme): void {
+        for (const series of this.store.values()) {
+            if (series.usesDefaultColor) {
+                series.style.color = this.defaultColor(series.type, theme);
+            }
+        }
+    }
+
+    private buildStyle(type: SeriesType, options: SeriesOptions, theme: ChartTheme): SeriesStyle {
         return {
-            color: options.color ?? this.defaultColor(type),
+            color: options.color ?? this.defaultColor(type, theme),
             lineWidth: options.lineWidth ?? (type === "histogram" || type === "volume" ? 1 : 2),
             opacity: options.opacity ?? (type === "area" ? 0.25 : type === "volume" ? 0.22 : 1),
             barWidthRatio: this.clamp(options.barWidthRatio ?? (type === "volume" ? 0.55 : 0.6), 0.1, 1),
         };
     }
 
-    private defaultColor(type: SeriesType): string {
+    private defaultColor(type: SeriesType, theme: ChartTheme): string {
         if (type === "histogram") {
-            return "#fbbf24";
+            return theme.series.histogram;
         }
         if (type === "volume") {
-            return "#38bdf8";
+            return theme.series.volume;
         }
         if (type === "custom") {
-            return "#f472b6";
+            return theme.series.custom;
         }
-        return "#60a5fa";
+        if (type === "area") {
+            return theme.series.area;
+        }
+        return theme.series.line;
     }
 
     private clamp(value: number, minValue: number, maxValue: number): number {

@@ -1,4 +1,5 @@
-import type { DrawingDefinition, DrawingPoint, SeriesGeometry, WorldPoint } from "../../types";
+import type { ChartTheme, DrawingDefinition, DrawingPoint, SeriesGeometry, WorldPoint } from "../../types";
+import { applyDrawingContextMenuTheme } from "./DrawingMenu";
 
 export interface StoredDrawing extends DrawingDefinition {
     id: string;
@@ -42,6 +43,13 @@ export class DrawingManager {
     public attachOverlay(overlayCanvas: HTMLCanvasElement, contextMenu: HTMLDivElement): void {
         this.overlayCanvas = overlayCanvas;
         this.contextMenu = contextMenu;
+    }
+
+    public applyMenuTheme(theme: ChartTheme): void {
+        if (!this.contextMenu) {
+            return;
+        }
+        applyDrawingContextMenuTheme(this.contextMenu, theme);
     }
 
     public values(): IterableIterator<StoredDrawing> {

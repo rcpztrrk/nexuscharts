@@ -4,6 +4,7 @@
     UiState,
     AnalyticsOptions,
     CandleDataPoint,
+    ChartTheme,
     SeriesType,
     ObserverFrame,
     ObserverMetrics,
@@ -23,7 +24,8 @@
     DrawingPoint,
     DrawingStyle,
     DrawingType,
-    DrawingDefinition
+    DrawingDefinition,
+    ThemeInput,
 } from "../types";
 
 import { PerfTracker } from "./perf/PerfTracker";
@@ -43,6 +45,7 @@ import { IndicatorPaneManager } from "./indicators/IndicatorPaneManager";
 import type { IndicatorPaneRect } from "./indicators/IndicatorOverlayRenderer";
 import { renderIndicatorOverlay } from "./indicators/IndicatorOverlayRenderer";
 import { SeriesManager } from "./series/SeriesManager";
+import { createChartTheme, fontSpec } from "./theme/ChartTheme";
 import { renderControlBar, type ControlButtonState } from "./ui/ControlBar";
 import { renderCrosshairOverlay as renderCrosshairOverlayUi } from "./ui/CrosshairOverlay";
 import {
@@ -117,6 +120,7 @@ export class NexusCharts {
         distancePointToSegment,
     };
     private readonly wasmBridge = new NexusWasmBridge();
+    private theme: ChartTheme = createChartTheme();
     private readonly observerFrames: NormalizedObserverFrame[] = [];
     private readonly indicatorPaneManager = new IndicatorPaneManager();
     private controlButtons: ControlButtonState[] = [];
@@ -163,6 +167,9 @@ export class NexusCharts {
         if (options.ui) {
             this.uiOptions = this.normalizeUiOptions(options.ui);
         }
+        if (options.theme) {
+            this.theme = createChartTheme(options.theme);
+        }
         this.readyPromise = new Promise<void>((resolve) => {
             this.resolveReady = resolve;
         });
@@ -177,6 +184,7 @@ export class NexusCharts {
         if (options.height) this.canvas.height = options.height;
 
         this.initializeOverlayCanvas(this.canvas);
+        this.applyCanvasTheme();
         void this.initEngine();
     }
 
@@ -383,11 +391,11 @@ export class NexusCharts {
                 this.refreshHoverFromStoredPointer();
                 this.redrawDrawings();
             },
-        });
+        }, this.theme);
     }
 
     public addIndicator(definition: IndicatorDefinition): string {
-        const id = this.indicatorPaneManager.addIndicator(definition, () => this.nextId("indicator"));
+        const id = this.indicatorPaneManager.addIndicator(definition, () => this.nextId("indicator"), this.theme);
         this.recomputeIndicators();
         this.redrawDrawings();
         return id;
@@ -427,6 +435,19 @@ export class NexusCharts {
     public clearDrawings(): void {
         this.drawingManager.clearDrawings();
         this.redrawDrawings();
+    }
+
+    public applyTheme(themeInput: ThemeInput): void {
+        this.theme = createChartTheme(themeInput);
+        this.applyCanvasTheme();
+        this.seriesManager.applyTheme(this.theme);
+        this.indicatorPaneManager.applyTheme(this.theme);
+        this.drawingManager.applyMenuTheme(this.theme);
+        this.redrawDrawings();
+    }
+
+    public getTheme(): ChartTheme {
+        return createChartTheme(this.theme);
     }
 
     public configureUi(options: UiOptions): void {
@@ -1688,7 +1709,7 @@ export class NexusCharts {
             parent.style.position = "relative";
         }
 
-        const menu = createDrawingContextMenu(() => {
+        const menu = createDrawingContextMenu(this.theme, () => {
             const id = this.drawingManager.consumeContextMenuTarget();
             if (id) {
                 this.removeDrawing(id);
@@ -1701,6 +1722,7 @@ export class NexusCharts {
         this.overlayCanvas = overlay;
         this.overlayCtx = overlay.getContext("2d");
         this.drawingManager.attachOverlay(overlay, menu);
+        this.drawingManager.applyMenuTheme(this.theme);
     }
 
     private redrawDrawings(): void {
@@ -1728,6 +1750,7 @@ export class NexusCharts {
             activeDrawingId,
             currentCenterX: this.currentCenterX,
             currentCenterY: this.currentCenterY,
+            theme: this.theme,
             worldToCanvas,
         });
 
@@ -1737,9 +1760,9 @@ export class NexusCharts {
             getIndicatorPaneBounds: this.getIndicatorPaneBounds.bind(this),
             worldToCanvasPoint: this.worldToCanvasPoint.bind(this),
             priceToWorldYValue: this.priceToWorldYValue.bind(this),
-        });
-        renderAnalyticsOverlayUi(ctx, width, height, this.observerFrames, this.analyticsOptions, toCanvas);
-        renderSelectedCandleOverlay(ctx, height, this.getCandleByIndex(this.selectedCandleIndex, geometry));
+        }, this.theme);
+        renderAnalyticsOverlayUi(ctx, width, height, this.observerFrames, this.analyticsOptions, toCanvas, this.theme);
+        renderSelectedCandleOverlay(ctx, height, this.getCandleByIndex(this.selectedCandleIndex, geometry), this.theme);
         this.renderCrosshairOverlay(ctx, width, height);
         this.renderTooltipOverlay(ctx, width, height);
         this.renderControlBarOverlay(ctx, width, height);
@@ -1933,9 +1956,9 @@ export class NexusCharts {
         const minTimeGapPx = 6;
 
         ctx.save();
-        ctx.font = "11px 'Segoe UI', sans-serif";
-        ctx.strokeStyle = "rgba(106, 138, 184, 0.25)";
-        ctx.fillStyle = "rgba(7, 18, 34, 0.72)";
+        ctx.font = fontSpec(this.theme.typography.axisSize, this.theme);
+        ctx.strokeStyle = this.theme.axes.grid;
+        ctx.fillStyle = this.theme.surface.panelBackground;
         ctx.lineWidth = 1;
 
         const topWorldY = this.currentCenterY + this.currentZoom;
@@ -1954,9 +1977,9 @@ export class NexusCharts {
             ctx.lineTo(width, canvasPoint.y);
             ctx.stroke();
 
-            ctx.fillStyle = "rgba(7, 18, 34, 0.85)";
+            ctx.fillStyle = this.theme.axes.labelBackground;
             ctx.fillRect(width - priceLabelWidth, labelY - 9, priceLabelWidth - 6, 18);
-            ctx.fillStyle = "#98afd1";
+            ctx.fillStyle = this.theme.axes.labelText;
             ctx.fillText(this.formatPrice(price), width - priceLabelWidth + 6, labelY + 4);
         }
 
@@ -1974,9 +1997,9 @@ export class NexusCharts {
             }
             const boxY = height - timeLabelHeight;
 
-            ctx.fillStyle = "rgba(7, 18, 34, 0.85)";
+            ctx.fillStyle = this.theme.axes.labelBackground;
             ctx.fillRect(boxX, boxY, boxWidth, 16);
-            ctx.fillStyle = "#98afd1";
+            ctx.fillStyle = this.theme.axes.labelText;
             ctx.fillText(label.text, boxX + 5, boxY + 12);
             lastLabelEndX = boxX + boxWidth;
         }
@@ -2002,6 +2025,7 @@ export class NexusCharts {
             hoverCanvasY: this.hoverCanvasY,
             indicatorPane,
             lowerIndicators: this.indicatorPaneManager.getLowerIndicators(),
+            theme: this.theme,
         }, {
             clamp: this.clamp.bind(this),
             canvasToWorldPoint: this.canvasToWorldPoint.bind(this),
@@ -2022,7 +2046,18 @@ export class NexusCharts {
             autoScaleY: this.uiOptions.autoScaleY,
             showHeatmap: this.analyticsOptions.showHeatmap,
             showAnalyticsPanel: this.analyticsOptions.showRewardCurve || this.analyticsOptions.showPnlCurve,
+            theme: this.theme,
         });
+    }
+
+    private applyCanvasTheme(): void {
+        if (this.canvas) {
+            this.canvas.style.backgroundColor = this.theme.surface.chartBackground;
+        }
+        const parent = this.canvas?.parentElement;
+        if (parent) {
+            parent.style.backgroundColor = this.theme.surface.chartBackground;
+        }
     }
 
     private renderTooltipOverlay(ctx: CanvasRenderingContext2D, width: number, height: number): void {
@@ -2040,6 +2075,7 @@ export class NexusCharts {
             hoverCanvasY: this.hoverCanvasY,
             indicatorPane: this.getIndicatorPaneBounds(width, height),
             lowerIndicators: this.indicatorPaneManager.getLowerIndicators(),
+            theme: this.theme,
         }, {
             formatPrice: this.formatPrice.bind(this),
             rectsOverlap: this.rectsOverlap.bind(this),

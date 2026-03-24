@@ -9,8 +9,17 @@ export interface InitOptions {
     enableInteraction?: boolean;
     analytics?: AnalyticsOptions;
     ui?: UiOptions;
+    theme?: ThemeInput;
     onReady?: (chart: NexusCharts) => void;
 }
+
+export type DeepPartial<T> = {
+    [K in keyof T]?: T[K] extends Array<infer U>
+        ? Array<U>
+        : T[K] extends object
+            ? DeepPartial<T[K]>
+            : T[K];
+};
 
 export interface UiOptions {
     showAxes?: boolean;
@@ -84,6 +93,108 @@ export interface PerfMetrics {
     heapTotalMB: number | null;
     sampleCount: number;
 }
+
+export interface ChartTheme {
+    typography: {
+        fontFamily: string;
+        controlBarSize: number;
+        axisSize: number;
+        tooltipSize: number;
+        crosshairSize: number;
+        analyticsSize: number;
+        selectionSize: number;
+    };
+    surface: {
+        chartBackground: string;
+        panelBackground: string;
+        panelBorder: string;
+        axisLabelBackground: string;
+        axisLabelText: string;
+        menuBackground: string;
+        menuBorder: string;
+        menuText: string;
+        menuShadow: string;
+    };
+    axes: {
+        grid: string;
+        labelBackground: string;
+        labelText: string;
+    };
+    controls: {
+        actionFill: string;
+        toggleActiveFill: string;
+        toggleInactiveFill: string;
+        activeStroke: string;
+        inactiveStroke: string;
+        actionText: string;
+        toggleActiveText: string;
+        toggleInactiveText: string;
+        activeHint: string;
+        inactiveHint: string;
+    };
+    tooltip: {
+        background: string;
+        border: string;
+        label: string;
+        value: string;
+        positive: string;
+        negative: string;
+    };
+    crosshair: {
+        line: string;
+        point: string;
+        labelBackground: string;
+        labelBorder: string;
+        labelText: string;
+    };
+    selection: {
+        fill: string;
+        stroke: string;
+        labelBackground: string;
+        labelText: string;
+    };
+    drawings: {
+        line: string;
+        activeHandle: string;
+        hoveredHandle: string;
+        handleStroke: string;
+        menuDeleteHover: string;
+    };
+    analytics: {
+        heatmapHold: string;
+        heatmapBuy: string;
+        heatmapSell: string;
+        panelBackground: string;
+        panelBorder: string;
+        zeroLine: string;
+        rewardCurve: string;
+        pnlCurve: string;
+        panelText: string;
+    };
+    indicators: {
+        paneBackground: string;
+        paneBorder: string;
+        paneLabel: string;
+        guide: string;
+        sma: string;
+        ema: string;
+        rsi: string;
+    };
+    series: {
+        line: string;
+        area: string;
+        histogram: string;
+        volume: string;
+        custom: string;
+    };
+    candles: {
+        up: string;
+        down: string;
+        wick: string;
+    };
+}
+
+export type ThemeInput = DeepPartial<ChartTheme>;
 
 export interface WorldPoint {
     x: number;

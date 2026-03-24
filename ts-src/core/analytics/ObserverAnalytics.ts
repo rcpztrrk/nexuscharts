@@ -1,4 +1,5 @@
-import type { AgentAction, AnalyticsOptions, DrawingPoint, ObserverFrame } from "../../types";
+import type { AgentAction, AnalyticsOptions, ChartTheme, DrawingPoint, ObserverFrame } from "../../types";
+import { fontSpec } from "../theme/ChartTheme";
 
 export interface NormalizedObserverFrame {
     time: number;
@@ -94,7 +95,8 @@ export function renderAnalyticsOverlay(
     height: number,
     frames: NormalizedObserverFrame[],
     options: Required<AnalyticsOptions>,
-    toCanvas: (point: DrawingPoint) => { x: number; y: number }
+    toCanvas: (point: DrawingPoint) => { x: number; y: number },
+    theme: ChartTheme
 ): void {
     if (frames.length === 0) {
         return;
@@ -106,9 +108,9 @@ export function renderAnalyticsOverlay(
         for (const frame of slice) {
             const point = toCanvas({ x: frame.x, y: frame.y });
             const radius = 2.5 + (frame.confidence * 4.5);
-            let color = "#ffd166";
-            if (frame.action === "buy") color = "#39d98a";
-            if (frame.action === "sell") color = "#ff5c70";
+            let color = theme.analytics.heatmapHold;
+            if (frame.action === "buy") color = theme.analytics.heatmapBuy;
+            if (frame.action === "sell") color = theme.analytics.heatmapSell;
 
             ctx.save();
             ctx.globalAlpha = 0.12 + (frame.confidence * 0.35);
@@ -174,14 +176,14 @@ export function renderAnalyticsOverlay(
     };
 
     ctx.save();
-    ctx.fillStyle = "rgba(6, 15, 30, 0.72)";
-    ctx.strokeStyle = "rgba(120, 148, 188, 0.45)";
+    ctx.fillStyle = theme.analytics.panelBackground;
+    ctx.strokeStyle = theme.analytics.panelBorder;
     ctx.lineWidth = 1;
     ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
     ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
 
     if (minValue <= 0 && maxValue >= 0) {
-        ctx.strokeStyle = "rgba(115, 138, 171, 0.35)";
+        ctx.strokeStyle = theme.analytics.zeroLine;
         ctx.setLineDash([4, 3]);
         const y0 = yForValue(0);
         ctx.beginPath();
@@ -208,28 +210,27 @@ export function renderAnalyticsOverlay(
     };
 
     if (options.showRewardCurve) {
-        drawCurve((frame) => frame.reward, "#57d4ff");
+        drawCurve((frame) => frame.reward, theme.analytics.rewardCurve);
     }
     if (options.showPnlCurve) {
-        drawCurve((frame) => frame.pnl, "#ffb86b");
+        drawCurve((frame) => frame.pnl, theme.analytics.pnlCurve);
     }
 
     const last = slice[slice.length - 1];
-    ctx.font = "12px 'Segoe UI', sans-serif";
-    ctx.fillStyle = "#dce7ff";
+    ctx.font = fontSpec(theme.typography.analyticsSize, theme);
+    ctx.fillStyle = theme.analytics.panelText;
     ctx.fillText("Observer Analytics", panelX + 10, panelY + 16);
 
     let metricsX = panelX + 10;
     if (options.showRewardCurve) {
-        ctx.fillStyle = "#57d4ff";
+        ctx.fillStyle = theme.analytics.rewardCurve;
         ctx.fillText(`R ${last.reward.toFixed(2)}`, metricsX, panelY + panelHeight - 8);
         metricsX += 70;
     }
     if (options.showPnlCurve) {
-        ctx.fillStyle = "#ffb86b";
+        ctx.fillStyle = theme.analytics.pnlCurve;
         ctx.fillText(`P ${last.pnl.toFixed(2)}`, metricsX, panelY + panelHeight - 8);
     }
 
     ctx.restore();
 }
-

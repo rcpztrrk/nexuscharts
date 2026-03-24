@@ -1,4 +1,5 @@
-import type { IndicatorSeries, SeriesGeometry } from "../../types";
+import type { ChartTheme, IndicatorSeries, SeriesGeometry } from "../../types";
+import { fontSpec } from "../theme/ChartTheme";
 
 export interface IndicatorPaneRect {
     x: number;
@@ -23,22 +24,23 @@ export function renderIndicatorOverlay(
     height: number,
     geometry: SeriesGeometry | null,
     indicators: Iterable<IndicatorSeries>,
-    api: IndicatorOverlayRenderApi
+    api: IndicatorOverlayRenderApi,
+    theme: ChartTheme
 ): void {
     if (!geometry) {
         return;
     }
 
-    const indicatorPane = api.getIndicatorPaneBounds(width, height);
+        const indicatorPane = api.getIndicatorPaneBounds(width, height);
     if (indicatorPane) {
         ctx.save();
-        ctx.fillStyle = "rgba(6, 13, 26, 0.92)";
-        ctx.strokeStyle = "rgba(120, 148, 188, 0.35)";
+        ctx.fillStyle = theme.indicators.paneBackground;
+        ctx.strokeStyle = theme.indicators.paneBorder;
         ctx.lineWidth = 1;
         ctx.fillRect(indicatorPane.x, indicatorPane.y, indicatorPane.width, indicatorPane.height);
         ctx.strokeRect(indicatorPane.x, indicatorPane.y, indicatorPane.width, indicatorPane.height);
-        ctx.font = "11px 'Segoe UI', sans-serif";
-        ctx.fillStyle = "#97b0d2";
+        ctx.font = fontSpec(theme.typography.axisSize, theme);
+        ctx.fillStyle = theme.indicators.paneLabel;
         ctx.fillText("Indicators", indicatorPane.x + 12, indicatorPane.y + 16);
         ctx.restore();
     }
@@ -48,7 +50,7 @@ export function renderIndicatorOverlay(
             continue;
         }
         if (indicator.pane === "lower" && indicatorPane) {
-            renderIndicatorInPane(ctx, geometry, indicator, indicatorPane, width, height, api);
+            renderIndicatorInPane(ctx, geometry, indicator, indicatorPane, width, height, api, theme);
         } else {
             renderIndicatorInMain(ctx, geometry, indicator, width, height, api);
         }
@@ -95,7 +97,8 @@ function renderIndicatorInPane(
     pane: IndicatorPaneRect,
     width: number,
     height: number,
-    api: IndicatorOverlayRenderApi
+    api: IndicatorOverlayRenderApi,
+    theme: ChartTheme
 ): void {
     let minValue = Number.POSITIVE_INFINITY;
     let maxValue = Number.NEGATIVE_INFINITY;
@@ -148,7 +151,7 @@ function renderIndicatorInPane(
     }
 
     if (indicator.type === "rsi") {
-        ctx.strokeStyle = "rgba(123, 148, 184, 0.35)";
+        ctx.strokeStyle = theme.indicators.guide;
         ctx.setLineDash([4, 3]);
         const y30 = mapY(30);
         const y70 = mapY(70);
@@ -165,4 +168,3 @@ function renderIndicatorInPane(
 
     ctx.restore();
 }
-

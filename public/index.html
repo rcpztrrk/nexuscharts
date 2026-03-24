@@ -6,11 +6,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NexusCharts - WASM/WebGL Demo</title>
     <style>
+        :root {
+            --page-bg: #1e1e24;
+            --page-text: #ffffff;
+            --container-border: rgba(120, 148, 188, 0.32);
+            --container-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            --shell-bg: rgba(12, 22, 40, 0.85);
+            --shell-border: rgba(120, 148, 188, 0.4);
+            --shell-hover: rgba(156, 186, 232, 0.7);
+            --shell-text: #dce7ff;
+            --shell-muted: #9bb3d6;
+            --shell-subtle: #7fa1d0;
+            --shell-hint: #6f86aa;
+            --shell-accent: #ffcc66;
+        }
+
         body {
             margin: 0;
             padding: 0;
-            background-color: #1e1e24;
-            color: white;
+            background-color: var(--page-bg);
+            color: var(--page-text);
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -22,8 +37,8 @@
         #chart-container {
             width: 800px;
             height: 600px;
-            border: 1px solid #333;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--container-border);
+            box-shadow: var(--container-shadow);
         }
 
         canvas {
@@ -34,33 +49,37 @@
 
         #metrics-label {
             margin-top: 12px;
-            color: #9bb3d6;
+            color: var(--shell-muted);
             font-size: 13px;
             letter-spacing: 0.2px;
         }
 
         #perf-label {
             margin-top: 6px;
-            color: #7fa1d0;
+            color: var(--shell-subtle);
+            font-size: 12px;
+            letter-spacing: 0.2px;
+        }
+
+        #stream-toggle,
+        .toolbar-card {
+            margin-top: 0;
+            padding: 6px 12px;
+            border: 1px solid var(--shell-border);
+            border-radius: 6px;
+            background: var(--shell-bg);
+            color: var(--shell-text);
             font-size: 12px;
             letter-spacing: 0.2px;
         }
 
         #stream-toggle {
-            margin-top: 0;
-            padding: 6px 12px;
-            border: 1px solid rgba(120, 148, 188, 0.4);
-            border-radius: 6px;
-            background: rgba(12, 22, 40, 0.85);
-            color: #dce7ff;
-            font-size: 12px;
-            letter-spacing: 0.2px;
             cursor: pointer;
         }
 
         #stream-toggle.is-paused {
-            color: #ffcc66;
-            border-color: rgba(255, 204, 102, 0.6);
+            color: var(--shell-accent);
+            border-color: color-mix(in srgb, var(--shell-accent) 60%, transparent);
         }
 
         #toolbar {
@@ -72,51 +91,46 @@
             flex-wrap: wrap;
         }
 
-        #benchmark-bar {
+        .toolbar-card {
             display: flex;
             align-items: center;
             gap: 8px;
             padding: 6px 10px;
-            border: 1px solid rgba(120, 148, 188, 0.4);
-            border-radius: 6px;
-            background: rgba(12, 22, 40, 0.85);
-            color: #dce7ff;
-            font-size: 12px;
-            letter-spacing: 0.2px;
         }
 
-        #dataset-size {
+        #dataset-size,
+        #theme-preset {
             padding: 4px 6px;
             border-radius: 4px;
-            border: 1px solid rgba(120, 148, 188, 0.4);
-            background: rgba(7, 14, 27, 0.95);
-            color: #dce7ff;
+            border: 1px solid var(--shell-border);
+            background: color-mix(in srgb, var(--shell-bg) 76%, #07121d);
+            color: var(--shell-text);
             font-size: 12px;
         }
 
         #dataset-load {
             padding: 4px 10px;
             border-radius: 4px;
-            border: 1px solid rgba(120, 148, 188, 0.4);
-            background: rgba(20, 34, 60, 0.95);
-            color: #dce7ff;
+            border: 1px solid var(--shell-border);
+            background: color-mix(in srgb, var(--shell-bg) 70%, #143045);
+            color: var(--shell-text);
             font-size: 12px;
             cursor: pointer;
         }
 
         #dataset-load:hover {
-            border-color: rgba(156, 186, 232, 0.7);
+            border-color: var(--shell-hover);
         }
 
         #dataset-status {
-            color: #9bb3d6;
+            color: var(--shell-muted);
             font-size: 11px;
             letter-spacing: 0.2px;
         }
 
         #ux-hint {
             margin-top: 8px;
-            color: #6f86aa;
+            color: var(--shell-hint);
             font-size: 12px;
             letter-spacing: 0.2px;
         }
@@ -126,7 +140,7 @@
 <body>
     <h2>NexusCharts (WASM/WebGL Demo)</h2>
     <div id="toolbar">
-        <div id="benchmark-bar">
+        <div class="toolbar-card" id="benchmark-bar">
             <span>Dataset</span>
             <select id="dataset-size">
                 <option value="200">200</option>
@@ -140,6 +154,14 @@
             </select>
             <button id="dataset-load">Load</button>
             <span id="dataset-status">Size: 42</span>
+        </div>
+        <div class="toolbar-card" id="theme-bar">
+            <span>Theme</span>
+            <select id="theme-preset">
+                <option value="midnight">Midnight</option>
+                <option value="ocean">Ocean</option>
+                <option value="ember">Ember</option>
+            </select>
         </div>
         <button id="stream-toggle">Stream: On</button>
     </div>
@@ -256,10 +278,187 @@
             const datasetSelect = document.getElementById("dataset-size");
             const datasetLoad = document.getElementById("dataset-load");
             const datasetStatus = document.getElementById("dataset-status");
+            const themeSelect = document.getElementById("theme-preset");
             const datasetThreshold = 50000;
             let streamEnabled = true;
             let overlaysEnabled = true;
             let analyticsEnabled = true;
+
+            const themePresets = {
+                midnight: {
+                    chart: {},
+                    shell: {
+                        pageBg: "#1e1e24",
+                        pageText: "#ffffff",
+                        containerBorder: "rgba(120, 148, 188, 0.32)",
+                        containerShadow: "0 4px 12px rgba(0, 0, 0, 0.5)",
+                        shellBg: "rgba(12, 22, 40, 0.85)",
+                        shellBorder: "rgba(120, 148, 188, 0.4)",
+                        shellHover: "rgba(156, 186, 232, 0.7)",
+                        shellText: "#dce7ff",
+                        shellMuted: "#9bb3d6",
+                        shellSubtle: "#7fa1d0",
+                        shellHint: "#6f86aa",
+                        shellAccent: "#ffcc66"
+                    }
+                },
+                ocean: {
+                    chart: {
+                        surface: {
+                            chartBackground: "#08131f",
+                            panelBackground: "rgba(5, 20, 36, 0.94)",
+                            panelBorder: "rgba(92, 150, 204, 0.42)",
+                            axisLabelBackground: "rgba(5, 20, 36, 0.9)",
+                            axisLabelText: "#91b8df",
+                            menuBackground: "rgba(6, 19, 35, 0.96)",
+                            menuBorder: "rgba(98, 162, 222, 0.45)",
+                            menuText: "#d8efff"
+                        },
+                        controls: {
+                            toggleActiveFill: "rgba(18, 74, 122, 0.92)",
+                            activeStroke: "rgba(102, 214, 255, 0.58)",
+                            activeHint: "#9fe8ff"
+                        },
+                        crosshair: {
+                            line: "rgba(98, 198, 255, 0.55)",
+                            point: "rgba(94, 237, 255, 0.92)",
+                            labelBorder: "rgba(102, 214, 255, 0.54)"
+                        },
+                        analytics: {
+                            heatmapHold: "#ffd166",
+                            heatmapBuy: "#2ee6a6",
+                            heatmapSell: "#ff6b7a",
+                            rewardCurve: "#5cd7ff",
+                            pnlCurve: "#7fe1ff"
+                        },
+                        indicators: {
+                            sma: "#67e8f9",
+                            ema: "#38bdf8",
+                            rsi: "#60a5fa"
+                        },
+                        series: {
+                            line: "#6ee7ff",
+                            area: "#2dd4bf",
+                            histogram: "#fbbf24",
+                            volume: "#38bdf8",
+                            custom: "#a5f3fc"
+                        },
+                        candles: {
+                            up: "#22c55e",
+                            down: "#fb7185",
+                            wick: "#d7ebff"
+                        }
+                    },
+                    shell: {
+                        pageBg: "#111825",
+                        pageText: "#eff8ff",
+                        containerBorder: "rgba(92, 150, 204, 0.28)",
+                        containerShadow: "0 6px 18px rgba(3, 10, 18, 0.55)",
+                        shellBg: "rgba(8, 24, 42, 0.88)",
+                        shellBorder: "rgba(92, 150, 204, 0.45)",
+                        shellHover: "rgba(124, 205, 255, 0.8)",
+                        shellText: "#daf2ff",
+                        shellMuted: "#8db8dc",
+                        shellSubtle: "#74a4d4",
+                        shellHint: "#5f85ab",
+                        shellAccent: "#9fe8ff"
+                    }
+                },
+                ember: {
+                    chart: {
+                        surface: {
+                            chartBackground: "#211918",
+                            panelBackground: "rgba(33, 18, 15, 0.94)",
+                            panelBorder: "rgba(201, 129, 80, 0.38)",
+                            axisLabelBackground: "rgba(33, 18, 15, 0.88)",
+                            axisLabelText: "#d6b29a",
+                            menuBackground: "rgba(37, 20, 18, 0.96)",
+                            menuBorder: "rgba(220, 141, 89, 0.42)",
+                            menuText: "#ffe6d5"
+                        },
+                        controls: {
+                            actionFill: "rgba(46, 26, 22, 0.92)",
+                            toggleActiveFill: "rgba(111, 54, 28, 0.9)",
+                            toggleInactiveFill: "rgba(46, 26, 22, 0.78)",
+                            activeStroke: "rgba(255, 170, 109, 0.55)",
+                            inactiveStroke: "rgba(194, 131, 90, 0.28)",
+                            actionText: "#ffe6d5",
+                            toggleActiveText: "#fff2e8",
+                            toggleInactiveText: "#d7b09b",
+                            activeHint: "#ffd6a8",
+                            inactiveHint: "rgba(223, 177, 149, 0.72)"
+                        },
+                        tooltip: {
+                            background: "rgba(37, 20, 18, 0.94)",
+                            border: "rgba(220, 141, 89, 0.44)",
+                            label: "#ffb97b",
+                            value: "#ffe6d5",
+                            positive: "#58e49f",
+                            negative: "#ff7c7c"
+                        },
+                        analytics: {
+                            heatmapHold: "#ffb347",
+                            heatmapBuy: "#55d6a6",
+                            heatmapSell: "#ff6f7d",
+                            rewardCurve: "#ffbf69",
+                            pnlCurve: "#ff8f70"
+                        },
+                        indicators: {
+                            sma: "#ffb347",
+                            ema: "#ff8f70",
+                            rsi: "#f472b6"
+                        },
+                        series: {
+                            line: "#ffb347",
+                            area: "#fb923c",
+                            histogram: "#f59e0b",
+                            volume: "#c084fc",
+                            custom: "#f472b6"
+                        },
+                        candles: {
+                            up: "#3ad29f",
+                            down: "#ff6767",
+                            wick: "#ffe5d0"
+                        }
+                    },
+                    shell: {
+                        pageBg: "#241c1b",
+                        pageText: "#fff4ec",
+                        containerBorder: "rgba(201, 129, 80, 0.28)",
+                        containerShadow: "0 6px 18px rgba(22, 11, 8, 0.55)",
+                        shellBg: "rgba(40, 22, 19, 0.88)",
+                        shellBorder: "rgba(201, 129, 80, 0.42)",
+                        shellHover: "rgba(255, 190, 129, 0.8)",
+                        shellText: "#ffe8da",
+                        shellMuted: "#d4b29c",
+                        shellSubtle: "#c99f88",
+                        shellHint: "#a68070",
+                        shellAccent: "#ffbf69"
+                    }
+                }
+            };
+
+            const applyShellTheme = (shell) => {
+                const root = document.documentElement;
+                root.style.setProperty("--page-bg", shell.pageBg);
+                root.style.setProperty("--page-text", shell.pageText);
+                root.style.setProperty("--container-border", shell.containerBorder);
+                root.style.setProperty("--container-shadow", shell.containerShadow);
+                root.style.setProperty("--shell-bg", shell.shellBg);
+                root.style.setProperty("--shell-border", shell.shellBorder);
+                root.style.setProperty("--shell-hover", shell.shellHover);
+                root.style.setProperty("--shell-text", shell.shellText);
+                root.style.setProperty("--shell-muted", shell.shellMuted);
+                root.style.setProperty("--shell-subtle", shell.shellSubtle);
+                root.style.setProperty("--shell-hint", shell.shellHint);
+                root.style.setProperty("--shell-accent", shell.shellAccent);
+            };
+
+            const applyThemePreset = (presetName) => {
+                const preset = themePresets[presetName] ?? themePresets.midnight;
+                chart.applyTheme(preset.chart);
+                applyShellTheme(preset.shell);
+            };
 
             const setStreamState = (nextState) => {
                 streamEnabled = nextState;
@@ -276,10 +475,10 @@
             }
 
             const series = chart.createSeries({ type: "candlestick" });
-            const lineSeries = chart.createSeries({ type: "line", color: "#7dd3fc", lineWidth: 2 });
-            const areaSeries = chart.createSeries({ type: "area", color: "#22c55e", opacity: 0.12, lineWidth: 1.5 });
-            const histSeries = chart.createSeries({ type: "histogram", color: "#f59e0b", opacity: 0.18, barWidthRatio: 0.45 });
-            const volumeSeries = chart.createSeries({ type: "volume", color: "#38bdf8", opacity: 0.22, barWidthRatio: 0.55 });
+            const lineSeries = chart.createSeries({ type: "line", lineWidth: 2 });
+            const areaSeries = chart.createSeries({ type: "area", opacity: 0.12, lineWidth: 1.5 });
+            const histSeries = chart.createSeries({ type: "histogram", opacity: 0.18, barWidthRatio: 0.45 });
+            const volumeSeries = chart.createSeries({ type: "volume", opacity: 0.22, barWidthRatio: 0.55 });
 
             const buildCustomData = (source) => source.map((c, i) => ({
                 ...c,
@@ -288,7 +487,6 @@
 
             const customSeries = chart.createSeries({
                 type: "custom",
-                color: "#f472b6",
                 lineWidth: 1.5,
                 valueKey: "value",
                 renderer: (ctx, points, meta) => {
@@ -344,19 +542,19 @@
                         { time: anchorStart.time, price: anchorStart.low - 0.6 },
                         { time: anchorEnd.time, price: anchorEnd.high + 0.8 }
                     ],
-                    style: { color: "#ffcc66", width: 2 }
+                    style: { width: 2 }
                 });
 
                 chart.addDrawing({
                     type: "horizontal_line",
                     price: dataset[Math.floor(dataset.length * 0.5)].close - 1.2,
-                    style: { color: "#5ea6ff", width: 1.5, dash: [6, 4] }
+                    style: { width: 1.5, dash: [6, 4] }
                 });
 
                 chart.addDrawing({
                     type: "vertical_line",
                     time: anchorEnd.time,
-                    style: { color: "#5ea6ff", width: 1.2, dash: [4, 4] }
+                    style: { width: 1.2, dash: [4, 4] }
                 });
             };
 
@@ -384,9 +582,9 @@
                 if (!enableOverlays) {
                     return;
                 }
-                chart.addIndicator({ type: "sma", period: 8, color: "#fbbf24" });
-                chart.addIndicator({ type: "ema", period: 13, color: "#7dd3fc" });
-                chart.addIndicator({ type: "rsi", period: 14, color: "#a78bfa", pane: "lower" });
+                chart.addIndicator({ type: "sma", period: 8 });
+                chart.addIndicator({ type: "ema", period: 13 });
+                chart.addIndicator({ type: "rsi", period: 14, pane: "lower" });
             };
 
             const applyDataset = (count, pauseStream = true) => {
@@ -436,6 +634,13 @@
             if (datasetSelect) {
                 datasetSelect.value = String(defaultDatasetSize);
             }
+            if (themeSelect) {
+                themeSelect.value = "midnight";
+                themeSelect.addEventListener("change", () => {
+                    applyThemePreset(themeSelect.value);
+                });
+            }
+            applyThemePreset("midnight");
             applyDataset(defaultDatasetSize, false);
 
             setInterval(() => {

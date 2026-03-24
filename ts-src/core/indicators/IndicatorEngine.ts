@@ -1,24 +1,28 @@
-import type { CandleDataPoint, IndicatorDefinition, IndicatorSeries } from "../../types";
+import type { CandleDataPoint, ChartTheme, IndicatorDefinition, IndicatorSeries } from "../../types";
+
+interface StoredIndicator extends IndicatorSeries {
+    usesDefaultColor: boolean;
+}
 
 export class IndicatorEngine {
-    private readonly store = new Map<string, IndicatorSeries>();
+    private readonly store = new Map<string, StoredIndicator>();
 
     public get size(): number {
         return this.store.size;
     }
 
-    public values(): IterableIterator<IndicatorSeries> {
+    public values(): IterableIterator<StoredIndicator> {
         return this.store.values();
     }
 
-    public addIndicator(definition: IndicatorDefinition, createId: () => string): string {
+    public addIndicator(definition: IndicatorDefinition, createId: () => string, theme: ChartTheme): string {
         const id = definition.id ?? createId();
         if (this.store.has(id)) {
             throw new Error(`[NexusCharts] Indicator id '${id}' already exists.`);
         }
         const period = Math.max(2, Math.floor(definition.period));
         const pane = definition.pane ?? (definition.type === "rsi" ? "lower" : "main");
-        const color = definition.color ?? (definition.type === "rsi" ? "#7dd3fc" : "#fbbf24");
+        const color = definition.color ?? this.defaultColor(definition.type, theme);
 
         this.store.set(id, {
             id,
@@ -26,6 +30,7 @@ export class IndicatorEngine {
             period,
             pane,
             color,
+            usesDefaultColor: !definition.color,
             values: [],
         });
 
@@ -38,6 +43,14 @@ export class IndicatorEngine {
 
     public clearIndicators(): void {
         this.store.clear();
+    }
+
+    public applyTheme(theme: ChartTheme): void {
+        for (const indicator of this.store.values()) {
+            if (indicator.usesDefaultColor) {
+                indicator.color = this.defaultColor(indicator.type, theme);
+            }
+        }
     }
 
     public getIndicators(): IndicatorSeries[] {
@@ -83,6 +96,16 @@ export class IndicatorEngine {
                     break;
             }
         }
+    }
+
+    private defaultColor(type: IndicatorDefinition["type"], theme: ChartTheme): string {
+        if (type === "ema") {
+            return theme.indicators.ema;
+        }
+        if (type === "rsi") {
+            return theme.indicators.rsi;
+        }
+        return theme.indicators.sma;
     }
 
     private static computeSma(values: number[], period: number): Array<number | null> {
@@ -186,4 +209,3 @@ export class IndicatorEngine {
         return result;
     }
 }
-

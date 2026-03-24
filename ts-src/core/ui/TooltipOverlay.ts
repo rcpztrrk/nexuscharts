@@ -1,5 +1,6 @@
-import type { HoveredCandle, IndicatorSeries } from "../../types";
+import type { ChartTheme, HoveredCandle, IndicatorSeries } from "../../types";
 import type { IndicatorPaneRect } from "../indicators/IndicatorOverlayRenderer";
+import { fontSpec } from "../theme/ChartTheme";
 
 export interface TooltipOverlayApi {
     formatPrice(value: number): string;
@@ -24,6 +25,7 @@ export interface TooltipOverlayParams {
     hoverCanvasY: number | null;
     indicatorPane: IndicatorPaneRect | null;
     lowerIndicators: IndicatorSeries[];
+    theme: ChartTheme;
 }
 
 export function renderTooltipOverlay(
@@ -63,7 +65,7 @@ export function renderTooltipOverlay(
     ];
 
     ctx.save();
-    ctx.font = "12px 'Segoe UI', sans-serif";
+    ctx.font = fontSpec(params.theme.typography.tooltipSize, params.theme);
 
     if (hoverInLowerPane && params.indicatorPane) {
         const indicatorLines: string[] = [];
@@ -90,15 +92,15 @@ export function renderTooltipOverlay(
             Math.min(params.indicatorPane.y + params.indicatorPane.height - boxHeight - 6, anchorY - 10)
         );
 
-        ctx.fillStyle = "rgba(7, 18, 34, 0.92)";
-        ctx.strokeStyle = "rgba(120, 148, 188, 0.45)";
+        ctx.fillStyle = params.theme.tooltip.background;
+        ctx.strokeStyle = params.theme.tooltip.border;
         ctx.lineWidth = 1;
         ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
         ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
 
-        ctx.fillStyle = "#9bd1ff";
+        ctx.fillStyle = params.theme.tooltip.label;
         ctx.fillText(allLines[0], boxX + 9, boxY + 14);
-        ctx.fillStyle = "#dce7ff";
+        ctx.fillStyle = params.theme.tooltip.value;
         for (let i = 1; i < allLines.length; i += 1) {
             ctx.fillText(allLines[i], boxX + 9, boxY + 14 + (i * 14));
         }
@@ -135,19 +137,18 @@ export function renderTooltipOverlay(
         boxY = Math.min(height - boxHeight - 10, analyticsPanel.y + analyticsPanel.height + 10);
     }
 
-    ctx.fillStyle = "rgba(7, 18, 34, 0.92)";
-    ctx.strokeStyle = "rgba(120, 148, 188, 0.45)";
+    ctx.fillStyle = params.theme.tooltip.background;
+    ctx.strokeStyle = params.theme.tooltip.border;
     ctx.lineWidth = 1;
     ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
     ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
 
-    ctx.fillStyle = delta >= 0 ? "#49d17f" : "#ff6a7a";
+    ctx.fillStyle = delta >= 0 ? params.theme.tooltip.positive : params.theme.tooltip.negative;
     ctx.fillText(lines[0], boxX + 9, boxY + 14);
-    ctx.fillStyle = "#dce7ff";
+    ctx.fillStyle = params.theme.tooltip.value;
     for (let i = 1; i < lines.length; i += 1) {
         ctx.fillText(lines[i], boxX + 9, boxY + 14 + (i * 14));
     }
 
     ctx.restore();
 }
-
