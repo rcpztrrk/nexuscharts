@@ -6,6 +6,7 @@ interface NexusWasmModule {
     destroyEngine: () => void;
     panCamera: (deltaX: number, deltaY: number) => void;
     zoomCamera: (zoomFactor: number) => void;
+    resizeViewport?: (width: number, height: number) => void;
     setCameraView?: (centerX: number, centerY: number, zoom: number) => void;
     setSeriesData?: (opens: number[], highs: number[], lows: number[], closes: number[]) => void;
     pushObserverFrame?: (
@@ -109,6 +110,15 @@ export class NexusWasmBridge {
             return false;
         }
         this.module.zoomCamera(zoomFactor);
+        return true;
+    }
+
+    public resizeViewport(width: number, height: number): boolean {
+        if (!this.moduleLoaded || !this.module || typeof this.module.resizeViewport !== "function") {
+            return false;
+        }
+
+        this.module.resizeViewport(width, height);
         return true;
     }
 

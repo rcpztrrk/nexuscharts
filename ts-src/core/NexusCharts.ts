@@ -84,6 +84,8 @@ export class NexusCharts {
     private readonly canvasId: string;
     private readonly width?: number;
     private readonly height?: number;
+    private readonly autoResize: boolean;
+    private readonly pixelRatio?: number;
     private readonly wasmScriptPath: string;
     private readonly wasmBinaryPath: string;
     private readonly enableInteraction: boolean;
@@ -150,6 +152,8 @@ export class NexusCharts {
         this.canvasId = options.canvasId;
         this.width = options.width;
         this.height = options.height;
+        this.autoResize = options.autoResize ?? (options.width === undefined && options.height === undefined);
+        this.pixelRatio = options.pixelRatio;
         this.wasmScriptPath = options.wasmScriptPath ?? "wasm/nexuscharts.js";
         this.wasmBinaryPath = options.wasmBinaryPath ?? "wasm/nexuscharts.wasm";
         this.enableInteraction = options.enableInteraction ?? true;
@@ -180,10 +184,9 @@ export class NexusCharts {
             return;
         }
 
-        if (options.width) this.canvas.width = options.width;
-        if (options.height) this.canvas.height = options.height;
-
         this.initializeOverlayCanvas(this.canvas);
+        this.attachResizeHandling();
+        this.syncCanvasSize();
         this.applyCanvasTheme();
         void this.initEngine();
     }
@@ -204,6 +207,10 @@ export class NexusCharts {
         }
         this.overlayCanvas = null;
         this.overlayCtx = null;
+    }
+
+    public resize(): void {
+        this.syncCanvasSize();
     }
 
     public pan(deltaX: number, deltaY: number): void {
@@ -569,8 +576,8 @@ export class NexusCharts {
     private async initEngine(): Promise<void> {
         const initialized = await this.wasmBridge.initialize({
             canvasId: this.canvasId,
-            width: this.width ?? 0,
-            height: this.height ?? 0,
+            width: this.canvas?.width ?? this.width ?? 0,
+            height: this.canvas?.height ?? this.height ?? 0,
             canvas: this.canvas,
             wasmScriptPath: this.wasmScriptPath,
             wasmBinaryPath: this.wasmBinaryPath,
@@ -809,16 +816,6 @@ export class NexusCharts {
             }
         };
 
-        const onResize = () => {
-            if (!this.canvas || !this.overlayCanvas) {
-                return;
-            }
-            this.overlayCanvas.width = this.canvas.width;
-            this.overlayCanvas.height = this.canvas.height;
-            this.refreshHoverFromStoredPointer();
-            this.redrawDrawings();
-        };
-
         const clearHover = () => {
             this.hoverCanvasX = null;
             this.hoverCanvasY = null;
@@ -836,7 +833,6 @@ export class NexusCharts {
         canvas.addEventListener("dblclick", onDoubleClick);
         canvas.addEventListener("wheel", onWheel, { passive: false });
         canvas.addEventListener("contextmenu", onContextMenu);
-        window.addEventListener("resize", onResize);
         window.addEventListener("keydown", onKeyDown);
         window.addEventListener("mousedown", onGlobalDown);
 
@@ -849,7 +845,6 @@ export class NexusCharts {
         this.cleanupHandlers.push(() => canvas.removeEventListener("dblclick", onDoubleClick));
         this.cleanupHandlers.push(() => canvas.removeEventListener("wheel", onWheel));
         this.cleanupHandlers.push(() => canvas.removeEventListener("contextmenu", onContextMenu));
-        this.cleanupHandlers.push(() => window.removeEventListener("resize", onResize));
         this.cleanupHandlers.push(() => window.removeEventListener("keydown", onKeyDown));
         this.cleanupHandlers.push(() => window.removeEventListener("mousedown", onGlobalDown));
     }
@@ -1683,6 +1678,115 @@ export class NexusCharts {
         const clientX = rect.left + ((this.hoverCanvasX / surface.width) * rect.width);
         const clientY = rect.top + ((this.hoverCanvasY / surface.height) * rect.height);
         this.updateHoverFromClientPosition(clientX, clientY);
+    }
+
+    private attachResizeHandling(): void {
+        if (!this.canvas) {
+            return;
+        }
+
+        const resizeTarget = this.canvas.parentElement ?? this.canvas;
+        let rafId = 0;
+        const queueResize = () => {
+            if (rafId !== 0) {
+                return;
+            }
+            rafId = window.requestAnimationFrame(() => {
+                rafId = 0;
+                this.syncCanvasSize();
+            });
+        };
+
+        if (typeof ResizeObserver !== "undefined") {
+            const observer = new ResizeObserver(() => queueResize());
+            observer.observe(resizeTarget);
+            this.cleanupHandlers.push(() => observer.disconnect());
+        } else {
+            window.addEventListener("resize", queueResize);
+            this.cleanupHandlers.push(() => window.removeEventListener("resize", queueResize));
+        }
+
+        this.cleanupHandlers.push(() => {
+            if (rafId !== 0) {
+                window.cancelAnimationFrame(rafId);
+                rafId = 0;
+            }
+        });
+    }
+
+    private syncCanvasSize(): void {
+        if (!this.canvas) {
+            return;
+        }
+
+        const { cssWidth, cssHeight } = this.resolveCanvasCssSize(this.canvas);
+        const pixelRatio = this.resolvePixelRatio();
+        const nextWidth = Math.max(1, Math.round(cssWidth * pixelRatio));
+        const nextHeight = Math.max(1, Math.round(cssHeight * pixelRatio));
+
+        this.canvas.style.width = `${cssWidth}px`;
+        this.canvas.style.height = `${cssHeight}px`;
+
+        let sizeChanged = false;
+        if (this.canvas.width !== nextWidth || this.canvas.height !== nextHeight) {
+            this.canvas.width = nextWidth;
+            this.canvas.height = nextHeight;
+            sizeChanged = true;
+        }
+
+        if (this.overlayCanvas) {
+            this.overlayCanvas.style.width = `${cssWidth}px`;
+            this.overlayCanvas.style.height = `${cssHeight}px`;
+            if (this.overlayCanvas.width !== nextWidth || this.overlayCanvas.height !== nextHeight) {
+                this.overlayCanvas.width = nextWidth;
+                this.overlayCanvas.height = nextHeight;
+                sizeChanged = true;
+            }
+        }
+
+        if (!sizeChanged) {
+            return;
+        }
+
+        this.wasmBridge.resizeViewport(nextWidth, nextHeight);
+        this.refreshHoverFromStoredPointer();
+        this.redrawDrawings();
+    }
+
+    private resolveCanvasCssSize(baseCanvas: HTMLCanvasElement): { cssWidth: number; cssHeight: number } {
+        let cssWidth = 0;
+        let cssHeight = 0;
+
+        if (this.autoResize && baseCanvas.parentElement) {
+            const rect = baseCanvas.parentElement.getBoundingClientRect();
+            cssWidth = Math.round(rect.width);
+            cssHeight = Math.round(rect.height);
+        }
+
+        if (cssWidth <= 0 || cssHeight <= 0) {
+            const rect = baseCanvas.getBoundingClientRect();
+            cssWidth = cssWidth > 0 ? cssWidth : Math.round(rect.width);
+            cssHeight = cssHeight > 0 ? cssHeight : Math.round(rect.height);
+        }
+
+        if (cssWidth <= 0) {
+            cssWidth = this.width ?? baseCanvas.width ?? 800;
+        }
+        if (cssHeight <= 0) {
+            cssHeight = this.height ?? baseCanvas.height ?? 600;
+        }
+
+        return {
+            cssWidth: Math.max(1, cssWidth),
+            cssHeight: Math.max(1, cssHeight),
+        };
+    }
+
+    private resolvePixelRatio(): number {
+        const rawPixelRatio = this.pixelRatio ?? window.devicePixelRatio ?? 1;
+        return Number.isFinite(rawPixelRatio) && rawPixelRatio > 0
+            ? rawPixelRatio
+            : 1;
     }
 
     private initializeOverlayCanvas(baseCanvas: HTMLCanvasElement): void {

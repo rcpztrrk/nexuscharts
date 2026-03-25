@@ -7,9 +7,10 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 
 - Phase 1-8 completed: WASM/WebGL2 core, instanced candlesticks, interaction, API, indicators, multipane UX, drawings, and time/price anchoring.
 - Phase 9 largely complete: realtime updates (append/update last candle), perf metrics, and large dataset render optimizations.
-- Phase 10 in progress: theme alignment (single theme object and full overlay/WASM application pending).
-- Phase 11 in progress: codebase modularization (NexusCharts.ts split into focused modules).
+- Phase 10 largely complete: unified theme model, `applyTheme()`, and demo presets are now in place.
+- Phase 11 largely complete: NexusCharts.ts has been split into focused modules (series, indicators, drawings, WASM bridge).
 - Phase 12 in progress: performance tuning (benchmark/profiling for 500K-1M candles).
+- Phase 14 started: responsive layout and HiDPI-aware canvas sizing are now available.
 - Demo now supports benchmark mode for large datasets (50k+), reducing overlay load to keep interaction responsive.
 
 ## Core Capabilities
@@ -20,19 +21,24 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Public chart API for series and drawing management.
 - Observer analytics API (`setObserverFrames`, `pushObserverFrame`, `configureAnalytics`).
 - UI control API (`configureUi`, `getUiState`) with in-chart control bar and keyboard shortcuts.
+- Theme API via constructor `theme` option and runtime `applyTheme()` / `getTheme()`.
 - Interactive chart UX: hover crosshair, OHLC tooltip, candle selection, fit-to-data, and pointer-anchored zoom.
 - Dynamic axis labeling with visible-window time labels and nice-stepped price ticks.
 - Optional Y-axis auto-scale for the visible window (autoScaleY).
 - Persistent UI preferences (`localStorage`) and tooltip mode switching (`follow` / `fixed`).
 - Indicator engine (SMA/EMA/RSI) with a secondary pane overlay.
 - Real-time updates via `append` and `updateLast` helpers for live candles.
+- Responsive canvas sizing with `ResizeObserver`, HiDPI pixel ratio support, and manual `resize()` fallback.
 - Performance metrics via `getPerfMetrics()` (avg/max/last redraw and heap telemetry where available).
-- Development demo page served from `public/`.
+- Development demo page served from `public/`, including dataset benchmark mode and theme presets.
 
 ## API Snapshot
 
 ```ts
-const chart = new NexusCharts({ canvasId: "canvas" });
+const chart = new NexusCharts({
+  canvasId: "canvas",
+  autoResize: true
+});
 await chart.waitUntilReady();
 
 const series = chart.createSeries({ type: "candlestick" });
@@ -63,6 +69,13 @@ chart.configureUi({
 chart.addIndicator({ type: "sma", period: 10, color: "#fbbf24" });
 chart.addIndicator({ type: "ema", period: 21, color: "#7dd3fc" });
 chart.addIndicator({ type: "rsi", period: 14, pane: "lower", color: "#a78bfa" });
+
+chart.applyTheme({
+  candles: { up: "#22c55e", down: "#fb7185" },
+  controls: { toggleActiveFill: "rgba(18, 74, 122, 0.92)" }
+});
+
+chart.resize();
 
 const ui = chart.getUiState();
 console.log(ui.showCrosshair, ui.showHeatmap);

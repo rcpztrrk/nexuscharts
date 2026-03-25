@@ -20,6 +20,7 @@ RenderingEngine* g_renderingEngine = nullptr;
 Camera* g_camera = nullptr;
 EMSCRIPTEN_WEBGL_CONTEXT_HANDLE g_webglContext = 0;
 bool g_engineInitialized = false;
+std::string g_canvasSelector;
 
 namespace {
 
@@ -78,6 +79,19 @@ void SetCameraView(double centerX, double centerY, double zoom) {
         SanitizeFiniteFloat(centerY, 0.0f),
         SanitizeFiniteFloat(zoom, 1.0f)
     );
+}
+
+void ResizeViewport(int width, int height) {
+    if (g_camera == nullptr || g_renderingEngine == nullptr || g_canvasSelector.empty()) {
+        return;
+    }
+
+    const int sanitizedWidth = std::max(1, width);
+    const int sanitizedHeight = std::max(1, height);
+
+    emscripten_set_canvas_element_size(g_canvasSelector.c_str(), sanitizedWidth, sanitizedHeight);
+    g_camera->SetViewport(sanitizedWidth, sanitizedHeight);
+    g_renderingEngine->SetViewportSize(sanitizedWidth, sanitizedHeight);
 }
 
 void SetSeriesData(val opens, val highs, val lows, val closes) {
@@ -195,6 +209,7 @@ bool InitEngine(std::string canvasSelector, int width, int height) {
     }
 
     std::cout << "[NexusCharts:WASM] Engine is initializing..." << std::endl;
+    g_canvasSelector = canvasSelector;
 
     // --- Step 1: Create WebGL 2.0 Context ---
     EmscriptenWebGLContextAttributes attrs;
@@ -270,6 +285,8 @@ void DestroyEngine() {
         g_webglContext = 0;
     }
 
+    g_canvasSelector.clear();
+
     g_engineInitialized = false;
 }
 
@@ -279,6 +296,7 @@ EMSCRIPTEN_BINDINGS(nexus_charts_module) {
     function("destroyEngine", &DestroyEngine);
     function("panCamera", &PanCamera);
     function("zoomCamera", &ZoomCamera);
+    function("resizeViewport", &ResizeViewport);
     function("setCameraView", &SetCameraView);
     function("setSeriesData", &SetSeriesData);
     function("pushObserverFrame", &PushObserverFrame);

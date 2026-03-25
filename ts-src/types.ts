@@ -4,6 +4,8 @@ export interface InitOptions {
     canvasId: string;
     width?: number;
     height?: number;
+    autoResize?: boolean;
+    pixelRatio?: number;
     wasmScriptPath?: string;
     wasmBinaryPath?: string;
     enableInteraction?: boolean;
