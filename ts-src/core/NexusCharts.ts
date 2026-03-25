@@ -183,6 +183,7 @@ export class NexusCharts {
             console.error(`[NexusCharts] Canvas with ID '${options.canvasId}' not found!`);
             return;
         }
+        this.canvas.style.touchAction = "none";
 
         this.initializeOverlayCanvas(this.canvas);
         this.attachResizeHandling();
@@ -602,16 +603,19 @@ export class NexusCharts {
     }
 
     private attachInteractionHandlers(canvas: HTMLCanvasElement): void {
-        const onMouseDown = (event: MouseEvent) => {
-            if (this.getControlButtonAtClientPosition(event.clientX, event.clientY)) {
-                return;
+        let pinchDistance: number | null = null;
+        let touchSelectionArmed = false;
+
+        const beginPointerInteraction = (clientX: number, clientY: number): boolean => {
+            if (this.getControlButtonAtClientPosition(clientX, clientY)) {
+                return false;
             }
 
             this.draggedDuringPointer = false;
-            this.lastPointerX = event.clientX;
-            this.lastPointerY = event.clientY;
-            this.updateHoverFromClientPosition(event.clientX, event.clientY);
-            const world = this.screenToWorld(event.clientX, event.clientY);
+            this.lastPointerX = clientX;
+            this.lastPointerY = clientY;
+            this.updateHoverFromClientPosition(clientX, clientY);
+            const world = this.screenToWorld(clientX, clientY);
             const surface = this.overlayCanvas ?? canvas;
             const geometry = this.buildSeriesGeometry();
             if (world && surface) {
@@ -644,18 +648,19 @@ export class NexusCharts {
                         });
                         this.isDragging = false;
                         this.redrawDrawings();
-                        return;
+                        return true;
                     }
                 }
             }
             this.drawingManager.clearActiveInteraction();
             this.isDragging = true;
+            return true;
         };
 
-        const onMouseMove = (event: MouseEvent) => {
+        const movePointerInteraction = (clientX: number, clientY: number): void => {
             const activeDrag = this.drawingManager.getActiveDrag();
             if (activeDrag) {
-                const world = this.screenToWorld(event.clientX, event.clientY);
+                const world = this.screenToWorld(clientX, clientY);
                 if (!world) {
                     return;
                 }
@@ -675,13 +680,13 @@ export class NexusCharts {
             }
 
             if (this.isDragging) {
-                const dx = event.clientX - this.lastPointerX;
-                const dy = event.clientY - this.lastPointerY;
+                const dx = clientX - this.lastPointerX;
+                const dy = clientY - this.lastPointerY;
                 if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
                     this.draggedDuringPointer = true;
                 }
-                this.lastPointerX = event.clientX;
-                this.lastPointerY = event.clientY;
+                this.lastPointerX = clientX;
+                this.lastPointerY = clientY;
 
                 const width = canvas.width || 1;
                 const height = canvas.height || 1;
@@ -689,25 +694,19 @@ export class NexusCharts {
                 const worldUnitsPerPixelX = (2.0 * this.currentZoom * aspect) / width;
                 const worldUnitsPerPixelY = (2.0 * this.currentZoom) / height;
 
+                this.lastPointerX = clientX;
+                this.lastPointerY = clientY;
                 this.pan(-dx * worldUnitsPerPixelX, dy * worldUnitsPerPixelY);
                 return;
             }
 
-            this.updateHoverFromClientPosition(event.clientX, event.clientY);
+            this.lastPointerX = clientX;
+            this.lastPointerY = clientY;
+            this.updateHoverFromClientPosition(clientX, clientY);
             this.redrawDrawings();
         };
 
-        const stopDragging = () => {
-            this.isDragging = false;
-            if (this.drawingManager.getActiveDrag()) {
-                this.drawingManager.setActiveDrag(null);
-            }
-        };
-
-        const onClick = (event: MouseEvent) => {
-            if (this.handleControlBarClick(event.clientX, event.clientY)) {
-                return;
-            }
+        const activateSelectionFromPointer = (): void => {
             if (this.drawingManager.activateHoveredDrawing()) {
                 this.redrawDrawings();
                 return;
@@ -722,6 +721,28 @@ export class NexusCharts {
                 return;
             }
             this.setSelectedCandleIndex(nextIndex);
+        };
+
+        const onMouseDown = (event: MouseEvent) => {
+            beginPointerInteraction(event.clientX, event.clientY);
+        };
+
+        const onMouseMove = (event: MouseEvent) => {
+            movePointerInteraction(event.clientX, event.clientY);
+        };
+
+        const stopDragging = () => {
+            this.isDragging = false;
+            if (this.drawingManager.getActiveDrag()) {
+                this.drawingManager.setActiveDrag(null);
+            }
+        };
+
+        const onClick = (event: MouseEvent) => {
+            if (this.handleControlBarClick(event.clientX, event.clientY)) {
+                return;
+            }
+            activateSelectionFromPointer();
         };
 
         const onWheel = (event: WheelEvent) => {
@@ -824,6 +845,120 @@ export class NexusCharts {
             this.redrawDrawings();
         };
 
+        const touchDistance = (touches: TouchList): number => {
+            if (touches.length < 2) {
+                return 0;
+            }
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.hypot(dx, dy);
+        };
+
+        const touchCenter = (touches: TouchList): { x: number; y: number } => {
+            if (touches.length === 0) {
+                return { x: 0, y: 0 };
+            }
+            if (touches.length === 1) {
+                return { x: touches[0].clientX, y: touches[0].clientY };
+            }
+            return {
+                x: (touches[0].clientX + touches[1].clientX) * 0.5,
+                y: (touches[0].clientY + touches[1].clientY) * 0.5,
+            };
+        };
+
+        const onTouchStart = (event: TouchEvent) => {
+            if (event.touches.length === 1) {
+                const touch = event.touches[0];
+                if (this.handleControlBarClick(touch.clientX, touch.clientY)) {
+                    event.preventDefault();
+                    touchSelectionArmed = false;
+                    return;
+                }
+
+                pinchDistance = null;
+                touchSelectionArmed = beginPointerInteraction(touch.clientX, touch.clientY);
+                event.preventDefault();
+                return;
+            }
+
+            if (event.touches.length >= 2) {
+                const center = touchCenter(event.touches);
+                this.updateHoverFromClientPosition(center.x, center.y);
+                this.isDragging = false;
+                this.drawingManager.setActiveDrag(null);
+                this.draggedDuringPointer = true;
+                touchSelectionArmed = false;
+                pinchDistance = touchDistance(event.touches);
+                this.redrawDrawings();
+                event.preventDefault();
+            }
+        };
+
+        const onTouchMove = (event: TouchEvent) => {
+            if (event.touches.length >= 2) {
+                const nextDistance = touchDistance(event.touches);
+                const center = touchCenter(event.touches);
+                this.updateHoverFromClientPosition(center.x, center.y);
+                if (pinchDistance && nextDistance > 0) {
+                    const zoomFactor = pinchDistance / nextDistance;
+                    if (Number.isFinite(zoomFactor) && Math.abs(zoomFactor - 1) > 0.001) {
+                        this.zoom(zoomFactor);
+                    }
+                }
+                pinchDistance = nextDistance;
+                this.draggedDuringPointer = true;
+                touchSelectionArmed = false;
+                event.preventDefault();
+                return;
+            }
+
+            if (event.touches.length === 1) {
+                const touch = event.touches[0];
+                movePointerInteraction(touch.clientX, touch.clientY);
+                if (this.draggedDuringPointer) {
+                    touchSelectionArmed = false;
+                }
+                event.preventDefault();
+            }
+        };
+
+        const onTouchEnd = (event: TouchEvent) => {
+            if (event.touches.length >= 2) {
+                pinchDistance = touchDistance(event.touches);
+                touchSelectionArmed = false;
+                event.preventDefault();
+                return;
+            }
+
+            if (event.touches.length === 1) {
+                const touch = event.touches[0];
+                pinchDistance = null;
+                this.lastPointerX = touch.clientX;
+                this.lastPointerY = touch.clientY;
+                this.isDragging = true;
+                this.drawingManager.setActiveDrag(null);
+                this.draggedDuringPointer = true;
+                touchSelectionArmed = false;
+                event.preventDefault();
+                return;
+            }
+
+            pinchDistance = null;
+            if (touchSelectionArmed && !this.draggedDuringPointer) {
+                activateSelectionFromPointer();
+            }
+            touchSelectionArmed = false;
+            stopDragging();
+            event.preventDefault();
+        };
+
+        const onTouchCancel = () => {
+            pinchDistance = null;
+            touchSelectionArmed = false;
+            stopDragging();
+        };
+
         canvas.addEventListener("mousedown", onMouseDown);
         window.addEventListener("mousemove", onMouseMove);
         window.addEventListener("mouseup", stopDragging);
@@ -833,6 +968,10 @@ export class NexusCharts {
         canvas.addEventListener("dblclick", onDoubleClick);
         canvas.addEventListener("wheel", onWheel, { passive: false });
         canvas.addEventListener("contextmenu", onContextMenu);
+        canvas.addEventListener("touchstart", onTouchStart, { passive: false });
+        canvas.addEventListener("touchmove", onTouchMove, { passive: false });
+        canvas.addEventListener("touchend", onTouchEnd, { passive: false });
+        canvas.addEventListener("touchcancel", onTouchCancel, { passive: false });
         window.addEventListener("keydown", onKeyDown);
         window.addEventListener("mousedown", onGlobalDown);
 
@@ -845,6 +984,10 @@ export class NexusCharts {
         this.cleanupHandlers.push(() => canvas.removeEventListener("dblclick", onDoubleClick));
         this.cleanupHandlers.push(() => canvas.removeEventListener("wheel", onWheel));
         this.cleanupHandlers.push(() => canvas.removeEventListener("contextmenu", onContextMenu));
+        this.cleanupHandlers.push(() => canvas.removeEventListener("touchstart", onTouchStart));
+        this.cleanupHandlers.push(() => canvas.removeEventListener("touchmove", onTouchMove));
+        this.cleanupHandlers.push(() => canvas.removeEventListener("touchend", onTouchEnd));
+        this.cleanupHandlers.push(() => canvas.removeEventListener("touchcancel", onTouchCancel));
         this.cleanupHandlers.push(() => window.removeEventListener("keydown", onKeyDown));
         this.cleanupHandlers.push(() => window.removeEventListener("mousedown", onGlobalDown));
     }
