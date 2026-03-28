@@ -1,4 +1,4 @@
-﻿import type { NexusCharts } from "./core/NexusCharts";
+import type { NexusCharts } from "./core/NexusCharts";
 
 export interface InitOptions {
     canvasId: string;
@@ -46,6 +46,32 @@ export interface UiState {
     showHeatmap: boolean;
     showAnalyticsPanel: boolean;
 }
+
+export interface ChartVisibleRange {
+    startIndex: number;
+    endIndex: number;
+    fromTime: number | string | null;
+    toTime: number | string | null;
+    fromPrice: number | null;
+    toPrice: number | null;
+}
+
+export interface ChartCrosshairMoveEvent {
+    candle: HoveredCandle | null;
+}
+
+export interface ChartSelectionChangeEvent {
+    candle: HoveredCandle | null;
+}
+
+export interface ChartEventMap {
+    crosshairMove: ChartCrosshairMoveEvent;
+    selectionChange: ChartSelectionChangeEvent;
+    visibleRangeChange: ChartVisibleRange;
+}
+
+export type ChartEventName = keyof ChartEventMap;
+export type ChartEventHandler<K extends ChartEventName> = (payload: ChartEventMap[K]) => void;
 
 export interface AnalyticsOptions {
     showRewardCurve?: boolean;
@@ -333,3 +359,4 @@ export interface DrawingDefinition {
     price?: number;
     style?: DrawingStyle;
 }
+

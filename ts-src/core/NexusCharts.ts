@@ -4,6 +4,9 @@ import type {
     UiState,
     AnalyticsOptions,
     CandleDataPoint,
+    ChartEventHandler,
+    ChartEventMap,
+    ChartEventName,
     ChartTheme,
     SeriesType,
     ObserverFrame,
@@ -102,6 +105,8 @@ export class NexusCharts {
     private hoveredCandle: HoveredCandle | null = null;
     private selectedCandleIndex: number | null = null;
     private cleanupHandlers: Array<() => void> = [];
+    private readonly eventListeners: Partial<Record<ChartEventName, Set<(payload: unknown) => void>>> = {};
+    private lastVisibleRangeKey: string | null = null;
     private readonly seriesManager = new SeriesManager();
     private geometryCache: { seriesId: string; revision: number; geometry: SeriesGeometry | null } | null = null;
     private timeSeriesCache:
@@ -574,6 +579,23 @@ export class NexusCharts {
         return this.perfTracker.getMetrics(window);
     }
 
+    public subscribe<K extends ChartEventName>(eventName: K, handler: ChartEventHandler<K>): () => void {
+        const listeners = this.eventListeners[eventName] ?? new Set<(payload: unknown) => void>();
+        listeners.add(handler as (payload: unknown) => void);
+        this.eventListeners[eventName] = listeners;
+        return () => {
+            this.unsubscribe(eventName, handler);
+        };
+    }
+
+    public unsubscribe<K extends ChartEventName>(eventName: K, handler: ChartEventHandler<K>): boolean {
+        const listeners = this.eventListeners[eventName];
+        if (!listeners) {
+            return false;
+        }
+        return listeners.delete(handler as (payload: unknown) => void);
+    }
+
     private async initEngine(): Promise<void> {
         const initialized = await this.wasmBridge.initialize({
             canvasId: this.canvasId,
@@ -874,6 +896,7 @@ export class NexusCharts {
             this.hoverCanvasY = null;
             this.hoveredCandle = null;
             this.drawingManager.setHoveredDrawingId(null);
+            this.emitCrosshairMove();
             this.redrawDrawings();
         };
 
@@ -1848,6 +1871,7 @@ export class NexusCharts {
             this.hoverCanvasY = null;
             this.hoveredCandle = null;
             this.drawingManager.setHoveredDrawingId(null);
+            this.emitCrosshairMove();
             return;
         }
 
@@ -1857,6 +1881,7 @@ export class NexusCharts {
         const geometry = this.buildSeriesGeometry();
         if (!geometry || geometry.candles.length === 0) {
             this.hoveredCandle = null;
+            this.emitCrosshairMove();
             return;
         }
 
@@ -1875,6 +1900,7 @@ export class NexusCharts {
         this.hoveredCandle = this.getCandleByIndex(index, geometry);
 
         this.updateHoveredDrawingFromCanvas(canvasX, canvasY, surface.width, surface.height);
+        this.emitCrosshairMove();
     }
 
     private refreshHoverFromStoredPointer(): void {
@@ -2084,6 +2110,7 @@ export class NexusCharts {
         this.renderTooltipOverlay(ctx, width, height);
         this.renderControlBarOverlay(ctx, width, height);
         this.perfTracker.recordSample(this.perfTracker.nowMs() - startMs);
+        this.emitVisibleRangeChange();
     }
 
     private renderSeriesOverlay(
@@ -2377,6 +2404,97 @@ export class NexusCharts {
         }
     }
 
+    private emitEvent<K extends ChartEventName>(eventName: K, payload: ChartEventMap[K]): void {
+        const listeners = this.eventListeners[eventName];
+        if (!listeners || listeners.size === 0) {
+            return;
+        }
+
+        for (const listener of listeners) {
+            try {
+                (listener as ChartEventHandler<K>)(payload);
+            } catch (error) {
+                console.error(`[NexusCharts] Event listener for '${eventName}' failed.`, error);
+            }
+        }
+    }
+
+    private emitCrosshairMove(): void {
+        this.emitEvent("crosshairMove", {
+            candle: this.getHoveredCandle(),
+        });
+    }
+
+    private emitSelectionChange(): void {
+        this.emitEvent("selectionChange", {
+            candle: this.getSelectedCandle(),
+        });
+    }
+
+    private emitVisibleRangeChange(): void {
+        const geometry = this.buildSeriesGeometry();
+        const surface = this.overlayCanvas ?? this.canvas;
+        if (!geometry || !surface || geometry.candles.length === 0) {
+            if (this.lastVisibleRangeKey !== "empty") {
+                this.lastVisibleRangeKey = "empty";
+                this.emitEvent("visibleRangeChange", {
+                    startIndex: 0,
+                    endIndex: -1,
+                    fromTime: null,
+                    toTime: null,
+                    fromPrice: null,
+                    toPrice: null,
+                });
+            }
+            return;
+        }
+
+        const range = this.getVisibleCandleIndexRange(geometry, surface.width, surface.height, 0);
+        if (range.end < range.start) {
+            if (this.lastVisibleRangeKey !== "empty") {
+                this.lastVisibleRangeKey = "empty";
+                this.emitEvent("visibleRangeChange", {
+                    startIndex: 0,
+                    endIndex: -1,
+                    fromTime: null,
+                    toTime: null,
+                    fromPrice: null,
+                    toPrice: null,
+                });
+            }
+            return;
+        }
+
+        const fromCandle = geometry.candles[range.start];
+        const toCandle = geometry.candles[range.end];
+        const topWorldY = this.canvasToWorldPoint(0, 0, surface.width, surface.height).y;
+        const bottomWorldY = this.canvasToWorldPoint(0, surface.height, surface.width, surface.height).y;
+        const fromPrice = this.worldYToPriceValueInternal(bottomWorldY, geometry);
+        const toPrice = this.worldYToPriceValueInternal(topWorldY, geometry);
+        const nextKey = [
+            range.start,
+            range.end,
+            String(fromCandle.source.time),
+            String(toCandle.source.time),
+            fromPrice.toFixed(4),
+            toPrice.toFixed(4),
+        ].join("|");
+
+        if (nextKey === this.lastVisibleRangeKey) {
+            return;
+        }
+
+        this.lastVisibleRangeKey = nextKey;
+        this.emitEvent("visibleRangeChange", {
+            startIndex: range.start,
+            endIndex: range.end,
+            fromTime: fromCandle.source.time,
+            toTime: toCandle.source.time,
+            fromPrice,
+            toPrice,
+        });
+    }
+
     private renderTooltipOverlay(ctx: CanvasRenderingContext2D, width: number, height: number): void {
         const geometry = this.buildSeriesGeometry();
         const selectedCandle = this.getCandleByIndex(this.selectedCandleIndex, geometry);
@@ -2441,6 +2559,8 @@ export class NexusCharts {
         return `${prefix}_${this.idCounter}`;
     }
 }
+
+
 
 
 
