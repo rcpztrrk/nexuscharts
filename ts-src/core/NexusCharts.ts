@@ -1,4 +1,4 @@
-﻿import type {
+import type {
     InitOptions,
     UiOptions,
     UiState,
@@ -605,6 +605,22 @@ export class NexusCharts {
     private attachInteractionHandlers(canvas: HTMLCanvasElement): void {
         let pinchDistance: number | null = null;
         let touchSelectionArmed = false;
+        let longPressTimer: number | null = null;
+        let longPressTriggered = false;
+        let lastTapAt = 0;
+        let lastTapX = 0;
+        let lastTapY = 0;
+        const longPressDelayMs = 380;
+        const touchDragThresholdPx = 8;
+        const doubleTapDelayMs = 280;
+        const doubleTapDistancePx = 26;
+
+        const clearLongPressTimer = () => {
+            if (longPressTimer !== null) {
+                window.clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+        };
 
         const beginPointerInteraction = (clientX: number, clientY: number): boolean => {
             if (this.getControlButtonAtClientPosition(clientX, clientY)) {
@@ -721,6 +737,22 @@ export class NexusCharts {
                 return;
             }
             this.setSelectedCandleIndex(nextIndex);
+        };
+
+        const scheduleLongPress = (clientX: number, clientY: number): void => {
+            clearLongPressTimer();
+            longPressTriggered = false;
+            longPressTimer = window.setTimeout(() => {
+                longPressTimer = null;
+                if (!touchSelectionArmed || this.draggedDuringPointer) {
+                    return;
+                }
+                this.updateHoverFromClientPosition(clientX, clientY);
+                activateSelectionFromPointer();
+                stopDragging();
+                touchSelectionArmed = false;
+                longPressTriggered = true;
+            }, longPressDelayMs);
         };
 
         const onMouseDown = (event: MouseEvent) => {
@@ -873,16 +905,22 @@ export class NexusCharts {
                 if (this.handleControlBarClick(touch.clientX, touch.clientY)) {
                     event.preventDefault();
                     touchSelectionArmed = false;
+                    clearLongPressTimer();
                     return;
                 }
 
                 pinchDistance = null;
+                longPressTriggered = false;
                 touchSelectionArmed = beginPointerInteraction(touch.clientX, touch.clientY);
+                if (touchSelectionArmed) {
+                    scheduleLongPress(touch.clientX, touch.clientY);
+                }
                 event.preventDefault();
                 return;
             }
 
             if (event.touches.length >= 2) {
+                clearLongPressTimer();
                 const center = touchCenter(event.touches);
                 this.updateHoverFromClientPosition(center.x, center.y);
                 this.isDragging = false;
@@ -897,6 +935,7 @@ export class NexusCharts {
 
         const onTouchMove = (event: TouchEvent) => {
             if (event.touches.length >= 2) {
+                clearLongPressTimer();
                 const nextDistance = touchDistance(event.touches);
                 const center = touchCenter(event.touches);
                 this.updateHoverFromClientPosition(center.x, center.y);
@@ -915,9 +954,15 @@ export class NexusCharts {
 
             if (event.touches.length === 1) {
                 const touch = event.touches[0];
+                const moveDistance = Math.hypot(touch.clientX - this.lastPointerX, touch.clientY - this.lastPointerY);
+                if (moveDistance > touchDragThresholdPx) {
+                    clearLongPressTimer();
+                    touchSelectionArmed = false;
+                }
                 movePointerInteraction(touch.clientX, touch.clientY);
                 if (this.draggedDuringPointer) {
                     touchSelectionArmed = false;
+                    clearLongPressTimer();
                 }
                 event.preventDefault();
             }
@@ -927,6 +972,7 @@ export class NexusCharts {
             if (event.touches.length >= 2) {
                 pinchDistance = touchDistance(event.touches);
                 touchSelectionArmed = false;
+                clearLongPressTimer();
                 event.preventDefault();
                 return;
             }
@@ -934,6 +980,7 @@ export class NexusCharts {
             if (event.touches.length === 1) {
                 const touch = event.touches[0];
                 pinchDistance = null;
+                clearLongPressTimer();
                 this.lastPointerX = touch.clientX;
                 this.lastPointerY = touch.clientY;
                 this.isDragging = true;
@@ -945,8 +992,28 @@ export class NexusCharts {
             }
 
             pinchDistance = null;
+            clearLongPressTimer();
+            if (longPressTriggered) {
+                longPressTriggered = false;
+                touchSelectionArmed = false;
+                stopDragging();
+                event.preventDefault();
+                return;
+            }
+
             if (touchSelectionArmed && !this.draggedDuringPointer) {
                 activateSelectionFromPointer();
+                const now = performance.now();
+                const isDoubleTap = (now - lastTapAt) <= doubleTapDelayMs
+                    && Math.hypot(this.lastPointerX - lastTapX, this.lastPointerY - lastTapY) <= doubleTapDistancePx;
+                if (isDoubleTap) {
+                    this.fitToData();
+                    lastTapAt = 0;
+                } else {
+                    lastTapAt = now;
+                    lastTapX = this.lastPointerX;
+                    lastTapY = this.lastPointerY;
+                }
             }
             touchSelectionArmed = false;
             stopDragging();
@@ -956,6 +1023,8 @@ export class NexusCharts {
         const onTouchCancel = () => {
             pinchDistance = null;
             touchSelectionArmed = false;
+            clearLongPressTimer();
+            longPressTriggered = false;
             stopDragging();
         };
 
@@ -988,6 +1057,7 @@ export class NexusCharts {
         this.cleanupHandlers.push(() => canvas.removeEventListener("touchmove", onTouchMove));
         this.cleanupHandlers.push(() => canvas.removeEventListener("touchend", onTouchEnd));
         this.cleanupHandlers.push(() => canvas.removeEventListener("touchcancel", onTouchCancel));
+        this.cleanupHandlers.push(() => clearLongPressTimer());
         this.cleanupHandlers.push(() => window.removeEventListener("keydown", onKeyDown));
         this.cleanupHandlers.push(() => window.removeEventListener("mousedown", onGlobalDown));
     }
@@ -2371,6 +2441,7 @@ export class NexusCharts {
         return `${prefix}_${this.idCounter}`;
     }
 }
+
 
 
 
