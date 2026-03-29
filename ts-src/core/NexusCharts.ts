@@ -2191,6 +2191,7 @@ export class NexusCharts {
         this.renderAxesOverlay(ctx, width, height, geometry);
         renderIndicatorOverlay(ctx, width, height, geometry, this.indicatorPaneManager.values(), {
             getIndicatorPaneBounds: this.getIndicatorPaneBounds.bind(this),
+            getVisibleCandleIndexRange: this.getVisibleCandleIndexRange.bind(this),
             worldToCanvasPoint: this.worldToCanvasPoint.bind(this),
             priceToWorldYValue: this.priceToWorldYValue.bind(this),
         }, this.theme);
@@ -2214,7 +2215,7 @@ export class NexusCharts {
         }
 
         const candles = geometry.candles;
-        if (candles.length == 0) {
+        if (candles.length === 0) {
             return;
         }
 
@@ -2223,8 +2224,20 @@ export class NexusCharts {
             return;
         }
 
+        const visibleRange = this.getVisibleCandleIndexRange(geometry, width, height, 2);
+        if (visibleRange.end < visibleRange.start) {
+            return;
+        }
+
+        const startIndex = visibleRange.start;
+        const endIndex = Math.min(visibleRange.end, candles.length - 1);
+        const visibleCandles = candles.slice(startIndex, endIndex + 1);
+        if (visibleCandles.length === 0) {
+            return;
+        }
+
         const screenXs: number[] = [];
-        for (const candle of candles) {
+        for (const candle of visibleCandles) {
             screenXs.push(this.worldToCanvasPoint(candle.x, candle.close, width, height).x);
         }
 
@@ -2245,11 +2258,14 @@ export class NexusCharts {
         const volumeTop = Math.max(6, volumeBottom - Math.max(24, mainHeight * 0.2));
 
         const baseWorldY = this.priceToWorldYValue(geometry.minPrice, geometry);
-        const baseY = this.worldToCanvasPoint(candles[0].x, baseWorldY, width, height).y;
+        const baseY = this.worldToCanvasPoint(visibleCandles[0].x, baseWorldY, width, height).y;
+        const visibleCount = visibleCandles.length;
+        const lineStride = Math.max(1, Math.floor(visibleCount / Math.max(48, Math.floor(width * 1.5))));
+        const histogramStride = Math.max(1, Math.floor(visibleCount / Math.max(48, Math.floor(width))));
 
         for (const series of extraSeries) {
-            const count = Math.min(series.data.length, candles.length);
-            if (count <= 0) {
+            const end = Math.min(series.data.length - 1, endIndex);
+            if (end < startIndex) {
                 continue;
             }
 
@@ -2263,7 +2279,7 @@ export class NexusCharts {
                 let minValue = Number.POSITIVE_INFINITY;
                 let maxValue = Number.NEGATIVE_INFINITY;
                 const values: number[] = [];
-                for (let i = 0; i < count; i += 1) {
+                for (let i = startIndex; i <= end; i += 1) {
                     const raw = this.resolveSeriesValue(series.data[i], series.valueKey);
                     const value = Number.isFinite(raw ?? NaN)
                         ? Number(raw)
@@ -2285,11 +2301,11 @@ export class NexusCharts {
                 const barWidth = Math.max(1, spacing * series.style.barWidthRatio);
                 ctx.fillStyle = series.style.color;
                 ctx.globalAlpha = series.style.opacity;
-                for (let i = 0; i < count; i += 1) {
-                    const t = this.clamp((values[i] - minValue) / (maxValue - minValue), 0, 1);
+                for (let offset = 0; offset < values.length; offset += 1) {
+                    const t = this.clamp((values[offset] - minValue) / (maxValue - minValue), 0, 1);
                     const y = volumeBottom - (t * (volumeBottom - volumeTop));
                     const barHeight = Math.max(1, volumeBottom - y);
-                    ctx.fillRect(screenXs[i] - (barWidth * 0.5), y, barWidth, barHeight);
+                    ctx.fillRect(screenXs[offset] - (barWidth * 0.5), y, barWidth, barHeight);
                 }
 
                 ctx.restore();
@@ -2297,21 +2313,30 @@ export class NexusCharts {
             }
 
             const points: CustomSeriesPoint[] = [];
-            for (let i = 0; i < count; i += 1) {
-                const value = this.resolveSeriesValue(series.data[i], series.valueKey);
+            const stride = series.type === "histogram" ? histogramStride : lineStride;
+            const appendPoint = (index: number): void => {
+                const value = this.resolveSeriesValue(series.data[index], series.valueKey);
                 if (!Number.isFinite(value ?? NaN)) {
-                    continue;
+                    return;
                 }
                 const worldY = this.priceToWorldYValue(value as number, geometry);
+                const visibleOffset = index - startIndex;
                 points.push({
-                    x: screenXs[i],
-                    y: this.worldToCanvasPoint(candles[i].x, worldY, width, height).y,
-                    index: i,
-                    source: series.data[i],
+                    x: screenXs[visibleOffset],
+                    y: this.worldToCanvasPoint(candles[index].x, worldY, width, height).y,
+                    index,
+                    source: series.data[index],
                 });
+            };
+
+            for (let i = startIndex; i <= end; i += stride) {
+                appendPoint(i);
+            }
+            if ((end - startIndex) % stride !== 0) {
+                appendPoint(end);
             }
 
-            if (points.length == 0) {
+            if (points.length === 0) {
                 ctx.restore();
                 continue;
             }

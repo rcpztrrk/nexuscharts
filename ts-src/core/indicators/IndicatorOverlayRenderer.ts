@@ -14,6 +14,12 @@ export interface IndicatorPaneRect {
 
 export interface IndicatorOverlayRenderApi {
     getIndicatorPaneBounds(width: number, height: number): IndicatorPaneRect | null;
+    getVisibleCandleIndexRange(
+        geometry: SeriesGeometry,
+        width: number,
+        height: number,
+        padding?: number
+    ): { start: number; end: number };
     worldToCanvasPoint(worldX: number, worldY: number, width: number, height: number): { x: number; y: number };
     priceToWorldYValue(price: number, geometry: SeriesGeometry): number;
 }
@@ -31,7 +37,8 @@ export function renderIndicatorOverlay(
         return;
     }
 
-        const indicatorPane = api.getIndicatorPaneBounds(width, height);
+    const visibleRange = api.getVisibleCandleIndexRange(geometry, width, height, 2);
+    const indicatorPane = api.getIndicatorPaneBounds(width, height);
     if (indicatorPane) {
         ctx.save();
         ctx.fillStyle = theme.indicators.paneBackground;
@@ -45,45 +52,72 @@ export function renderIndicatorOverlay(
         ctx.restore();
     }
 
+    if (visibleRange.end < visibleRange.start) {
+        return;
+    }
+
     for (const indicator of indicators) {
         if (indicator.values.length === 0) {
             continue;
         }
         if (indicator.pane === "lower" && indicatorPane) {
-            renderIndicatorInPane(ctx, geometry, indicator, indicatorPane, width, height, api, theme);
+            renderIndicatorInPane(ctx, geometry, indicator, indicatorPane, visibleRange, width, height, api, theme);
         } else {
-            renderIndicatorInMain(ctx, geometry, indicator, width, height, api);
+            renderIndicatorInMain(ctx, geometry, indicator, visibleRange, width, height, api);
         }
     }
+}
+
+function getSampleStride(start: number, end: number, pixelWidth: number): number {
+    const visibleCount = Math.max(1, (end - start) + 1);
+    const targetPoints = Math.max(48, Math.floor(pixelWidth * 1.5));
+    return Math.max(1, Math.floor(visibleCount / targetPoints));
 }
 
 function renderIndicatorInMain(
     ctx: CanvasRenderingContext2D,
     geometry: SeriesGeometry,
     indicator: IndicatorSeries,
+    visibleRange: { start: number; end: number },
     width: number,
     height: number,
     api: IndicatorOverlayRenderApi
 ): void {
+    const start = visibleRange.start;
+    const end = Math.min(visibleRange.end, geometry.candles.length - 1, indicator.values.length - 1);
+    if (end < start) {
+        return;
+    }
+
+    const stride = getSampleStride(start, end, width);
     ctx.save();
     ctx.strokeStyle = indicator.color;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     let started = false;
-    for (let i = 0; i < geometry.candles.length; i += 1) {
-        const value = indicator.values[i];
+
+    const drawPoint = (index: number): void => {
+        const value = indicator.values[index];
         if (!Number.isFinite(value ?? NaN)) {
-            continue;
+            return;
         }
         const worldY = api.priceToWorldYValue(value as number, geometry);
-        const point = api.worldToCanvasPoint(geometry.candles[i].x, worldY, width, height);
+        const point = api.worldToCanvasPoint(geometry.candles[index].x, worldY, width, height);
         if (!started) {
             ctx.moveTo(point.x, point.y);
             started = true;
         } else {
             ctx.lineTo(point.x, point.y);
         }
+    };
+
+    for (let i = start; i <= end; i += stride) {
+        drawPoint(i);
     }
+    if ((end - start) % stride !== 0) {
+        drawPoint(end);
+    }
+
     if (started) {
         ctx.stroke();
     }
@@ -95,14 +129,22 @@ function renderIndicatorInPane(
     geometry: SeriesGeometry,
     indicator: IndicatorSeries,
     pane: IndicatorPaneRect,
+    visibleRange: { start: number; end: number },
     width: number,
     height: number,
     api: IndicatorOverlayRenderApi,
     theme: ChartTheme
 ): void {
+    const start = visibleRange.start;
+    const end = Math.min(visibleRange.end, geometry.candles.length - 1, indicator.values.length - 1);
+    if (end < start) {
+        return;
+    }
+
     let minValue = Number.POSITIVE_INFINITY;
     let maxValue = Number.NEGATIVE_INFINITY;
-    for (const value of indicator.values) {
+    for (let i = start; i <= end; i += 1) {
+        const value = indicator.values[i];
         if (!Number.isFinite(value ?? NaN)) {
             continue;
         }
@@ -127,17 +169,19 @@ function renderIndicatorInPane(
         return pane.innerY + ((1 - t) * pane.innerHeight);
     };
 
+    const stride = getSampleStride(start, end, width);
     ctx.save();
     ctx.strokeStyle = indicator.color;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     let started = false;
-    for (let i = 0; i < geometry.candles.length; i += 1) {
-        const value = indicator.values[i];
+
+    const drawPoint = (index: number): void => {
+        const value = indicator.values[index];
         if (!Number.isFinite(value ?? NaN)) {
-            continue;
+            return;
         }
-        const x = api.worldToCanvasPoint(geometry.candles[i].x, geometry.candles[i].close, width, height).x;
+        const x = api.worldToCanvasPoint(geometry.candles[index].x, geometry.candles[index].close, width, height).x;
         const y = mapY(value as number);
         if (!started) {
             ctx.moveTo(x, y);
@@ -145,7 +189,15 @@ function renderIndicatorInPane(
         } else {
             ctx.lineTo(x, y);
         }
+    };
+
+    for (let i = start; i <= end; i += stride) {
+        drawPoint(i);
     }
+    if ((end - start) % stride !== 0) {
+        drawPoint(end);
+    }
+
     if (started) {
         ctx.stroke();
     }
