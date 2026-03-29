@@ -64,10 +64,42 @@ export interface ChartSelectionChangeEvent {
     candle: HoveredCandle | null;
 }
 
+export interface ChartPointerDataPoint {
+    time: number | string | null;
+    price: number | null;
+}
+
+export interface ChartClickEvent {
+    candle: HoveredCandle | null;
+    drawing: DrawingDefinition | null;
+    point: ChartPointerDataPoint | null;
+    clientX: number;
+    clientY: number;
+    source: "mouse" | "touch";
+}
+
+export interface ChartDrawingSelectionEvent {
+    drawing: DrawingDefinition | null;
+}
+
+export interface ChartDrawingUpdateEvent {
+    drawing: DrawingDefinition;
+    reason: "drag";
+}
+
+export interface ChartDrawingDeleteEvent {
+    drawing: DrawingDefinition;
+    reason: "api" | "contextMenu" | "clearAll";
+}
+
 export interface ChartEventMap {
     crosshairMove: ChartCrosshairMoveEvent;
     selectionChange: ChartSelectionChangeEvent;
     visibleRangeChange: ChartVisibleRange;
+    click: ChartClickEvent;
+    drawingSelected: ChartDrawingSelectionEvent;
+    drawingUpdated: ChartDrawingUpdateEvent;
+    drawingDeleted: ChartDrawingDeleteEvent;
 }
 
 export type ChartEventName = keyof ChartEventMap;
@@ -359,4 +391,3 @@ export interface DrawingDefinition {
     price?: number;
     style?: DrawingStyle;
 }
-

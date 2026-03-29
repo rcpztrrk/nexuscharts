@@ -360,6 +360,60 @@ export class NexusCharts {
         this.setSelectedCandleIndex(null);
     }
 
+    private cloneDrawingDefinition(definition: DrawingDefinition | null | undefined): DrawingDefinition | null {
+        if (!definition) {
+            return null;
+        }
+
+        return {
+            ...definition,
+            points: definition.points?.map((point) => ({ ...point })),
+            style: definition.style
+                ? {
+                    ...definition.style,
+                    dash: definition.style.dash ? [...definition.style.dash] : undefined,
+                }
+                : undefined,
+        };
+    }
+
+    private getDrawingSnapshot(id: string | null): DrawingDefinition | null {
+        if (!id) {
+            return null;
+        }
+        return this.cloneDrawingDefinition(this.drawingManager.getDrawing(id) ?? null);
+    }
+
+    private setActiveDrawingSelection(id: string | null): void {
+        const previousId = this.drawingManager.getActiveDrawingId();
+        if (previousId === id) {
+            return;
+        }
+        this.drawingManager.setActiveDrawingId(id);
+        this.emitDrawingSelected();
+    }
+
+    private clearActiveDrawingSelection(): void {
+        this.setActiveDrawingSelection(null);
+    }
+
+    private clearActiveDrawingInteraction(): void {
+        const previousId = this.drawingManager.getActiveDrawingId();
+        this.drawingManager.clearActiveInteraction();
+        if (previousId !== null) {
+            this.emitDrawingSelected();
+        }
+    }
+
+    private activateHoveredDrawingSelection(): boolean {
+        const previousId = this.drawingManager.getActiveDrawingId();
+        const activated = this.drawingManager.activateHoveredDrawing();
+        if (activated && this.drawingManager.getActiveDrawingId() !== previousId) {
+            this.emitDrawingSelected();
+        }
+        return activated;
+    }
+
     public fitToData(): void {
         const geometry = this.buildSeriesGeometry();
         const surface = this.overlayCanvas ?? this.canvas;
@@ -437,17 +491,35 @@ export class NexusCharts {
         return id;
     }
 
-    public removeDrawing(id: string): boolean {
+    public removeDrawing(id: string, reason: "api" | "contextMenu" = "api"): boolean {
+        const removedDrawing = this.getDrawingSnapshot(id);
+        const activeDrawingId = this.drawingManager.getActiveDrawingId();
         const removed = this.drawingManager.removeDrawing(id);
         if (removed) {
             this.redrawDrawings();
+            if (removedDrawing) {
+                this.emitDrawingDeleted(removedDrawing, reason);
+            }
+            if (activeDrawingId === id) {
+                this.emitDrawingSelected();
+            }
         }
         return removed;
     }
 
     public clearDrawings(): void {
+        const removedDrawings = Array.from(this.drawingManager.values())
+            .map((drawing) => this.cloneDrawingDefinition(drawing))
+            .filter((drawing): drawing is DrawingDefinition => drawing !== null);
+        const hadActiveDrawing = this.drawingManager.getActiveDrawingId() !== null;
         this.drawingManager.clearDrawings();
         this.redrawDrawings();
+        for (const drawing of removedDrawings) {
+            this.emitDrawingDeleted(drawing, "clearAll");
+        }
+        if (hadActiveDrawing) {
+            this.emitDrawingSelected();
+        }
     }
 
     public applyTheme(themeInput: ThemeInput): void {
@@ -630,6 +702,7 @@ export class NexusCharts {
         let longPressTimer: number | null = null;
         let longPressTriggered = false;
         let lastTapAt = 0;
+        let updatedDrawingIdDuringPointer: string | null = null;
         let lastTapX = 0;
         let lastTapY = 0;
         const longPressDelayMs = 380;
@@ -674,7 +747,8 @@ export class NexusCharts {
                         const resolvedX = resolveDrawingWorldX(drawing, geometry, this.drawingCoordinateApi);
                         const resolvedY = resolveDrawingWorldY(drawing, geometry, this.drawingCoordinateApi);
 
-                        this.drawingManager.setActiveDrawingId(hit.id);
+                        this.setActiveDrawingSelection(hit.id);
+                        updatedDrawingIdDuringPointer = null;
                         this.drawingManager.setActiveDrag({
                             id: hit.id,
                             mode: hit.mode,
@@ -690,7 +764,7 @@ export class NexusCharts {
                     }
                 }
             }
-            this.drawingManager.clearActiveInteraction();
+            this.clearActiveDrawingInteraction();
             this.isDragging = true;
             return true;
         };
@@ -712,6 +786,7 @@ export class NexusCharts {
                 const geometry = this.buildSeriesGeometry();
                 this.draggedDuringPointer = true;
                 applyDragToDrawing(drawing, drag, world, geometry, this.drawingCoordinateApi);
+                updatedDrawingIdDuringPointer = drawing.id;
                 this.drawingManager.setHoveredDrawingId(drawing.id);
                 this.redrawDrawings();
                 return;
@@ -745,11 +820,11 @@ export class NexusCharts {
         };
 
         const activateSelectionFromPointer = (): void => {
-            if (this.drawingManager.activateHoveredDrawing()) {
+            if (this.activateHoveredDrawingSelection()) {
                 this.redrawDrawings();
                 return;
             }
-            this.drawingManager.clearActiveDrawing();
+            this.clearActiveDrawingSelection();
             const nextIndex = resolveClickedSelectionIndex(
                 this.selectedCandleIndex,
                 this.hoveredCandle,
@@ -787,9 +862,17 @@ export class NexusCharts {
 
         const stopDragging = () => {
             this.isDragging = false;
-            if (this.drawingManager.getActiveDrag()) {
+            const activeDrag = this.drawingManager.getActiveDrag();
+            if (activeDrag) {
                 this.drawingManager.setActiveDrag(null);
+                if (updatedDrawingIdDuringPointer === activeDrag.id) {
+                    const updatedDrawing = this.getDrawingSnapshot(activeDrag.id);
+                    if (updatedDrawing) {
+                        this.emitDrawingUpdated(updatedDrawing, "drag");
+                    }
+                }
             }
+            updatedDrawingIdDuringPointer = null;
         };
 
         const onClick = (event: MouseEvent) => {
@@ -797,6 +880,7 @@ export class NexusCharts {
                 return;
             }
             activateSelectionFromPointer();
+            this.emitClick(event.clientX, event.clientY, "mouse");
         };
 
         const onWheel = (event: WheelEvent) => {
@@ -1026,6 +1110,7 @@ export class NexusCharts {
 
             if (touchSelectionArmed && !this.draggedDuringPointer) {
                 activateSelectionFromPointer();
+                this.emitClick(this.lastPointerX, this.lastPointerY, "touch");
                 const now = performance.now();
                 const isDoubleTap = (now - lastTapAt) <= doubleTapDelayMs
                     && Math.hypot(this.lastPointerX - lastTapX, this.lastPointerY - lastTapY) <= doubleTapDistancePx;
@@ -1206,11 +1291,16 @@ export class NexusCharts {
     }
 
     private setSelectedCandleIndex(index: number | null): void {
+        const selectionChanged = this.selectedCandleIndex !== index;
         this.selectedCandleIndex = index;
         this.hoveredCandle = null;
         this.hoverCanvasX = null;
         this.hoverCanvasY = null;
         this.redrawDrawings();
+        if (selectionChanged) {
+            this.emitSelectionChange();
+        }
+        this.emitCrosshairMove();
     }
 
     private moveSelection(step: number): void {
@@ -2055,7 +2145,7 @@ export class NexusCharts {
         const menu = createDrawingContextMenu(this.theme, () => {
             const id = this.drawingManager.consumeContextMenuTarget();
             if (id) {
-                this.removeDrawing(id);
+                this.removeDrawing(id, "contextMenu");
             }
         });
 
@@ -2431,6 +2521,37 @@ export class NexusCharts {
         });
     }
 
+    private emitClick(clientX: number, clientY: number, source: "mouse" | "touch"): void {
+        this.emitEvent("click", {
+            candle: this.getHoveredCandle() ?? this.getSelectedCandle(),
+            drawing: this.getDrawingSnapshot(this.drawingManager.getActiveDrawingId()),
+            point: this.screenToTimePrice(clientX, clientY),
+            clientX,
+            clientY,
+            source,
+        });
+    }
+
+    private emitDrawingSelected(): void {
+        this.emitEvent("drawingSelected", {
+            drawing: this.getDrawingSnapshot(this.drawingManager.getActiveDrawingId()),
+        });
+    }
+
+    private emitDrawingUpdated(drawing: DrawingDefinition, reason: "drag"): void {
+        this.emitEvent("drawingUpdated", {
+            drawing: this.cloneDrawingDefinition(drawing) ?? drawing,
+            reason,
+        });
+    }
+
+    private emitDrawingDeleted(drawing: DrawingDefinition, reason: "api" | "contextMenu" | "clearAll"): void {
+        this.emitEvent("drawingDeleted", {
+            drawing: this.cloneDrawingDefinition(drawing) ?? drawing,
+            reason,
+        });
+    }
+
     private emitVisibleRangeChange(): void {
         const geometry = this.buildSeriesGeometry();
         const surface = this.overlayCanvas ?? this.canvas;
@@ -2559,12 +2680,3 @@ export class NexusCharts {
         return `${prefix}_${this.idCounter}`;
     }
 }
-
-
-
-
-
-
-
-
-
