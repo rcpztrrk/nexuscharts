@@ -174,6 +174,13 @@
                 <option value="500000">500,000</option>
                 <option value="1000000">1,000,000 (slow)</option>
             </select>
+            <span>Timeframe</span>
+            <select id="timeframe-size">
+                <option value="1m">1m</option>
+                <option value="5m" selected>5m</option>
+                <option value="1h">1h</option>
+                <option value="1d">1D</option>
+            </select>
             <button id="dataset-load">Load</button>
             <button id="benchmark-run">Run Sweep</button>
             <span id="dataset-status">Size: 42</span>
@@ -205,10 +212,19 @@
             wasmBinaryPath: "wasm/nexuscharts.wasm"
         });
 
-        const generateCandles = (count = 36) => {
+        const timeframePresets = {
+            "1m": 60 * 1000,
+            "5m": 5 * 60 * 1000,
+            "1h": 60 * 60 * 1000,
+            "1d": 24 * 60 * 60 * 1000,
+        };
+
+        const generateCandles = (count = 36, timeframeKey = "5m") => {
             const candles = [];
             let price = 102;
             const volumeBase = 180;
+            const timeframeMs = timeframePresets[timeframeKey] ?? timeframePresets["5m"];
+            const startTime = Date.now() - (Math.max(0, count - 1) * timeframeMs);
             for (let i = 0; i < count; i += 1) {
                 const wave = Math.sin(i * 0.32) * 1.4;
                 const pull = Math.cos(i * 0.19) * 0.9;
@@ -221,7 +237,7 @@
                 const low = Math.min(open, close) - 0.7 - (Math.random() * 0.9);
 
                 candles.push({
-                    time: i + 1,
+                    time: startTime + (i * timeframeMs),
                     open: Number(open.toFixed(2)),
                     high: Number(high.toFixed(2)),
                     low: Number(low.toFixed(2)),
@@ -234,7 +250,7 @@
             return candles;
         };
 
-        const generateNextCandle = (index, lastClose) => {
+        const generateNextCandle = (index, lastClose, lastTime, timeframeKey = "5m") => {
             const wave = Math.sin(index * 0.32) * 1.4;
             const pull = Math.cos(index * 0.19) * 0.9;
             const noise = (Math.random() - 0.5) * 0.8;
@@ -245,9 +261,10 @@
             const volume = volumeBase + (Math.abs(close - open) * 420) + (Math.random() * 120);
             const high = Math.max(open, close) + 0.7 + (Math.random() * 0.9);
             const low = Math.min(open, close) - 0.7 - (Math.random() * 0.9);
+            const timeframeMs = timeframePresets[timeframeKey] ?? timeframePresets["5m"];
 
             return {
-                time: index + 1,
+                time: lastTime + timeframeMs,
                 open: Number(open.toFixed(2)),
                 high: Number(high.toFixed(2)),
                 low: Number(low.toFixed(2)),
@@ -303,11 +320,13 @@
             const datasetStatus = document.getElementById("dataset-status");
             const benchmarkReport = document.getElementById("benchmark-report");
             const themeSelect = document.getElementById("theme-preset");
+            const timeframeSelect = document.getElementById("timeframe-size");
             const datasetThreshold = 50000;
             let streamEnabled = true;
             let overlaysEnabled = true;
             let analyticsEnabled = true;
             let benchmarkRunning = false;
+            let currentTimeframeKey = "5m";
 
             const themePresets = {
                 midnight: {
@@ -548,7 +567,7 @@
             const updateDatasetStatus = () => {
                 if (datasetStatus) {
                     const modeLabel = overlaysEnabled ? "Full" : "Benchmark";
-                    datasetStatus.textContent = `Size: ${candles.length.toLocaleString()} | Mode: ${modeLabel}`;
+                    datasetStatus.textContent = `Size: ${candles.length.toLocaleString()} | TF: ${currentTimeframeKey.toUpperCase()} | Mode: ${modeLabel}`;
                 }
             };
 
@@ -690,7 +709,7 @@
             const applyDataset = (count, pauseStream = true) => {
                 overlaysEnabled = count < datasetThreshold;
                 analyticsEnabled = overlaysEnabled;
-                const nextCandles = generateCandles(count);
+                const nextCandles = generateCandles(count, currentTimeframeKey);
                 candles = nextCandles;
 
                 applyIndicators(overlaysEnabled);
@@ -746,6 +765,14 @@
                     applyThemePreset(themeSelect.value);
                 });
             }
+            if (timeframeSelect) {
+                timeframeSelect.value = currentTimeframeKey;
+                timeframeSelect.addEventListener("change", () => {
+                    currentTimeframeKey = timeframeSelect.value in timeframePresets ? timeframeSelect.value : "5m";
+                    const size = Number(datasetSelect?.value) || candles.length || defaultDatasetSize;
+                    applyDataset(size, true);
+                });
+            }
             applyThemePreset("midnight");
             applyDataset(defaultDatasetSize, false);
             setBenchmarkReport("Benchmark sweep: ready. Use Run Sweep for 100k-1M automated measurements.");
@@ -791,7 +818,7 @@
 
                     inProgressTicks += 1;
                 } else {
-                    activeCandle = generateNextCandle(liveIndex, lastClose);
+                    activeCandle = generateNextCandle(liveIndex, lastClose, candles[candles.length - 1]?.time ?? Date.now(), currentTimeframeKey);
                     candles.push(activeCandle);
                     lastClose = activeCandle.close;
 
@@ -867,12 +894,3 @@
 </body>
 
 </html>
-
-
-
-
-
-
-
-
-
