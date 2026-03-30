@@ -143,7 +143,8 @@
             letter-spacing: 0.2px;
         }
 
-        #benchmark-report {
+        #benchmark-report,
+        #event-report {
             width: min(92vw, 960px);
             margin-top: 10px;
             padding: 10px 12px;
@@ -201,6 +202,7 @@
     <div id="metrics-label">Observer stream waiting...</div>
     <div id="perf-label">Perf: waiting...</div>
     <div id="benchmark-report">Benchmark sweep: waiting...</div>
+    <div id="event-report">Event monitor: waiting...</div>
     <div id="ux-hint">Hover for OHLC tooltip, click to select candle, drag to pan, wheel to zoom, double click to fit. Touch: drag to pan, pinch to zoom, long-press to lock tooltip, double-tap to fit. Shortcuts: F/A/C/T/Y/M/H/G, arrows, Home/End, Esc.</div>
 
     <script type="module">
@@ -319,6 +321,7 @@
             const benchmarkRun = document.getElementById("benchmark-run");
             const datasetStatus = document.getElementById("dataset-status");
             const benchmarkReport = document.getElementById("benchmark-report");
+            const eventReport = document.getElementById("event-report");
             const themeSelect = document.getElementById("theme-preset");
             const timeframeSelect = document.getElementById("timeframe-size");
             const datasetThreshold = 50000;
@@ -579,6 +582,36 @@
 
             const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
+            const formatEventTime = (value) => {
+                if (value === null || value === undefined) {
+                    return "n/a";
+                }
+                if (typeof value === "number" && Math.abs(value) >= 1e9) {
+                    const ms = Math.abs(value) < 1e12 ? value * 1000 : value;
+                    return new Date(ms).toLocaleString();
+                }
+                return String(value);
+            };
+
+            const eventState = {
+                click: "waiting...",
+                selection: "waiting...",
+                range: "waiting...",
+                drawing: "waiting..."
+            };
+
+            const renderEventState = () => {
+                if (!eventReport) {
+                    return;
+                }
+                eventReport.textContent =
+                    `Event monitor\n` +
+                    `click: ${eventState.click}\n` +
+                    `selection: ${eventState.selection}\n` +
+                    `range: ${eventState.range}\n` +
+                    `drawing: ${eventState.drawing}`;
+            };
+
             const formatHeap = (perf) => {
                 if (perf.heapUsedMB !== null && perf.heapTotalMB !== null) {
                     return `${perf.heapUsedMB.toFixed(1)}/${perf.heapTotalMB.toFixed(1)} MB`;
@@ -773,6 +806,43 @@
                     applyDataset(size, true);
                 });
             }
+            chart.subscribe("click", (event) => {
+                eventState.click = `${event.source} | time: ${formatEventTime(event.point?.time ?? event.candle?.time ?? null)} | ` +
+                    `price: ${event.point?.price?.toFixed?.(2) ?? "n/a"}`;
+                renderEventState();
+            });
+
+            chart.subscribe("selectionChange", (event) => {
+                eventState.selection = event.candle
+                    ? `candle #${event.candle.index} @ ${formatEventTime(event.candle.time)}`
+                    : "none";
+                renderEventState();
+            });
+
+            chart.subscribe("visibleRangeChange", (event) => {
+                eventState.range = event.endIndex >= event.startIndex
+                    ? `#${event.startIndex}-${event.endIndex} | ${formatEventTime(event.fromTime)} -> ${formatEventTime(event.toTime)}`
+                    : "empty";
+                renderEventState();
+            });
+
+            chart.subscribe("drawingSelected", (event) => {
+                eventState.drawing = event.drawing
+                    ? `selected ${event.drawing.type}`
+                    : "selection cleared";
+                renderEventState();
+            });
+
+            chart.subscribe("drawingUpdated", (event) => {
+                eventState.drawing = `updated ${event.drawing.type} (${event.reason})`;
+                renderEventState();
+            });
+
+            chart.subscribe("drawingDeleted", (event) => {
+                eventState.drawing = `deleted ${event.drawing.type} (${event.reason})`;
+                renderEventState();
+            });
+
             applyThemePreset("midnight");
             applyDataset(defaultDatasetSize, false);
             setBenchmarkReport("Benchmark sweep: ready. Use Run Sweep for 100k-1M automated measurements.");
@@ -894,3 +964,5 @@
 </body>
 
 </html>
+
+
