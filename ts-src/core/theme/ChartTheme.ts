@@ -129,9 +129,23 @@ export function mergeChartTheme(base: ChartTheme, overrides?: ThemeInput): Chart
 }
 
 export function cloneTheme(theme: ChartTheme): ChartTheme {
-    return mergeChartTheme(theme);
+    return {
+        typography: { ...theme.typography },
+        surface: { ...theme.surface },
+        axes: { ...theme.axes },
+        controls: { ...theme.controls },
+        tooltip: { ...theme.tooltip },
+        crosshair: { ...theme.crosshair },
+        selection: { ...theme.selection },
+        drawings: { ...theme.drawings },
+        analytics: { ...theme.analytics },
+        indicators: { ...theme.indicators },
+        series: { ...theme.series },
+        candles: { ...theme.candles },
+    };
 }
 
 export function fontSpec(fontSize: number, theme: ChartTheme): string {
     return `${fontSize}px ${theme.typography.fontFamily}`;
 }
+

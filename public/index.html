@@ -330,6 +330,9 @@
             let analyticsEnabled = true;
             let benchmarkRunning = false;
             let currentTimeframeKey = "5m";
+            const pageParams = new URLSearchParams(window.location.search);
+            const shouldAutorunBenchmark = pageParams.get("autorunBenchmark") === "1";
+            const autorunBenchmarkSize = Number(pageParams.get("benchmarkSize") || "0");
 
             const themePresets = {
                 midnight: {
@@ -644,6 +647,45 @@
                 };
             };
 
+            const runSingleBenchmark = async (size) => {
+                if (benchmarkRunning) {
+                    return;
+                }
+                benchmarkRunning = true;
+                document.body.dataset.benchmarkDone = "false";
+                setStreamState(false);
+                if (benchmarkRun) {
+                    benchmarkRun.classList.add("is-running");
+                    benchmarkRun.textContent = `Running ${size.toLocaleString()}...`;
+                }
+
+                try {
+                    setBenchmarkReport(`Benchmark sample running...\n- ${size.toLocaleString()} loading...`);
+                    const sample = await collectBenchmarkSample(size);
+                    const report =
+                        `Benchmark sample:\n` +
+                        `${sample.size.toLocaleString()} | mode: ${sample.mode} | redraw avg/max/last: ` +
+                        `${sample.avg.toFixed(2)} / ${sample.max.toFixed(2)} / ${sample.last.toFixed(2)} ms | ` +
+                        `samples: ${sample.samples} | heap: ${sample.heap}`;
+                    setBenchmarkReport(report);
+                    window.__NEXUS_BENCHMARK_REPORT = report;
+                    document.body.dataset.benchmarkDone = "true";
+                    return sample;
+                } catch (error) {
+                    const failure = `Benchmark sample failed: ${error instanceof Error ? error.message : String(error)}`;
+                    setBenchmarkReport(failure);
+                    window.__NEXUS_BENCHMARK_REPORT = failure;
+                    document.body.dataset.benchmarkDone = "error";
+                    throw error;
+                } finally {
+                    benchmarkRunning = false;
+                    if (benchmarkRun) {
+                        benchmarkRun.classList.remove("is-running");
+                        benchmarkRun.textContent = "Run Sweep";
+                    }
+                }
+            };
+
             const runBenchmarkSweep = async () => {
                 if (benchmarkRunning) {
                     return;
@@ -669,7 +711,16 @@
                             `samples: ${sample.samples} | heap: ${sample.heap}`
                         );
                     }
-                    setBenchmarkReport(lines.join("\n"));
+                    const report = lines.join("\n");
+                    setBenchmarkReport(report);
+                    window.__NEXUS_BENCHMARK_REPORT = report;
+                    document.body.dataset.benchmarkDone = "true";
+                } catch (error) {
+                    const failure = `Benchmark sweep failed: ${error instanceof Error ? error.message : String(error)}`;
+                    setBenchmarkReport(failure);
+                    window.__NEXUS_BENCHMARK_REPORT = failure;
+                    document.body.dataset.benchmarkDone = "error";
+                    throw error;
                 } finally {
                     benchmarkRunning = false;
                     if (benchmarkRun) {
@@ -846,6 +897,15 @@
             applyThemePreset("midnight");
             applyDataset(defaultDatasetSize, false);
             setBenchmarkReport("Benchmark sweep: ready. Use Run Sweep for 100k-1M automated measurements.");
+            if (shouldAutorunBenchmark) {
+                window.setTimeout(() => {
+                    if (autorunBenchmarkSize > 0) {
+                        void runSingleBenchmark(autorunBenchmarkSize);
+                    } else {
+                        void runBenchmarkSweep();
+                    }
+                }, 120);
+            }
 
             setInterval(() => {
                 if (!streamEnabled) {
