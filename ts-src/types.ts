@@ -11,6 +11,7 @@ export interface InitOptions {
     enableInteraction?: boolean;
     analytics?: AnalyticsOptions;
     ui?: UiOptions;
+    timeAxis?: TimeAxisOptions;
     theme?: ThemeInput;
     onReady?: (chart: NexusCharts) => void;
 }
@@ -45,6 +46,16 @@ export interface UiState {
     autoScaleY: boolean;
     showHeatmap: boolean;
     showAnalyticsPanel: boolean;
+}
+
+export interface TimeAxisOptions {
+    timezone?: string;
+    gapMode?: "compress" | "preserve";
+}
+
+export interface TimeAxisState {
+    timezone: string;
+    gapMode: "compress" | "preserve";
 }
 
 export interface ChartVisibleRange {

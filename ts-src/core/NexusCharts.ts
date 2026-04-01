@@ -29,6 +29,8 @@ import type {
     DrawingType,
     DrawingDefinition,
     ThemeInput,
+    TimeAxisOptions,
+    TimeAxisState,
 } from "../types";
 
 import { PerfTracker } from "./perf/PerfTracker";
@@ -148,6 +150,7 @@ export class NexusCharts {
         axisTickCount: 5,
         pricePrecision: 2,
     };
+    private timeAxisOptions: Required<TimeAxisOptions> = this.normalizeTimeAxisOptions();
     private readonly perfTracker = new PerfTracker(360);
     private idCounter: number = 0;
     private readonly readyPromise: Promise<void>;
@@ -178,6 +181,9 @@ export class NexusCharts {
         }
         if (options.theme) {
             this.theme = createChartTheme(options.theme);
+        }
+        if (options.timeAxis) {
+            this.timeAxisOptions = this.normalizeTimeAxisOptions(options.timeAxis);
         }
         this.readyPromise = new Promise<void>((resolve) => {
             this.resolveReady = resolve;
@@ -533,6 +539,20 @@ export class NexusCharts {
 
     public getTheme(): ChartTheme {
         return createChartTheme(this.theme);
+    }
+
+    public configureTimeAxis(options: TimeAxisOptions): void {
+        this.timeAxisOptions = this.normalizeTimeAxisOptions(options);
+        this.geometryCache = null;
+        this.timeSeriesCache = null;
+        this.lastVisibleRangeKey = null;
+        this.refreshHoverFromStoredPointer();
+        this.redrawDrawings();
+        this.emitVisibleRangeChange();
+    }
+
+    public getTimeAxis(): TimeAxisState {
+        return { ...this.timeAxisOptions };
     }
 
     public configureUi(options: UiOptions): void {
@@ -1578,16 +1598,32 @@ export class NexusCharts {
         const scale = 1.7 / range;
         const startX = -0.92;
         const stepX = valid.length > 1 ? 1.84 / (valid.length - 1) : 0.0;
+        const numericTimes = valid.map((point) => this.toNumericTime(point.time));
+        const preserveGaps =
+            this.timeAxisOptions.gapMode === "preserve"
+            && valid.length > 1
+            && numericTimes.every((value): value is number => value !== null && this.isLikelyTimestamp(value));
+        const normalizedTimes = preserveGaps
+            ? numericTimes.map((value) => this.normalizeTimestampMs(value as number))
+            : [];
+        const minTime = preserveGaps ? normalizedTimes[0] : 0;
+        const maxTime = preserveGaps ? normalizedTimes[normalizedTimes.length - 1] : 0;
+        const timeSpan = preserveGaps ? Math.max(1, maxTime - minTime) : 1;
         const normalizeY = (value: number): number => ((value - minPrice) * scale) - 0.85;
 
-        const candles: NormalizedCandleDataPoint[] = valid.map((point, index) => ({
-            source: point,
-            x: startX + (stepX * index),
-            open: normalizeY(point.open),
-            high: normalizeY(Math.max(point.high, point.open, point.close, point.low)),
-            low: normalizeY(Math.min(point.low, point.open, point.close, point.high)),
-            close: normalizeY(point.close),
-        }));
+        const candles: NormalizedCandleDataPoint[] = valid.map((point, index) => {
+            const x = preserveGaps
+                ? startX + ((1.84 * (normalizedTimes[index] - minTime)) / timeSpan)
+                : startX + (stepX * index);
+            return {
+                source: point,
+                x,
+                open: normalizeY(point.open),
+                high: normalizeY(Math.max(point.high, point.open, point.close, point.low)),
+                low: normalizeY(Math.min(point.low, point.open, point.close, point.high)),
+                close: normalizeY(point.close),
+            };
+        });
 
         const geometry: SeriesGeometry = { candles, minPrice, maxPrice, scale };
         this.geometryCache = { seriesId: entry.id, revision: entry.revision, geometry };
@@ -1627,42 +1663,41 @@ export class NexusCharts {
             return String(timestampMs);
         }
 
+        const formatterOptions: Intl.DateTimeFormatOptions = {
+            timeZone: this.timeAxisOptions.timezone,
+        };
+
         if (spanHintMs === null) {
-            return new Intl.DateTimeFormat(undefined, {
-                month: "short",
-                day: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-            }).format(date);
+            formatterOptions.month = "short";
+            formatterOptions.day = "2-digit";
+            formatterOptions.hour = "2-digit";
+            formatterOptions.minute = "2-digit";
+            return new Intl.DateTimeFormat(undefined, formatterOptions).format(date);
         }
 
         if (spanHintMs <= (12 * 60 * 60 * 1000)) {
-            return new Intl.DateTimeFormat(undefined, {
-                hour: "2-digit",
-                minute: "2-digit",
-            }).format(date);
+            formatterOptions.hour = "2-digit";
+            formatterOptions.minute = "2-digit";
+            return new Intl.DateTimeFormat(undefined, formatterOptions).format(date);
         }
 
         if (spanHintMs <= (3 * 24 * 60 * 60 * 1000)) {
-            return new Intl.DateTimeFormat(undefined, {
-                month: "short",
-                day: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-            }).format(date);
+            formatterOptions.month = "short";
+            formatterOptions.day = "2-digit";
+            formatterOptions.hour = "2-digit";
+            formatterOptions.minute = "2-digit";
+            return new Intl.DateTimeFormat(undefined, formatterOptions).format(date);
         }
 
         if (spanHintMs <= (180 * 24 * 60 * 60 * 1000)) {
-            return new Intl.DateTimeFormat(undefined, {
-                month: "short",
-                day: "2-digit",
-            }).format(date);
+            formatterOptions.month = "short";
+            formatterOptions.day = "2-digit";
+            return new Intl.DateTimeFormat(undefined, formatterOptions).format(date);
         }
 
-        return new Intl.DateTimeFormat(undefined, {
-            year: "numeric",
-            month: "short",
-        }).format(date);
+        formatterOptions.year = "numeric";
+        formatterOptions.month = "short";
+        return new Intl.DateTimeFormat(undefined, formatterOptions).format(date);
     }
 
     private worldYToPriceValueInternal(worldY: number, geometry: SeriesGeometry): number {
@@ -2810,6 +2845,14 @@ export class NexusCharts {
             rectsOverlap: this.rectsOverlap.bind(this),
             getAnalyticsPanelBounds: this.getAnalyticsPanelBounds.bind(this),
         });
+    }
+
+    private normalizeTimeAxisOptions(options: TimeAxisOptions = {}): Required<TimeAxisOptions> {
+        const resolvedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+        return {
+            timezone: options.timezone ?? this.timeAxisOptions?.timezone ?? resolvedTimezone,
+            gapMode: options.gapMode ?? this.timeAxisOptions?.gapMode ?? "compress",
+        };
     }
 
     private normalizeAnalyticsOptions(options: AnalyticsOptions): Required<AnalyticsOptions> {

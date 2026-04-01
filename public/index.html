@@ -193,6 +193,18 @@
                 <option value="ocean">Ocean</option>
                 <option value="ember">Ember</option>
             </select>
+            <span>TZ</span>
+            <select id="timezone-preset">
+                <option value="UTC">UTC</option>
+                <option value="Europe/Istanbul">Istanbul</option>
+                <option value="America/New_York">New York</option>
+                <option value="Asia/Tokyo">Tokyo</option>
+            </select>
+            <span>Gaps</span>
+            <select id="gap-mode">
+                <option value="compress">Compress</option>
+                <option value="preserve">Preserve</option>
+            </select>
         </div>
         <button id="stream-toggle">Stream: On</button>
     </div>
@@ -208,10 +220,17 @@
     <script type="module">
         import { NexusCharts } from "./nexus-charts.esm.js";
 
+        const defaultTimezone = "UTC";
+        const defaultGapMode = "compress";
+
         const chart = new NexusCharts({
             canvasId: "canvas",
             wasmScriptPath: "wasm/nexuscharts.js",
-            wasmBinaryPath: "wasm/nexuscharts.wasm"
+            wasmBinaryPath: "wasm/nexuscharts.wasm",
+            timeAxis: {
+                timezone: defaultTimezone,
+                gapMode: defaultGapMode,
+            }
         });
 
         const timeframePresets = {
@@ -221,12 +240,33 @@
             "1d": 24 * 60 * 60 * 1000,
         };
 
+        const isWeekend = (timestamp) => {
+            const day = new Date(timestamp).getUTCDay();
+            return day === 0 || day === 6;
+        };
+
+        const alignToTradingTimestamp = (timestamp) => {
+            let next = timestamp;
+            while (isWeekend(next)) {
+                next += 24 * 60 * 60 * 1000;
+            }
+            return next;
+        };
+
+        const advanceTradingTimestamp = (timestamp, timeframeMs) => {
+            let next = timestamp + timeframeMs;
+            while (isWeekend(next)) {
+                next += 24 * 60 * 60 * 1000;
+            }
+            return next;
+        };
+
         const generateCandles = (count = 36, timeframeKey = "5m") => {
             const candles = [];
             let price = 102;
             const volumeBase = 180;
             const timeframeMs = timeframePresets[timeframeKey] ?? timeframePresets["5m"];
-            const startTime = Date.now() - (Math.max(0, count - 1) * timeframeMs);
+            let currentTime = alignToTradingTimestamp(Date.now() - (Math.max(0, count - 1) * timeframeMs));
             for (let i = 0; i < count; i += 1) {
                 const wave = Math.sin(i * 0.32) * 1.4;
                 const pull = Math.cos(i * 0.19) * 0.9;
@@ -239,7 +279,7 @@
                 const low = Math.min(open, close) - 0.7 - (Math.random() * 0.9);
 
                 candles.push({
-                    time: startTime + (i * timeframeMs),
+                    time: currentTime,
                     open: Number(open.toFixed(2)),
                     high: Number(high.toFixed(2)),
                     low: Number(low.toFixed(2)),
@@ -248,6 +288,7 @@
                 });
 
                 price = close;
+                currentTime = advanceTradingTimestamp(currentTime, timeframeMs);
             }
             return candles;
         };
@@ -266,7 +307,7 @@
             const timeframeMs = timeframePresets[timeframeKey] ?? timeframePresets["5m"];
 
             return {
-                time: lastTime + timeframeMs,
+                time: advanceTradingTimestamp(lastTime, timeframeMs),
                 open: Number(open.toFixed(2)),
                 high: Number(high.toFixed(2)),
                 low: Number(low.toFixed(2)),
@@ -324,12 +365,16 @@
             const eventReport = document.getElementById("event-report");
             const themeSelect = document.getElementById("theme-preset");
             const timeframeSelect = document.getElementById("timeframe-size");
+            const timezoneSelect = document.getElementById("timezone-preset");
+            const gapModeSelect = document.getElementById("gap-mode");
             const datasetThreshold = 50000;
             let streamEnabled = true;
             let overlaysEnabled = true;
             let analyticsEnabled = true;
             let benchmarkRunning = false;
             let currentTimeframeKey = "5m";
+            let currentTimezone = defaultTimezone;
+            let currentGapMode = defaultGapMode;
             const pageParams = new URLSearchParams(window.location.search);
             const shouldAutorunBenchmark = pageParams.get("autorunBenchmark") === "1";
             const autorunBenchmarkSize = Number(pageParams.get("benchmarkSize") || "0");
@@ -510,6 +555,13 @@
                 applyShellTheme(preset.shell);
             };
 
+            const applyTimeAxisOptions = () => {
+                chart.configureTimeAxis({
+                    timezone: currentTimezone,
+                    gapMode: currentGapMode,
+                });
+            };
+
             const setStreamState = (nextState) => {
                 streamEnabled = nextState;
                 if (streamToggle) {
@@ -573,7 +625,7 @@
             const updateDatasetStatus = () => {
                 if (datasetStatus) {
                     const modeLabel = overlaysEnabled ? "Full" : "Benchmark";
-                    datasetStatus.textContent = `Size: ${candles.length.toLocaleString()} | TF: ${currentTimeframeKey.toUpperCase()} | Mode: ${modeLabel}`;
+                    datasetStatus.textContent = `Size: ${candles.length.toLocaleString()} | TF: ${currentTimeframeKey.toUpperCase()} | TZ: ${currentTimezone} | Gaps: ${currentGapMode} | Mode: ${modeLabel}`;
                 }
             };
 
@@ -849,6 +901,22 @@
                     applyThemePreset(themeSelect.value);
                 });
             }
+            if (timezoneSelect) {
+                timezoneSelect.value = currentTimezone;
+                timezoneSelect.addEventListener("change", () => {
+                    currentTimezone = timezoneSelect.value || defaultTimezone;
+                    applyTimeAxisOptions();
+                    updateDatasetStatus();
+                });
+            }
+            if (gapModeSelect) {
+                gapModeSelect.value = currentGapMode;
+                gapModeSelect.addEventListener("change", () => {
+                    currentGapMode = gapModeSelect.value === "preserve" ? "preserve" : "compress";
+                    applyTimeAxisOptions();
+                    updateDatasetStatus();
+                });
+            }
             if (timeframeSelect) {
                 timeframeSelect.value = currentTimeframeKey;
                 timeframeSelect.addEventListener("change", () => {
@@ -895,6 +963,7 @@
             });
 
             applyThemePreset("midnight");
+            applyTimeAxisOptions();
             applyDataset(defaultDatasetSize, false);
             setBenchmarkReport("Benchmark sweep: ready. Use Run Sweep for 100k-1M automated measurements.");
             if (shouldAutorunBenchmark) {
