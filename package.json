@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build:wasm": "cmd.exe /c \"cd emsdk && emsdk_env.bat && cd .. && emcmake cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build build\"",
-    "build:ts": "rollup -c",
+    "build:ts": "rollup -c && node scripts/prepare-public-types.mjs",
     "build": "npm run build:wasm && npm run build:ts",
     "dev": "npx serve public",
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -32,10 +32,10 @@
     "typescript": "^5.9.3"
   },
   "module": "./build/nexus-charts.esm.js",
-  "types": "./build/types/index.d.ts",
+  "types": "./build/public-types/index.d.ts",
   "exports": {
     ".": {
-      "types": "./build/types/index.d.ts",
+      "types": "./build/public-types/index.d.ts",
       "import": "./build/nexus-charts.esm.js",
       "require": "./build/nexus-charts.cjs",
       "default": "./build/nexus-charts.esm.js"
@@ -50,7 +50,7 @@
     "build/nexus-charts.umd.js",
     "build/nexuscharts.js",
     "build/nexuscharts.wasm",
-    "build/types/**/*.d.ts",
+    "build/public-types/*.d.ts",
     "README.md",
     "LICENSE"
   ],
