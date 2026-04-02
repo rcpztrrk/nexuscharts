@@ -307,10 +307,8 @@ VisibleRange ComputeVisibleRange(const Camera* camera, int viewportWidth, int vi
         return {0, candleCount - 1};
     }
 
-    const float zoom = camera->GetZoom();
     const float centerX = camera->GetCenterX();
-    const float aspect = static_cast<float>(viewportWidth) / std::max(1.0f, static_cast<float>(viewportHeight));
-    const float halfWidth = zoom * aspect;
+    const float halfWidth = camera->GetZoomX();
     const float left = centerX - halfWidth;
     const float right = centerX + halfWidth;
 

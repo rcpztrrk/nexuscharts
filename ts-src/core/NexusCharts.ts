@@ -95,7 +95,8 @@ export class NexusCharts {
     private readonly wasmBinaryPath: string;
     private readonly enableInteraction: boolean;
     private readonly onReadyCallback?: (chart: NexusCharts) => void;
-    private currentZoom: number = 1.0;
+    private currentZoomX: number = 4 / 3;
+    private currentZoomY: number = 1.0;
     private currentCenterX: number = 0.0;
     private currentCenterY: number = 0.0;
     private isDragging: boolean = false;
@@ -238,7 +239,7 @@ export class NexusCharts {
         this.redrawDrawings();
     }
 
-    public zoom(zoomFactor: number): void {
+    public zoom(zoomFactor: number, axis: "x" | "y" | "both" = "x"): void {
         if (!this.wasmBridge.isReady()) {
             return;
         }
@@ -249,12 +250,19 @@ export class NexusCharts {
             ? this.canvasToWorldPoint(anchorX, anchorY, surface.width, surface.height)
             : null;
 
-        this.currentZoom = Math.min(5.0, Math.max(0.2, this.currentZoom * zoomFactor));
+        const nextZoomX = axis === "y"
+            ? this.currentZoomX
+            : Math.min(5.0, Math.max(0.2, this.currentZoomX * zoomFactor));
+        const nextZoomY = axis === "x"
+            ? this.currentZoomY
+            : Math.min(5.0, Math.max(0.2, this.currentZoomY * zoomFactor));
+
+        this.currentZoomX = nextZoomX;
+        this.currentZoomY = nextZoomY;
 
         if (surface && anchoredWorld && anchorX !== null && anchorY !== null) {
-            const aspect = surface.width / Math.max(1, surface.height);
-            const halfHeight = this.currentZoom;
-            const halfWidth = halfHeight * aspect;
+            const halfWidth = this.currentZoomX;
+            const halfHeight = this.currentZoomY;
             const normalizedX = anchorX / Math.max(1, surface.width);
             const normalizedY = (surface.height - anchorY) / Math.max(1, surface.height);
             const left = anchoredWorld.x - (normalizedX * halfWidth * 2.0);
@@ -440,15 +448,15 @@ export class NexusCharts {
             maxY = Math.max(maxY, candle.high);
         }
 
-        const aspect = surface.width / Math.max(1, surface.height);
         const paddingY = 0.18;
         const paddingX = 0.08;
         const halfHeightFromY = Math.max(0.35, ((maxY - minY) * 0.5) + paddingY);
-        const halfHeightFromX = Math.max(0.35, ((((maxX - minX) * 0.5) + paddingX) / Math.max(aspect, 1e-6)));
+        const halfWidthFromX = Math.max(0.35, ((maxX - minX) * 0.5) + paddingX);
 
         this.currentCenterX = (minX + maxX) * 0.5;
         this.currentCenterY = (minY + maxY) * 0.5;
-        this.currentZoom = Math.min(5.0, Math.max(0.2, Math.max(halfHeightFromY, halfHeightFromX)));
+        this.currentZoomX = Math.min(5.0, Math.max(0.2, halfWidthFromX));
+        this.currentZoomY = Math.min(5.0, Math.max(0.2, halfHeightFromY));
         this.applyCameraView();
         this.refreshHoverFromStoredPointer();
         this.redrawDrawings();
@@ -826,12 +834,13 @@ export class NexusCharts {
                 const width = canvas.width || 1;
                 const height = canvas.height || 1;
                 const aspect = width / height;
-                const worldUnitsPerPixelX = (2.0 * this.currentZoom * aspect) / width;
-                const worldUnitsPerPixelY = (2.0 * this.currentZoom) / height;
+                const worldUnitsPerPixelX = (2.0 * this.currentZoomX) / width;
+                const worldUnitsPerPixelY = (2.0 * this.currentZoomY) / height;
 
                 this.lastPointerX = clientX;
                 this.lastPointerY = clientY;
-                this.pan(-dx * worldUnitsPerPixelX, dy * worldUnitsPerPixelY);
+                const panY = this.uiOptions.autoScaleY ? 0 : (dy * worldUnitsPerPixelY);
+                this.pan(-dx * worldUnitsPerPixelX, panY);
                 return;
             }
 
@@ -909,7 +918,8 @@ export class NexusCharts {
             event.preventDefault();
             this.updateHoverFromClientPosition(event.clientX, event.clientY);
             const zoomFactor = event.deltaY > 0 ? 1.08 : 0.92;
-            this.zoom(zoomFactor);
+            const axis = (event.shiftKey || event.altKey) ? "y" : "x";
+            this.zoom(zoomFactor, axis);
         };
 
         const onContextMenu = (event: MouseEvent) => {
@@ -1071,7 +1081,7 @@ export class NexusCharts {
                 if (pinchDistance && nextDistance > 0) {
                     const zoomFactor = pinchDistance / nextDistance;
                     if (Number.isFinite(zoomFactor) && Math.abs(zoomFactor - 1) > 0.001) {
-                        this.zoom(zoomFactor);
+                        this.zoom(zoomFactor, "x");
                     }
                 }
                 pinchDistance = nextDistance;
@@ -1235,7 +1245,7 @@ export class NexusCharts {
     }
 
     private applyCameraView(): void {
-        this.wasmBridge.applyCameraView(this.currentCenterX, this.currentCenterY, this.currentZoom);
+        this.wasmBridge.applyCameraView(this.currentCenterX, this.currentCenterY, this.currentZoomX, this.currentZoomY);
     }
 
     private normalizeUiOptions(options: UiOptions): Required<UiOptions> {
@@ -1379,11 +1389,11 @@ export class NexusCharts {
         const padding = 0.08;
         const targetHalfHeight = Math.max(0.2, ((maxY - minY) * 0.5) + padding);
         const nextCenterY = (minY + maxY) * 0.5;
-        const nextZoom = targetHalfHeight > this.currentZoom ? Math.min(5.0, targetHalfHeight) : this.currentZoom;
+        const nextZoomY = targetHalfHeight > this.currentZoomY ? Math.min(5.0, targetHalfHeight) : this.currentZoomY;
 
-        if (Math.abs(nextCenterY - this.currentCenterY) > 1e-4 || Math.abs(nextZoom - this.currentZoom) > 1e-4) {
+        if (Math.abs(nextCenterY - this.currentCenterY) > 1e-4 || Math.abs(nextZoomY - this.currentZoomY) > 1e-4) {
             this.currentCenterY = nextCenterY;
-            this.currentZoom = Math.min(5.0, Math.max(0.2, nextZoom));
+            this.currentZoomY = Math.min(5.0, Math.max(0.2, nextZoomY));
             this.applyCameraView();
         }
     }
@@ -1465,9 +1475,8 @@ export class NexusCharts {
     private worldToCanvasPoint(worldX: number, worldY: number, width: number, height: number): ScreenPoint {
         const safeWidth = Math.max(1, width);
         const safeHeight = Math.max(1, height);
-        const aspect = safeWidth / safeHeight;
-        const halfHeight = this.currentZoom;
-        const halfWidth = halfHeight * aspect;
+        const halfHeight = this.currentZoomY;
+        const halfWidth = this.currentZoomX;
         const left = this.currentCenterX - halfWidth;
         const bottom = this.currentCenterY - halfHeight;
 
@@ -1480,9 +1489,8 @@ export class NexusCharts {
     private canvasToWorldPoint(canvasX: number, canvasY: number, width: number, height: number): WorldPoint {
         const safeWidth = Math.max(1, width);
         const safeHeight = Math.max(1, height);
-        const aspect = safeWidth / safeHeight;
-        const halfHeight = this.currentZoom;
-        const halfWidth = halfHeight * aspect;
+        const halfHeight = this.currentZoomY;
+        const halfWidth = this.currentZoomX;
         const left = this.currentCenterX - halfWidth;
         const bottom = this.currentCenterY - halfHeight;
 
@@ -1509,8 +1517,7 @@ export class NexusCharts {
 
         const safeWidth = Math.max(1, width);
         const safeHeight = Math.max(1, height);
-        const aspect = safeWidth / safeHeight;
-        const halfWidth = this.currentZoom * aspect;
+        const halfWidth = this.currentZoomX;
         const left = this.currentCenterX - halfWidth;
         const right = this.currentCenterX + halfWidth;
 
@@ -1532,8 +1539,8 @@ export class NexusCharts {
         const safeHeight = Math.max(1, height);
         const aspect = safeWidth / safeHeight;
         return {
-            x: (2.0 * this.currentZoom * aspect) / safeWidth,
-            y: (2.0 * this.currentZoom) / safeHeight,
+            x: (2.0 * this.currentZoomX) / safeWidth,
+            y: (2.0 * this.currentZoomY) / safeHeight,
         };
     }
 
@@ -2606,8 +2613,8 @@ export class NexusCharts {
         ctx.fillStyle = this.theme.surface.panelBackground;
         ctx.lineWidth = 1;
 
-        const topWorldY = this.currentCenterY + this.currentZoom;
-        const bottomWorldY = this.currentCenterY - this.currentZoom;
+        const topWorldY = this.currentCenterY + this.currentZoomY;
+        const bottomWorldY = this.currentCenterY - this.currentZoomY;
         const visibleMinPrice = this.worldYToPriceValueInternal(bottomWorldY, geometry);
         const visibleMaxPrice = this.worldYToPriceValueInternal(topWorldY, geometry);
         const priceTicks = this.buildNiceTicks(visibleMinPrice, visibleMaxPrice, tickCount);
@@ -2629,7 +2636,7 @@ export class NexusCharts {
         }
 
         const approxMaxLabels = Math.max(3, Math.floor(width / 86));
-        const zoomDensity = this.clamp(1 / Math.max(0.35, this.currentZoom), 0.7, 2.8);
+        const zoomDensity = this.clamp(1 / Math.max(0.35, this.currentZoomX), 0.7, 2.8);
         const targetTimeLabels = Math.max(3, Math.min(approxMaxLabels, Math.floor((tickCount + 2) * zoomDensity)));
         const timeLabels = this.buildVisibleTimeLabels(geometry, width, height, targetTimeLabels);
         let lastLabelEndX = -Infinity;
@@ -2846,7 +2853,8 @@ export class NexusCharts {
         }
 
         const nextKey = [
-            this.currentZoom.toFixed(6),
+            this.currentZoomX.toFixed(6),
+            this.currentZoomY.toFixed(6),
             this.currentCenterX.toFixed(6),
             this.currentCenterY.toFixed(6),
             surface.width,
@@ -2865,7 +2873,9 @@ export class NexusCharts {
 
         this.lastTimeScaleKey = nextKey;
         this.emitEvent("timeScaleChange", {
-            zoom: this.currentZoom,
+            zoom: this.currentZoomX,
+            zoomX: this.currentZoomX,
+            zoomY: this.currentZoomY,
             centerX: this.currentCenterX,
             centerY: this.currentCenterY,
             viewportWidth: surface.width,

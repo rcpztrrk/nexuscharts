@@ -69,6 +69,8 @@ export interface ChartVisibleRange {
 
 export interface ChartTimeScaleChangeEvent {
     zoom: number;
+    zoomX: number;
+    zoomY: number;
     centerX: number;
     centerY: number;
     viewportWidth: number;

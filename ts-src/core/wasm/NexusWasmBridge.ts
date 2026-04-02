@@ -7,7 +7,7 @@ interface NexusWasmModule {
     panCamera: (deltaX: number, deltaY: number) => void;
     zoomCamera: (zoomFactor: number) => void;
     resizeViewport?: (width: number, height: number) => void;
-    setCameraView?: (centerX: number, centerY: number, zoom: number) => void;
+    setCameraView?: (centerX: number, centerY: number, zoomX: number, zoomY: number) => void;
     setSeriesData?: (opens: number[], highs: number[], lows: number[], closes: number[]) => void;
     pushObserverFrame?: (
         time: number,
@@ -122,13 +122,13 @@ export class NexusWasmBridge {
         return true;
     }
 
-    public applyCameraView(centerX: number, centerY: number, zoom: number): boolean {
+    public applyCameraView(centerX: number, centerY: number, zoomX: number, zoomY: number): boolean {
         if (!this.moduleLoaded || !this.module) {
             return false;
         }
 
         if (typeof this.module.setCameraView === "function") {
-            this.module.setCameraView(centerX, centerY, zoom);
+            this.module.setCameraView(centerX, centerY, zoomX, zoomY);
             return true;
         }
 

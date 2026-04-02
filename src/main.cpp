@@ -68,7 +68,7 @@ void ZoomCamera(float zoomFactor) {
     }
 }
 
-void SetCameraView(double centerX, double centerY, double zoom) {
+void SetCameraView(double centerX, double centerY, double zoomX, double zoomY) {
     if (g_camera == nullptr) {
         std::cerr << "[NexusCharts:WASM] setCameraView called before camera initialization." << std::endl;
         return;
@@ -77,7 +77,8 @@ void SetCameraView(double centerX, double centerY, double zoom) {
     g_camera->SetView(
         SanitizeFiniteFloat(centerX, 0.0f),
         SanitizeFiniteFloat(centerY, 0.0f),
-        SanitizeFiniteFloat(zoom, 1.0f)
+        SanitizeFiniteFloat(zoomX, 1.3333333f),
+        SanitizeFiniteFloat(zoomY, 1.0f)
     );
 }
 

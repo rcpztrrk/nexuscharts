@@ -20,10 +20,11 @@ void Camera::SetViewport(int width, int height) {
     }
 }
 
-void Camera::SetView(float centerX, float centerY, float zoom) {
+void Camera::SetView(float centerX, float centerY, float zoomX, float zoomY) {
     centerX_ = centerX;
     centerY_ = centerY;
-    zoom_ = std::clamp(zoom, 0.2f, 5.0f);
+    zoomX_ = std::clamp(zoomX, 0.2f, 5.0f);
+    zoomY_ = std::clamp(zoomY, 0.2f, 5.0f);
 }
 
 void Camera::Pan(float deltaX, float deltaY) {
@@ -35,13 +36,13 @@ void Camera::Zoom(float zoomFactor) {
     if (zoomFactor <= 0.0f) {
         return;
     }
-    zoom_ = std::clamp(zoom_ * zoomFactor, 0.2f, 5.0f);
+    zoomX_ = std::clamp(zoomX_ * zoomFactor, 0.2f, 5.0f);
+    zoomY_ = std::clamp(zoomY_ * zoomFactor, 0.2f, 5.0f);
 }
 
 std::array<float, 16> Camera::GetViewProjectionMatrix() const {
-    const float aspect = static_cast<float>(viewportWidth_) / static_cast<float>(viewportHeight_);
-    const float halfHeight = zoom_;
-    const float halfWidth = halfHeight * aspect;
+    const float halfHeight = zoomY_;
+    const float halfWidth = zoomX_;
 
     const float left = centerX_ - halfWidth;
     const float right = centerX_ + halfWidth;
