@@ -109,6 +109,7 @@ export class NexusCharts {
     private cleanupHandlers: Array<() => void> = [];
     private readonly eventListeners: Partial<Record<ChartEventName, Set<(payload: unknown) => void>>> = {};
     private lastVisibleRangeKey: string | null = null;
+    private lastTimeScaleKey: string | null = null;
     private readonly seriesManager = new SeriesManager();
     private geometryCache: { seriesId: string; revision: number; geometry: SeriesGeometry | null } | null = null;
     private timeSeriesCache:
@@ -546,6 +547,7 @@ export class NexusCharts {
         this.geometryCache = null;
         this.timeSeriesCache = null;
         this.lastVisibleRangeKey = null;
+        this.lastTimeScaleKey = null;
         this.refreshHoverFromStoredPointer();
         this.redrawDrawings();
         this.emitVisibleRangeChange();
@@ -2244,6 +2246,7 @@ export class NexusCharts {
             this.canvas.width = nextWidth;
             this.canvas.height = nextHeight;
             sizeChanged = true;
+            this.lastTimeScaleKey = null;
         }
 
         if (this.overlayCanvas) {
@@ -2766,14 +2769,16 @@ export class NexusCharts {
         if (!geometry || !surface || geometry.candles.length === 0) {
             if (this.lastVisibleRangeKey !== "empty") {
                 this.lastVisibleRangeKey = "empty";
-                this.emitEvent("visibleRangeChange", {
+                const visibleRange = {
                     startIndex: 0,
                     endIndex: -1,
                     fromTime: null,
                     toTime: null,
                     fromPrice: null,
                     toPrice: null,
-                });
+                };
+                this.emitEvent("visibleRangeChange", visibleRange);
+                this.emitTimeScaleChange(visibleRange);
             }
             return;
         }
@@ -2782,14 +2787,16 @@ export class NexusCharts {
         if (range.end < range.start) {
             if (this.lastVisibleRangeKey !== "empty") {
                 this.lastVisibleRangeKey = "empty";
-                this.emitEvent("visibleRangeChange", {
+                const visibleRange = {
                     startIndex: 0,
                     endIndex: -1,
                     fromTime: null,
                     toTime: null,
                     fromPrice: null,
                     toPrice: null,
-                });
+                };
+                this.emitEvent("visibleRangeChange", visibleRange);
+                this.emitTimeScaleChange(visibleRange);
             }
             return;
         }
@@ -2809,18 +2816,62 @@ export class NexusCharts {
             toPrice.toFixed(4),
         ].join("|");
 
-        if (nextKey === this.lastVisibleRangeKey) {
-            return;
-        }
-
-        this.lastVisibleRangeKey = nextKey;
-        this.emitEvent("visibleRangeChange", {
+        const visibleRange = {
             startIndex: range.start,
             endIndex: range.end,
             fromTime: fromCandle.source.time,
             toTime: toCandle.source.time,
             fromPrice,
             toPrice,
+        };
+
+        if (nextKey !== this.lastVisibleRangeKey) {
+            this.lastVisibleRangeKey = nextKey;
+            this.emitEvent("visibleRangeChange", visibleRange);
+        }
+        this.emitTimeScaleChange(visibleRange);
+    }
+
+    private emitTimeScaleChange(visibleRange: {
+        startIndex: number;
+        endIndex: number;
+        fromTime: number | string | null;
+        toTime: number | string | null;
+        fromPrice: number | null;
+        toPrice: number | null;
+    }): void {
+        const surface = this.overlayCanvas ?? this.canvas;
+        if (!surface) {
+            return;
+        }
+
+        const nextKey = [
+            this.currentZoom.toFixed(6),
+            this.currentCenterX.toFixed(6),
+            this.currentCenterY.toFixed(6),
+            surface.width,
+            surface.height,
+            this.timeAxisOptions.timezone,
+            this.timeAxisOptions.gapMode,
+            visibleRange.startIndex,
+            visibleRange.endIndex,
+            String(visibleRange.fromTime),
+            String(visibleRange.toTime),
+        ].join("|");
+
+        if (nextKey === this.lastTimeScaleKey) {
+            return;
+        }
+
+        this.lastTimeScaleKey = nextKey;
+        this.emitEvent("timeScaleChange", {
+            zoom: this.currentZoom,
+            centerX: this.currentCenterX,
+            centerY: this.currentCenterY,
+            viewportWidth: surface.width,
+            viewportHeight: surface.height,
+            timeAxis: this.getTimeAxis(),
+            visibleRange,
         });
     }
 

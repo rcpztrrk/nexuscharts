@@ -67,6 +67,16 @@ export interface ChartVisibleRange {
     toPrice: number | null;
 }
 
+export interface ChartTimeScaleChangeEvent {
+    zoom: number;
+    centerX: number;
+    centerY: number;
+    viewportWidth: number;
+    viewportHeight: number;
+    timeAxis: TimeAxisState;
+    visibleRange: ChartVisibleRange;
+}
+
 export interface ChartCrosshairMoveEvent {
     candle: HoveredCandle | null;
 }
@@ -107,6 +117,7 @@ export interface ChartEventMap {
     crosshairMove: ChartCrosshairMoveEvent;
     selectionChange: ChartSelectionChangeEvent;
     visibleRangeChange: ChartVisibleRange;
+    timeScaleChange: ChartTimeScaleChangeEvent;
     click: ChartClickEvent;
     drawingSelected: ChartDrawingSelectionEvent;
     drawingUpdated: ChartDrawingUpdateEvent;

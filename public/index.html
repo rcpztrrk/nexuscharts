@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -652,6 +652,7 @@
                 click: "waiting...",
                 selection: "waiting...",
                 range: "waiting...",
+                scale: "waiting...",
                 drawing: "waiting..."
             };
 
@@ -664,6 +665,7 @@
                     `click: ${eventState.click}\n` +
                     `selection: ${eventState.selection}\n` +
                     `range: ${eventState.range}\n` +
+                    `scale: ${eventState.scale}\n` +
                     `drawing: ${eventState.drawing}`;
             };
 
@@ -945,6 +947,13 @@
                 renderEventState();
             });
 
+            chart.subscribe("timeScaleChange", (event) => {
+                eventState.scale =
+                    `zoom ${event.zoom.toFixed(2)} | center ${event.centerX.toFixed(2)},${event.centerY.toFixed(2)} | ` +
+                    `${event.timeAxis.timezone} / ${event.timeAxis.gapMode}`;
+                renderEventState();
+            });
+
             chart.subscribe("drawingSelected", (event) => {
                 eventState.drawing = event.drawing
                     ? `selected ${event.drawing.type}`
@@ -1093,5 +1102,6 @@
 </body>
 
 </html>
+
 
 
