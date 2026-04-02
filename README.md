@@ -133,6 +133,21 @@ cmd /c npm run build
 cmd /c npm run dev
 ```
 
+## Package Outputs
+
+The package manifest is now aligned for npm distribution:
+
+- `import { NexusCharts } from "nexuscharts"` -> `build/nexus-charts.esm.js`
+- `require("nexuscharts")` -> `build/nexus-charts.cjs.js`
+- Type declarations -> `build/types/index.d.ts`
+- WASM runtime assets -> `build/nexuscharts.js` and `build/nexuscharts.wasm`
+
+To verify the publish payload locally:
+
+```bash
+npm run pack:check
+```
+
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE).

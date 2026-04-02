@@ -5,7 +5,7 @@ export default [
         input: 'ts-src/index.ts',
         output: [
             {
-                file: 'build/nexus-charts.cjs.js',
+                file: 'build/nexus-charts.cjs',
                 format: 'cjs',
             },
             {
