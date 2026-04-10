@@ -105,9 +105,14 @@ export interface ChartDrawingSelectionEvent {
     drawing: DrawingDefinition | null;
 }
 
+export type ChartDrawingUpdateMode = "move" | "p0" | "p1" | "poly_move" | "poly_point" | "hline" | "vline";
+
 export interface ChartDrawingUpdateEvent {
     drawing: DrawingDefinition;
+    previousDrawing: DrawingDefinition | null;
     reason: "drag";
+    mode: ChartDrawingUpdateMode;
+    pointIndex: number | null;
 }
 
 export interface ChartDrawingDeleteEvent {

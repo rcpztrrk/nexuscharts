@@ -962,7 +962,8 @@
             });
 
             chart.subscribe("drawingUpdated", (event) => {
-                eventState.drawing = `updated ${event.drawing.type} (${event.reason})`;
+                const handleLabel = event.pointIndex !== null ? `#${event.pointIndex}` : event.mode;
+                eventState.drawing = `updated ${event.drawing.type} (${event.reason}, ${handleLabel})`;
                 renderEventState();
             });
 

@@ -12,6 +12,7 @@ import type {
 export interface StoredSeries {
     type: SeriesType;
     data: CandleDataPoint[];
+    ownsData: boolean;
     style: SeriesStyle;
     usesDefaultColor: boolean;
     valueKey: SeriesValueKey;
@@ -27,6 +28,7 @@ interface SeriesManagerHooks {
 
 export class SeriesManager {
     private readonly store = new Map<string, StoredSeries>();
+    private static readonly EMPTY_DATA: CandleDataPoint[] = [];
 
     public has(id: string): boolean {
         return this.store.has(id);
@@ -56,7 +58,8 @@ export class SeriesManager {
         const valueKey: SeriesValueKey = options.valueKey ?? (type === "volume" ? "volume" : "close");
         this.store.set(id, {
             type,
-            data: [],
+            data: SeriesManager.EMPTY_DATA,
+            ownsData: true,
             style,
             usesDefaultColor: !options.color,
             valueKey,
@@ -69,7 +72,8 @@ export class SeriesManager {
             if (!series) {
                 return;
             }
-            series.data = [...data];
+            series.data = data.length ? data : SeriesManager.EMPTY_DATA;
+            series.ownsData = false;
             series.revision += 1;
             hooks.onSeriesMutated(id);
         };
@@ -79,6 +83,7 @@ export class SeriesManager {
             if (!series) {
                 return;
             }
+            this.ensureOwnedData(series);
             series.data.push(point);
             series.revision += 1;
             hooks.onSeriesMutated(id);
@@ -95,8 +100,10 @@ export class SeriesManager {
                     console.warn("[NexusCharts] updateLast requires a full candle when no data exists.", { id, point });
                     return;
                 }
+                this.ensureOwnedData(series);
                 series.data.push(point);
             } else {
+                this.ensureOwnedData(series);
                 const lastIndex = series.data.length - 1;
                 const last = series.data[lastIndex];
                 series.data[lastIndex] = { ...last, ...point };
@@ -120,7 +127,8 @@ export class SeriesManager {
             if (!series) {
                 return;
             }
-            series.data = [];
+            series.data = SeriesManager.EMPTY_DATA;
+            series.ownsData = true;
             series.revision += 1;
             hooks.onSeriesMutated(id);
         };
@@ -166,5 +174,13 @@ export class SeriesManager {
             return minValue;
         }
         return Math.min(maxValue, Math.max(minValue, value));
+    }
+
+    private ensureOwnedData(series: StoredSeries): void {
+        if (series.ownsData) {
+            return;
+        }
+        series.data = [...series.data];
+        series.ownsData = true;
     }
 }

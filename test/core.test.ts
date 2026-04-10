@@ -8,6 +8,17 @@ import { PerfTracker } from "../ts-src/core/perf/PerfTracker.ts";
 
 const baseTheme = createChartTheme();
 
+const createSeriesHooks = (mutations: string[] = []) => ({
+  createId: (() => {
+    let i = 0;
+    return () => `series_${++i}`;
+  })(),
+  isCompleteCandle: (point: any) => (
+    point.time !== undefined && point.open !== undefined && point.high !== undefined && point.low !== undefined && point.close !== undefined
+  ),
+  onSeriesMutated: (id: string) => mutations.push(id),
+});
+
 test("SeriesManager creates series and updates last candle safely", () => {
   const manager = new SeriesManager();
   const mutations: string[] = [];
@@ -29,16 +40,28 @@ test("SeriesManager creates series and updates last candle safely", () => {
   assert.deepEqual(mutations, ["series_1", "series_1"]);
 });
 
+test("SeriesManager detaches external arrays only when mutation happens", () => {
+  const manager = new SeriesManager();
+  const hooks = createSeriesHooks();
+  const series = manager.createSeries({ type: "line" }, hooks, baseTheme);
+  const source = [
+    { time: 1, open: 10, high: 12, low: 9, close: 11 },
+    { time: 2, open: 11, high: 13, low: 10, close: 12 },
+  ];
+
+  series.setData(source);
+  assert.equal(manager.get(series.id)?.data, source);
+
+  series.updateLast({ close: 15 });
+
+  assert.equal(source[1].close, 12);
+  assert.notEqual(manager.get(series.id)?.data, source);
+  assert.equal(manager.get(series.id)?.data[1].close, 15);
+});
+
 test("SeriesManager respects custom colors and refreshes default colors on theme apply", () => {
   const manager = new SeriesManager();
-  const hooks = {
-    createId: (() => {
-      let i = 0;
-      return () => `series_${++i}`;
-    })(),
-    isCompleteCandle: (point: any) => point.time !== undefined && point.open !== undefined && point.high !== undefined && point.low !== undefined && point.close !== undefined,
-    onSeriesMutated: () => {},
-  };
+  const hooks = createSeriesHooks();
 
   const defaultSeries = manager.createSeries({ type: "line" }, hooks, baseTheme);
   const customSeries = manager.createSeries({ type: "line", color: "#123456" }, hooks, baseTheme);

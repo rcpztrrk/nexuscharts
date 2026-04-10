@@ -8,6 +8,7 @@ import type {
     ChartEventMap,
     ChartEventName,
     ChartTheme,
+    ChartDrawingUpdateMode,
     SeriesType,
     ObserverFrame,
     ObserverMetrics,
@@ -733,6 +734,7 @@ export class NexusCharts {
         let longPressTriggered = false;
         let lastTapAt = 0;
         let updatedDrawingIdDuringPointer: string | null = null;
+        let dragStartDrawingSnapshot: DrawingDefinition | null = null;
         let lastTapX = 0;
         let lastTapY = 0;
         const longPressDelayMs = 380;
@@ -779,6 +781,7 @@ export class NexusCharts {
 
                         this.setActiveDrawingSelection(hit.id);
                         updatedDrawingIdDuringPointer = null;
+                        dragStartDrawingSnapshot = this.cloneDrawingDefinition(drawing);
                         this.drawingManager.setActiveDrag({
                             id: hit.id,
                             mode: hit.mode,
@@ -795,6 +798,7 @@ export class NexusCharts {
                 }
             }
             this.clearActiveDrawingInteraction();
+            dragStartDrawingSnapshot = null;
             this.isDragging = true;
             return true;
         };
@@ -899,11 +903,16 @@ export class NexusCharts {
                 if (updatedDrawingIdDuringPointer === activeDrag.id) {
                     const updatedDrawing = this.getDrawingSnapshot(activeDrag.id);
                     if (updatedDrawing) {
-                        this.emitDrawingUpdated(updatedDrawing, "drag");
+                        this.emitDrawingUpdated(updatedDrawing, "drag", {
+                            mode: activeDrag.mode,
+                            pointIndex: activeDrag.pointIndex ?? null,
+                            previousDrawing: dragStartDrawingSnapshot,
+                        });
                     }
                 }
             }
             updatedDrawingIdDuringPointer = null;
+            dragStartDrawingSnapshot = null;
         };
 
         const onClick = (event: MouseEvent) => {
@@ -1579,9 +1588,13 @@ export class NexusCharts {
 
         let minPrice = Number.POSITIVE_INFINITY;
         let maxPrice = Number.NEGATIVE_INFINITY;
-        const valid: CandleDataPoint[] = [];
+        let validCount = 0;
+        let preserveGaps = this.timeAxisOptions.gapMode === "preserve";
+        let minTime = Number.POSITIVE_INFINITY;
+        let maxTime = Number.NEGATIVE_INFINITY;
 
-        for (const point of source) {
+        for (let i = 0; i < source.length; i += 1) {
+            const point = source[i];
             const open = Number(point.open);
             const high = Number(point.high);
             const low = Number(point.low);
@@ -1594,45 +1607,61 @@ export class NexusCharts {
             const pointHigh = Math.max(high, open, close, low);
             minPrice = Math.min(minPrice, pointLow);
             maxPrice = Math.max(maxPrice, pointHigh);
-            valid.push(point);
+            validCount += 1;
+
+            if (preserveGaps) {
+                const numericTime = this.toNumericTime(point.time);
+                if (!this.isLikelyTimestamp(numericTime)) {
+                    preserveGaps = false;
+                } else {
+                    const normalizedTime = this.normalizeTimestampMs(numericTime);
+                    minTime = Math.min(minTime, normalizedTime);
+                    maxTime = Math.max(maxTime, normalizedTime);
+                }
+            }
         }
 
-        if (valid.length === 0) {
+        if (validCount === 0) {
             this.geometryCache = { seriesId: entry.id, revision: entry.revision, geometry: null };
             this.timeSeriesCache = null;
             return null;
         }
 
+        preserveGaps = preserveGaps && validCount > 1 && Number.isFinite(minTime) && Number.isFinite(maxTime);
+
         const range = Math.max(maxPrice - minPrice, 1e-5);
         const scale = 1.7 / range;
         const startX = -0.92;
-        const stepX = valid.length > 1 ? 1.84 / (valid.length - 1) : 0.0;
-        const numericTimes = valid.map((point) => this.toNumericTime(point.time));
-        const preserveGaps =
-            this.timeAxisOptions.gapMode === "preserve"
-            && valid.length > 1
-            && numericTimes.every((value): value is number => value !== null && this.isLikelyTimestamp(value));
-        const normalizedTimes = preserveGaps
-            ? numericTimes.map((value) => this.normalizeTimestampMs(value as number))
-            : [];
-        const minTime = preserveGaps ? normalizedTimes[0] : 0;
-        const maxTime = preserveGaps ? normalizedTimes[normalizedTimes.length - 1] : 0;
+        const stepX = validCount > 1 ? 1.84 / (validCount - 1) : 0.0;
         const timeSpan = preserveGaps ? Math.max(1, maxTime - minTime) : 1;
-        const normalizeY = (value: number): number => ((value - minPrice) * scale) - 0.85;
+        const candles = new Array<NormalizedCandleDataPoint>(validCount);
 
-        const candles: NormalizedCandleDataPoint[] = valid.map((point, index) => {
+        for (let i = 0, writeIndex = 0; i < source.length; i += 1) {
+            const point = source[i];
+            const open = Number(point.open);
+            const high = Number(point.high);
+            const low = Number(point.low);
+            const close = Number(point.close);
+            if (!Number.isFinite(open) || !Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) {
+                continue;
+            }
+
+            const pointHigh = Math.max(high, open, close, low);
+            const pointLow = Math.min(low, open, close, high);
             const x = preserveGaps
-                ? startX + ((1.84 * (normalizedTimes[index] - minTime)) / timeSpan)
-                : startX + (stepX * index);
-            return {
+                ? startX + ((1.84 * (this.normalizeTimestampMs(this.toNumericTime(point.time) as number) - minTime)) / timeSpan)
+                : startX + (stepX * writeIndex);
+
+            candles[writeIndex] = {
                 source: point,
                 x,
-                open: normalizeY(point.open),
-                high: normalizeY(Math.max(point.high, point.open, point.close, point.low)),
-                low: normalizeY(Math.min(point.low, point.open, point.close, point.high)),
-                close: normalizeY(point.close),
+                open: ((open - minPrice) * scale) - 0.85,
+                high: ((pointHigh - minPrice) * scale) - 0.85,
+                low: ((pointLow - minPrice) * scale) - 0.85,
+                close: ((close - minPrice) * scale) - 0.85,
             };
-        });
+            writeIndex += 1;
+        }
 
         const geometry: SeriesGeometry = { candles, minPrice, maxPrice, scale };
         this.geometryCache = { seriesId: entry.id, revision: entry.revision, geometry };
@@ -2756,10 +2785,17 @@ export class NexusCharts {
         });
     }
 
-    private emitDrawingUpdated(drawing: DrawingDefinition, reason: "drag"): void {
+    private emitDrawingUpdated(
+        drawing: DrawingDefinition,
+        reason: "drag",
+        meta: { mode: ChartDrawingUpdateMode; pointIndex: number | null; previousDrawing: DrawingDefinition | null }
+    ): void {
         this.emitEvent("drawingUpdated", {
             drawing: this.cloneDrawingDefinition(drawing) ?? drawing,
+            previousDrawing: this.cloneDrawingDefinition(meta.previousDrawing),
             reason,
+            mode: meta.mode,
+            pointIndex: meta.pointIndex,
         });
     }
 

@@ -153,12 +153,15 @@ export class NexusWasmBridge {
         }
 
         const scratch = this.seriesSyncScratch;
-        scratch.opens.length = 0;
-        scratch.highs.length = 0;
-        scratch.lows.length = 0;
-        scratch.closes.length = 0;
+        const sourceLength = data.length;
+        scratch.opens.length = sourceLength;
+        scratch.highs.length = sourceLength;
+        scratch.lows.length = sourceLength;
+        scratch.closes.length = sourceLength;
 
-        for (const point of data) {
+        let writeIndex = 0;
+        for (let i = 0; i < sourceLength; i += 1) {
+            const point = data[i];
             const open = Number(point.open);
             const highRaw = Number(point.high);
             const lowRaw = Number(point.low);
@@ -166,10 +169,18 @@ export class NexusWasmBridge {
             if (!Number.isFinite(open) || !Number.isFinite(highRaw) || !Number.isFinite(lowRaw) || !Number.isFinite(close)) {
                 continue;
             }
-            scratch.opens.push(open);
-            scratch.highs.push(Math.max(highRaw, open, close, lowRaw));
-            scratch.lows.push(Math.min(lowRaw, open, close, highRaw));
-            scratch.closes.push(close);
+            scratch.opens[writeIndex] = open;
+            scratch.highs[writeIndex] = Math.max(highRaw, open, close, lowRaw);
+            scratch.lows[writeIndex] = Math.min(lowRaw, open, close, highRaw);
+            scratch.closes[writeIndex] = close;
+            writeIndex += 1;
+        }
+
+        if (writeIndex !== sourceLength) {
+            scratch.opens.length = writeIndex;
+            scratch.highs.length = writeIndex;
+            scratch.lows.length = writeIndex;
+            scratch.closes.length = writeIndex;
         }
 
         try {
