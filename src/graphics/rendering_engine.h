@@ -1,10 +1,30 @@
 #pragma once
 
 #include <GLES3/gl3.h>
+#include <cstddef>
 #include <cstdint>
+#include <vector>
 
 class Camera;
 class DataManager;
+
+struct RenderingCandleOhlc {
+    float x;
+    float open;
+    float high;
+    float low;
+    float close;
+};
+
+struct RenderingInstance {
+    float x;
+    float y0;
+    float y1;
+    float halfWidth;
+    float colorR;
+    float colorG;
+    float colorB;
+};
 
 class RenderingEngine {
 public:
@@ -18,6 +38,7 @@ public:
 private:
     bool InitializePipeline();
     void RefreshInstanceBuffersIfNeeded();
+    void RebuildCandleCache();
 
     bool initialized_ = false;
     bool pipelineAttempted_ = false;
@@ -39,4 +60,9 @@ private:
     int appliedVisibleStart_ = 0;
     int appliedVisibleEnd_ = -1;
     bool hasAppliedVisibleRange_ = false;
+    std::vector<RenderingCandleOhlc> candleCache_;
+    std::vector<RenderingInstance> bodyInstancesScratch_;
+    std::vector<RenderingInstance> wickInstancesScratch_;
+    std::size_t bodyInstanceBufferCapacityBytes_ = 0;
+    std::size_t wickInstanceBufferCapacityBytes_ = 0;
 };

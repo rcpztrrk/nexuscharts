@@ -13,24 +13,6 @@
 
 namespace {
 
-struct CandleOhlc {
-    float x;
-    float open;
-    float high;
-    float low;
-    float close;
-};
-
-struct RenderInstance {
-    float x;
-    float y0;
-    float y1;
-    float halfWidth;
-    float colorR;
-    float colorG;
-    float colorB;
-};
-
 constexpr const char* kVertexShaderSource = R"(#version 300 es
 precision highp float;
 
@@ -129,12 +111,12 @@ GLuint CreateProgram(const char* vertexSource, const char* fragmentSource) {
     return 0;
 }
 
-std::vector<CandleOhlc> BuildSampleCandles() {
+std::vector<RenderingCandleOhlc> BuildSampleCandles() {
     constexpr int kCandleCount = 40;
     constexpr float kStartX = -0.92f;
     constexpr float kStep = 1.84f / static_cast<float>(kCandleCount - 1);
 
-    std::vector<CandleOhlc> candles;
+    std::vector<RenderingCandleOhlc> candles;
     candles.reserve(kCandleCount);
 
     float previousClose = -0.45f;
@@ -174,7 +156,7 @@ std::vector<CandleOhlc> BuildSampleCandles() {
     return candles;
 }
 
-std::vector<CandleOhlc> BuildCandlesFromDataManager(const DataManager* dataManager) {
+std::vector<RenderingCandleOhlc> BuildCandlesFromDataManager(const DataManager* dataManager) {
     if (dataManager == nullptr) {
         return BuildSampleCandles();
     }
@@ -216,7 +198,7 @@ std::vector<CandleOhlc> BuildCandlesFromDataManager(const DataManager* dataManag
     const float startX = -0.92f;
     const float stepX = (validCount > 1) ? (1.84f / static_cast<float>(validCount - 1)) : 0.0f;
 
-    std::vector<CandleOhlc> output;
+    std::vector<RenderingCandleOhlc> output;
     output.reserve(validCount);
 
     std::size_t outputIndex = 0;
@@ -238,55 +220,6 @@ std::vector<CandleOhlc> BuildCandlesFromDataManager(const DataManager* dataManag
     }
 
     return output;
-}
-
-void BuildRenderInstances(
-    const std::vector<CandleOhlc>& ohlc,
-    std::vector<RenderInstance>* bodyInstances,
-    std::vector<RenderInstance>* wickInstances
-) {
-    constexpr float kBodyHalfWidth = 0.020f;
-    constexpr float kWickHalfWidth = 0.004f;
-
-    bodyInstances->clear();
-    wickInstances->clear();
-    bodyInstances->reserve(ohlc.size());
-    wickInstances->reserve(ohlc.size());
-
-    for (const CandleOhlc& candle : ohlc) {
-        const bool isUp = candle.close >= candle.open;
-
-        bodyInstances->push_back({
-            candle.x,
-            candle.open,
-            candle.close,
-            kBodyHalfWidth,
-            isUp ? 0.18f : 0.92f,
-            isUp ? 0.80f : 0.28f,
-            isUp ? 0.34f : 0.30f
-        });
-
-        wickInstances->push_back({
-            candle.x,
-            candle.low,
-            candle.high,
-            kWickHalfWidth,
-            0.78f,
-            0.82f,
-            0.90f
-        });
-    }
-}
-
-void UploadInstances(GLuint instanceVbo, const std::vector<RenderInstance>& instances, GLsizei* outCount) {
-    glBindBuffer(GL_ARRAY_BUFFER, instanceVbo);
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        static_cast<GLsizeiptr>(instances.size() * sizeof(RenderInstance)),
-        instances.empty() ? nullptr : instances.data(),
-        GL_DYNAMIC_DRAW
-    );
-    *outCount = static_cast<GLsizei>(instances.size());
 }
 
 struct VisibleRange {
@@ -331,10 +264,10 @@ VisibleRange ComputeVisibleRange(const Camera* camera, int viewportWidth, int vi
 }
 
 void BuildRenderInstancesRange(
-    const std::vector<CandleOhlc>& ohlc,
+    const std::vector<RenderingCandleOhlc>& ohlc,
     const VisibleRange& range,
-    std::vector<RenderInstance>* bodyInstances,
-    std::vector<RenderInstance>* wickInstances
+    std::vector<RenderingInstance>* bodyInstances,
+    std::vector<RenderingInstance>* wickInstances
 ) {
     constexpr float kBodyHalfWidth = 0.020f;
     constexpr float kWickHalfWidth = 0.004f;
@@ -353,7 +286,7 @@ void BuildRenderInstancesRange(
     wickInstances->reserve(static_cast<size_t>(span));
 
     for (int i = start; i <= end; ++i) {
-        const CandleOhlc& candle = ohlc[static_cast<size_t>(i)];
+        const RenderingCandleOhlc& candle = ohlc[static_cast<size_t>(i)];
         const bool isUp = candle.close >= candle.open;
 
         bodyInstances->push_back({
@@ -378,134 +311,36 @@ void BuildRenderInstancesRange(
     }
 }
 
-bool BuildWindowedInstancesFromDataManager(
-    const DataManager* dataManager,
-    const Camera* camera,
-    int viewportWidth,
-    int viewportHeight,
-    std::vector<RenderInstance>* bodyInstances,
-    std::vector<RenderInstance>* wickInstances,
-    VisibleRange* outRange
+void UploadInstances(
+    GLuint instanceVbo,
+    const std::vector<RenderingInstance>& instances,
+    GLsizei* outCount,
+    std::size_t* capacityBytes
 ) {
-    if (dataManager == nullptr) {
-        const std::vector<CandleOhlc> sample = BuildSampleCandles();
-        const VisibleRange range = ComputeVisibleRange(camera, viewportWidth, viewportHeight, static_cast<int>(sample.size()));
-        BuildRenderInstancesRange(sample, range, bodyInstances, wickInstances);
-        if (outRange) {
-            *outRange = range;
-        }
-        return true;
+    glBindBuffer(GL_ARRAY_BUFFER, instanceVbo);
+
+    const std::size_t requiredBytes = instances.size() * sizeof(RenderingInstance);
+    if (requiredBytes > *capacityBytes) {
+        std::size_t nextCapacity = std::max(requiredBytes, (*capacityBytes == 0) ? requiredBytes : (*capacityBytes * 2));
+        glBufferData(
+            GL_ARRAY_BUFFER,
+            static_cast<GLsizeiptr>(nextCapacity),
+            nullptr,
+            GL_DYNAMIC_DRAW
+        );
+        *capacityBytes = nextCapacity;
     }
 
-    const std::vector<DataManager::Candle>& source = dataManager->GetCandles();
-    if (source.empty()) {
-        if (dataManager->GetRevision() == 0) {
-            const std::vector<CandleOhlc> sample = BuildSampleCandles();
-            const VisibleRange range = ComputeVisibleRange(camera, viewportWidth, viewportHeight, static_cast<int>(sample.size()));
-            BuildRenderInstancesRange(sample, range, bodyInstances, wickInstances);
-            if (outRange) {
-                *outRange = range;
-            }
-            return true;
-        }
-
-        bodyInstances->clear();
-        wickInstances->clear();
-        if (outRange) {
-            *outRange = {};
-        }
-        return true;
+    if (requiredBytes > 0) {
+        glBufferSubData(
+            GL_ARRAY_BUFFER,
+            0,
+            static_cast<GLsizeiptr>(requiredBytes),
+            instances.data()
+        );
     }
 
-    float minLow = std::numeric_limits<float>::max();
-    float maxHigh = std::numeric_limits<float>::lowest();
-    for (const DataManager::Candle& candle : source) {
-        const float low = std::min({candle.low, candle.open, candle.close, candle.high});
-        const float high = std::max({candle.high, candle.open, candle.close, candle.low});
-        if (!std::isfinite(low) || !std::isfinite(high)) {
-            continue;
-        }
-        minLow = std::min(minLow, low);
-        maxHigh = std::max(maxHigh, high);
-    }
-
-    if (!std::isfinite(minLow) || !std::isfinite(maxHigh) || maxHigh <= minLow) {
-        bodyInstances->clear();
-        wickInstances->clear();
-        if (outRange) {
-            *outRange = {};
-        }
-        return true;
-    }
-
-    const float rangeY = std::max(maxHigh - minLow, 1e-5f);
-    const float scaleY = 1.7f / rangeY;
-    const auto normalizeY = [minLow, scaleY](float value) -> float {
-        return ((value - minLow) * scaleY) - 0.85f;
-    };
-
-    const int count = static_cast<int>(source.size());
-    const VisibleRange range = ComputeVisibleRange(camera, viewportWidth, viewportHeight, count);
-    if (outRange) {
-        *outRange = range;
-    }
-
-    bodyInstances->clear();
-    wickInstances->clear();
-    if (range.end < range.start) {
-        return true;
-    }
-
-    constexpr float kStartX = -0.92f;
-    constexpr float kSpanX = 1.84f;
-    const float stepX = (count > 1) ? (kSpanX / static_cast<float>(count - 1)) : 0.0f;
-
-    const int span = std::max(0, (range.end - range.start) + 1);
-    bodyInstances->reserve(static_cast<size_t>(span));
-    wickInstances->reserve(static_cast<size_t>(span));
-
-    constexpr float kBodyHalfWidth = 0.020f;
-    constexpr float kWickHalfWidth = 0.004f;
-
-    for (int i = range.start; i <= range.end; ++i) {
-        const DataManager::Candle& candle = source[static_cast<size_t>(i)];
-        const float open = candle.open;
-        const float close = candle.close;
-        const float high = std::max({candle.high, candle.open, candle.close, candle.low});
-        const float low = std::min({candle.low, candle.open, candle.close, candle.high});
-        if (!std::isfinite(open) || !std::isfinite(close) || !std::isfinite(high) || !std::isfinite(low)) {
-            continue;
-        }
-
-        const float x = kStartX + (stepX * static_cast<float>(i));
-        const float nOpen = normalizeY(open);
-        const float nClose = normalizeY(close);
-        const float nHigh = normalizeY(high);
-        const float nLow = normalizeY(low);
-        const bool isUp = nClose >= nOpen;
-
-        bodyInstances->push_back({
-            x,
-            nOpen,
-            nClose,
-            kBodyHalfWidth,
-            isUp ? 0.18f : 0.92f,
-            isUp ? 0.80f : 0.28f,
-            isUp ? 0.34f : 0.30f
-        });
-
-        wickInstances->push_back({
-            x,
-            nLow,
-            nHigh,
-            kWickHalfWidth,
-            0.78f,
-            0.82f,
-            0.90f
-        });
-    }
-
-    return true;
+    *outCount = static_cast<GLsizei>(instances.size());
 }
 
 std::array<float, 16> BuildIdentityMatrix() {
@@ -600,27 +435,20 @@ bool RenderingEngine::InitializePipeline() {
         -1.0f,  1.0f
     };
 
-    std::vector<RenderInstance> bodyInstances;
-    std::vector<RenderInstance> wickInstances;
-    VisibleRange visibleRange;
-    BuildWindowedInstancesFromDataManager(
-        dataManager_,
+    RebuildCandleCache();
+    const VisibleRange visibleRange = ComputeVisibleRange(
         camera_,
         viewportWidth_,
         viewportHeight_,
-        &bodyInstances,
-        &wickInstances,
-        &visibleRange
+        static_cast<int>(candleCache_.size())
     );
-
-    bodyInstanceCount_ = static_cast<GLsizei>(bodyInstances.size());
-    wickInstanceCount_ = static_cast<GLsizei>(wickInstances.size());
+    BuildRenderInstancesRange(candleCache_, visibleRange, &bodyInstancesScratch_, &wickInstancesScratch_);
 
     glGenBuffers(1, &quadVbo_);
     glBindBuffer(GL_ARRAY_BUFFER, quadVbo_);
     glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
 
-    const auto configureLayer = [&](const std::vector<RenderInstance>& instances, GLuint* vao, GLuint* instanceVbo) {
+    const auto configureLayer = [&](GLuint* vao, GLuint* instanceVbo) {
         glGenVertexArrays(1, vao);
         glBindVertexArray(*vao);
 
@@ -630,38 +458,36 @@ bool RenderingEngine::InitializePipeline() {
 
         glGenBuffers(1, instanceVbo);
         glBindBuffer(GL_ARRAY_BUFFER, *instanceVbo);
-        glBufferData(
-            GL_ARRAY_BUFFER,
-            static_cast<GLsizeiptr>(instances.size() * sizeof(RenderInstance)),
-            instances.empty() ? nullptr : instances.data(),
-            GL_DYNAMIC_DRAW
-        );
+        glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
 
-        constexpr GLsizei stride = static_cast<GLsizei>(sizeof(RenderInstance));
+        constexpr GLsizei stride = static_cast<GLsizei>(sizeof(RenderingInstance));
 
         glEnableVertexAttribArray(static_cast<GLuint>(xLoc));
-        glVertexAttribPointer(static_cast<GLuint>(xLoc), 1, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(RenderInstance, x)));
+        glVertexAttribPointer(static_cast<GLuint>(xLoc), 1, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(RenderingInstance, x)));
         glVertexAttribDivisor(static_cast<GLuint>(xLoc), 1);
 
         glEnableVertexAttribArray(static_cast<GLuint>(y0Loc));
-        glVertexAttribPointer(static_cast<GLuint>(y0Loc), 1, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(RenderInstance, y0)));
+        glVertexAttribPointer(static_cast<GLuint>(y0Loc), 1, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(RenderingInstance, y0)));
         glVertexAttribDivisor(static_cast<GLuint>(y0Loc), 1);
 
         glEnableVertexAttribArray(static_cast<GLuint>(y1Loc));
-        glVertexAttribPointer(static_cast<GLuint>(y1Loc), 1, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(RenderInstance, y1)));
+        glVertexAttribPointer(static_cast<GLuint>(y1Loc), 1, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(RenderingInstance, y1)));
         glVertexAttribDivisor(static_cast<GLuint>(y1Loc), 1);
 
         glEnableVertexAttribArray(static_cast<GLuint>(halfWidthLoc));
-        glVertexAttribPointer(static_cast<GLuint>(halfWidthLoc), 1, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(RenderInstance, halfWidth)));
+        glVertexAttribPointer(static_cast<GLuint>(halfWidthLoc), 1, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(RenderingInstance, halfWidth)));
         glVertexAttribDivisor(static_cast<GLuint>(halfWidthLoc), 1);
 
         glEnableVertexAttribArray(static_cast<GLuint>(colorLoc));
-        glVertexAttribPointer(static_cast<GLuint>(colorLoc), 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(RenderInstance, colorR)));
+        glVertexAttribPointer(static_cast<GLuint>(colorLoc), 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(RenderingInstance, colorR)));
         glVertexAttribDivisor(static_cast<GLuint>(colorLoc), 1);
     };
 
-    configureLayer(wickInstances, &wickVao_, &wickInstanceVbo_);
-    configureLayer(bodyInstances, &bodyVao_, &bodyInstanceVbo_);
+    configureLayer(&wickVao_, &wickInstanceVbo_);
+    configureLayer(&bodyVao_, &bodyInstanceVbo_);
+
+    UploadInstances(wickInstanceVbo_, wickInstancesScratch_, &wickInstanceCount_, &wickInstanceBufferCapacityBytes_);
+    UploadInstances(bodyInstanceVbo_, bodyInstancesScratch_, &bodyInstanceCount_, &bodyInstanceBufferCapacityBytes_);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
@@ -683,14 +509,26 @@ bool RenderingEngine::InitializePipeline() {
     return true;
 }
 
+void RenderingEngine::RebuildCandleCache() {
+    candleCache_ = BuildCandlesFromDataManager(dataManager_);
+}
+
 void RenderingEngine::RefreshInstanceBuffersIfNeeded() {
     if (!initialized_ || dataManager_ == nullptr) {
         return;
     }
 
     const std::uint64_t revision = dataManager_->GetRevision();
-    const int candleCount = static_cast<int>(dataManager_->GetCandles().size());
-    const VisibleRange visibleRange = ComputeVisibleRange(camera_, viewportWidth_, viewportHeight_, candleCount);
+    if (!hasAppliedDataRevision_ || revision != appliedDataRevision_) {
+        RebuildCandleCache();
+    }
+
+    const VisibleRange visibleRange = ComputeVisibleRange(
+        camera_,
+        viewportWidth_,
+        viewportHeight_,
+        static_cast<int>(candleCache_.size())
+    );
     const bool rangeChanged = !hasAppliedVisibleRange_
         || visibleRange.start != appliedVisibleStart_
         || visibleRange.end != appliedVisibleEnd_;
@@ -699,27 +537,16 @@ void RenderingEngine::RefreshInstanceBuffersIfNeeded() {
         return;
     }
 
-    std::vector<RenderInstance> bodyInstances;
-    std::vector<RenderInstance> wickInstances;
-    VisibleRange builtRange;
-    BuildWindowedInstancesFromDataManager(
-        dataManager_,
-        camera_,
-        viewportWidth_,
-        viewportHeight_,
-        &bodyInstances,
-        &wickInstances,
-        &builtRange
-    );
+    BuildRenderInstancesRange(candleCache_, visibleRange, &bodyInstancesScratch_, &wickInstancesScratch_);
 
-    UploadInstances(bodyInstanceVbo_, bodyInstances, &bodyInstanceCount_);
-    UploadInstances(wickInstanceVbo_, wickInstances, &wickInstanceCount_);
+    UploadInstances(bodyInstanceVbo_, bodyInstancesScratch_, &bodyInstanceCount_, &bodyInstanceBufferCapacityBytes_);
+    UploadInstances(wickInstanceVbo_, wickInstancesScratch_, &wickInstanceCount_, &wickInstanceBufferCapacityBytes_);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
     appliedDataRevision_ = revision;
     hasAppliedDataRevision_ = true;
-    appliedVisibleStart_ = builtRange.start;
-    appliedVisibleEnd_ = builtRange.end;
+    appliedVisibleStart_ = visibleRange.start;
+    appliedVisibleEnd_ = visibleRange.end;
     hasAppliedVisibleRange_ = true;
 }
 

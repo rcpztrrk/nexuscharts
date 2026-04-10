@@ -130,7 +130,7 @@ void SetSeriesData(val opens, val highs, val lows, val closes) {
         candles.push_back({open, high, low, close});
     }
 
-    g_dataManager->SetCandles(candles);
+    g_dataManager->SetCandles(std::move(candles));
 }
 
 void PushObserverFrame(

@@ -20,6 +20,11 @@ void DataManager::SetCandles(const std::vector<Candle>& candles) {
     ++revision_;
 }
 
+void DataManager::SetCandles(std::vector<Candle>&& candles) {
+    candles_ = std::move(candles);
+    ++revision_;
+}
+
 void DataManager::ClearCandles() {
     candles_.clear();
     ++revision_;

@@ -27,6 +27,7 @@ public:
     void ProcessData();
 
     void SetCandles(const std::vector<Candle>& candles);
+    void SetCandles(std::vector<Candle>&& candles);
     void ClearCandles();
     const std::vector<Candle>& GetCandles() const;
     std::uint64_t GetRevision() const;
