@@ -11,9 +11,9 @@
     "build:ts": "rollup -c && node scripts/prepare-public-types.mjs",
     "build": "npm run build:wasm && npm run build:ts",
     "dev": "npx serve public",
-    "test": "node --experimental-strip-types --test test/core.test.ts",
+    "test": "node --experimental-strip-types --test --test-isolation=none test/core.test.ts test/integration.test.ts",
     "pack:check": "npm pack --dry-run",
-    "test:watch": "node --experimental-strip-types --test --watch test/core.test.ts"
+    "test:watch": "node --experimental-strip-types --test --test-isolation=none --watch test/core.test.ts test/integration.test.ts"
   },
   "keywords": [
     "charts",
