@@ -9,7 +9,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Phase 9 largely complete: realtime updates (append/update last candle), perf metrics, and large dataset render optimizations.
 - Phase 10 largely complete: unified theme model, `applyTheme()`, and demo presets are now in place.
 - Phase 11 largely complete: NexusCharts.ts has been split into focused modules (series, indicators, drawings, WASM bridge).
-- Phase 12 in progress: performance tuning (benchmark/profiling for 500K-1M candles).
+- Phase 12 in progress: performance tuning is now benchmarked after TS/WASM allocation and renderer cache optimizations; remaining work is focused on further 1M spike reduction.
 - Phase 14 started: responsive layout and HiDPI-aware canvas sizing are now available.
 - Demo now supports benchmark mode for large datasets (50k+), reducing overlay load to keep interaction responsive.
 
@@ -133,13 +133,26 @@ cmd /c npm run build
 cmd /c npm run dev
 ```
 
+## Benchmark Snapshot
+
+Post-optimization headless benchmark mode snapshot (Edge headless, autorun benchmark demo, 2026-04-11):
+
+| Dataset | Redraw avg/max/last | Heap |
+|---|---|---|
+| 100K | 0.43 / 3.10 / 0.00 ms | 41.3 / 79.8 MB |
+| 250K | 0.41 / 2.40 / 0.00 ms | 98.3 / 118.6 MB |
+| 500K | 0.42 / 2.50 / 0.00 ms | 175.7 / 235.7 MB |
+| 1M | 0.40 / 2.50 / 0.00 ms | 351.8 / 402.0 MB |
+
+These figures were collected in benchmark mode with overlays disabled to validate the latest TS and WASM renderer optimization passes.
+
 ## Package Outputs
 
 The package manifest is now aligned for npm distribution:
 
 - `import { NexusCharts } from "nexuscharts"` -> `build/nexus-charts.esm.js`
-- `require("nexuscharts")` -> `build/nexus-charts.cjs.js`
-- Type declarations -> `build/types/index.d.ts`
+- `require("nexuscharts")` -> `build/nexus-charts.cjs`
+- Type declarations -> `build/public-types/index.d.ts`
 - WASM runtime assets -> `build/nexuscharts.js` and `build/nexuscharts.wasm`
 
 To verify the publish payload locally:
