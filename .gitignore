@@ -31,3 +31,6 @@ run-local.cmd
 
 # Local native build output
 build-native/
+
+# Local benchmark scratch
+.tmp-*

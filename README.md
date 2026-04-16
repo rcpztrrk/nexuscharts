@@ -146,6 +146,21 @@ Post-optimization headless benchmark mode snapshot (Edge headless, autorun bench
 
 These figures were collected in benchmark mode with overlays disabled to validate the latest TS and WASM renderer optimization passes.
 
+Latest script-run verification on the current local machine (2026-04-16, 100K sample via `scripts/run-benchmark.mjs`):
+
+| Dataset | Redraw avg/max/last | Heap | Notes |
+|---|---|---|---|
+| 100K | 46.17 / 1552.10 / 0.90 ms | 40.7 / 79.7 MB | Current local run; confirms the benchmark runner is working and also shows that first-spike tuning is still an active problem. |
+
+Scriptable benchmark runner is also available for repeatable local checks:
+
+```bash
+npm run benchmark
+npm run benchmark:1m
+```
+
+If the browser executable is not auto-detected, set `NEXUS_BENCHMARK_BROWSER` or pass `--browser=<path>` to `scripts/run-benchmark.mjs`.
+
 ## Package Outputs
 
 The package manifest is now aligned for npm distribution:
