@@ -158,6 +158,14 @@ export class NexusCharts {
     private idCounter: number = 0;
     private readonly readyPromise: Promise<void>;
     private resolveReady!: () => void;
+    private updateBatchDepth: number = 0;
+    private pendingSeriesSync: boolean = false;
+    private pendingIndicatorRecompute: boolean = false;
+    private pendingObserverSync: boolean = false;
+    private pendingAutoScale: boolean = false;
+    private pendingHoverRefresh: boolean = false;
+    private pendingRedraw: boolean = false;
+    private pendingVisibleRangeEmit: boolean = false;
 
     constructor(options: InitOptions) {
         this.canvasId = options.canvasId;
@@ -228,6 +236,18 @@ export class NexusCharts {
         this.syncCanvasSize();
     }
 
+    public batchUpdates<T>(callback: () => T): T {
+        this.updateBatchDepth += 1;
+        try {
+            return callback();
+        } finally {
+            this.updateBatchDepth = Math.max(0, this.updateBatchDepth - 1);
+            if (this.updateBatchDepth === 0) {
+                this.flushPendingUpdates();
+            }
+        }
+    }
+
     public pan(deltaX: number, deltaY: number): void {
         if (!this.wasmBridge.isReady()) {
             return;
@@ -238,6 +258,7 @@ export class NexusCharts {
         this.autoScaleVisibleY();
         this.refreshHoverFromStoredPointer();
         this.redrawDrawings();
+        this.requestVisibleRangeEmit();
     }
 
     public zoom(zoomFactor: number, axis: "x" | "y" | "both" = "x"): void {
@@ -278,6 +299,7 @@ export class NexusCharts {
 
         this.refreshHoverFromStoredPointer();
         this.redrawDrawings();
+        this.requestVisibleRangeEmit();
     }
 
     public screenToWorld(clientX: number, clientY: number): WorldPoint | null {
@@ -431,26 +453,18 @@ export class NexusCharts {
     }
 
     public fitToData(): void {
-        const geometry = this.buildSeriesGeometry();
         const surface = this.overlayCanvas ?? this.canvas;
-        if (!geometry || geometry.candles.length === 0 || !surface) {
+        const stats = this.getPrimarySeriesStats();
+        if (!stats || !surface) {
             return;
-        }
-
-        let minX = Number.POSITIVE_INFINITY;
-        let maxX = Number.NEGATIVE_INFINITY;
-        let minY = Number.POSITIVE_INFINITY;
-        let maxY = Number.NEGATIVE_INFINITY;
-
-        for (const candle of geometry.candles) {
-            minX = Math.min(minX, candle.x);
-            maxX = Math.max(maxX, candle.x);
-            minY = Math.min(minY, candle.low);
-            maxY = Math.max(maxY, candle.high);
         }
 
         const paddingY = 0.18;
         const paddingX = 0.08;
+        const minX = -0.92;
+        const maxX = stats.validCount > 1 ? 0.92 : -0.92;
+        const minY = -0.85;
+        const maxY = 0.85;
         const halfHeightFromY = Math.max(0.35, ((maxY - minY) * 0.5) + paddingY);
         const halfWidthFromX = Math.max(0.35, ((maxX - minX) * 0.5) + paddingX);
 
@@ -461,6 +475,7 @@ export class NexusCharts {
         this.applyCameraView();
         this.refreshHoverFromStoredPointer();
         this.redrawDrawings();
+        this.requestVisibleRangeEmit();
     }
 
     public createSeries(options: SeriesOptions = {}): SeriesApi {
@@ -468,33 +483,37 @@ export class NexusCharts {
             createId: () => this.nextId("series"),
             isCompleteCandle: (point): point is CandleDataPoint => this.isCompleteCandle(point),
             onSeriesMutated: (seriesId) => {
-                this.syncSeriesToEngine(seriesId);
-                this.recomputeIndicators();
-                this.autoScaleVisibleY();
-                this.refreshHoverFromStoredPointer();
-                this.redrawDrawings();
+                const series = this.seriesManager.get(seriesId);
+                const primary = this.getPrimaryCandlestickSeriesEntry();
+                const touchesPrimaryCandles = !!series && series.type === "candlestick" && primary?.id === seriesId;
+
+                if (touchesPrimaryCandles) {
+                    this.queuePrimarySeriesMutation();
+                } else {
+                    this.requestRedraw();
+                }
             },
         }, this.theme);
     }
 
     public addIndicator(definition: IndicatorDefinition): string {
         const id = this.indicatorPaneManager.addIndicator(definition, () => this.nextId("indicator"), this.theme);
-        this.recomputeIndicators();
-        this.redrawDrawings();
+        this.queueIndicatorRecompute();
+        this.requestRedraw();
         return id;
     }
 
     public removeIndicator(id: string): boolean {
         const removed = this.indicatorPaneManager.removeIndicator(id);
         if (removed) {
-            this.redrawDrawings();
+            this.requestRedraw();
         }
         return removed;
     }
 
     public clearIndicators(): void {
         this.indicatorPaneManager.clearIndicators();
-        this.redrawDrawings();
+        this.requestRedraw();
     }
 
     public getIndicators(): IndicatorSeries[] {
@@ -503,7 +522,7 @@ export class NexusCharts {
 
     public addDrawing(definition: DrawingDefinition): string {
         const id = this.drawingManager.addDrawing(definition, () => this.nextId("drawing"));
-        this.redrawDrawings();
+        this.requestRedraw();
         return id;
     }
 
@@ -512,7 +531,7 @@ export class NexusCharts {
         const activeDrawingId = this.drawingManager.getActiveDrawingId();
         const removed = this.drawingManager.removeDrawing(id);
         if (removed) {
-            this.redrawDrawings();
+            this.requestRedraw();
             if (removedDrawing) {
                 this.emitDrawingDeleted(removedDrawing, reason);
             }
@@ -529,7 +548,7 @@ export class NexusCharts {
             .filter((drawing): drawing is DrawingDefinition => drawing !== null);
         const hadActiveDrawing = this.drawingManager.getActiveDrawingId() !== null;
         this.drawingManager.clearDrawings();
-        this.redrawDrawings();
+        this.requestRedraw();
         for (const drawing of removedDrawings) {
             this.emitDrawingDeleted(drawing, "clearAll");
         }
@@ -544,7 +563,7 @@ export class NexusCharts {
         this.seriesManager.applyTheme(this.theme);
         this.indicatorPaneManager.applyTheme(this.theme);
         this.drawingManager.applyMenuTheme(this.theme);
-        this.redrawDrawings();
+        this.requestRedraw();
     }
 
     public getTheme(): ChartTheme {
@@ -557,9 +576,9 @@ export class NexusCharts {
         this.timeSeriesCache = null;
         this.lastVisibleRangeKey = null;
         this.lastTimeScaleKey = null;
-        this.refreshHoverFromStoredPointer();
-        this.redrawDrawings();
-        this.emitVisibleRangeChange();
+        this.requestHoverRefresh();
+        this.requestRedraw();
+        this.requestVisibleRangeEmit();
     }
 
     public getTimeAxis(): TimeAxisState {
@@ -572,7 +591,7 @@ export class NexusCharts {
             this.controlButtons = [];
         }
         persistChartState(this.canvasId, this.uiOptions, this.analyticsOptions);
-        this.redrawDrawings();
+        this.requestRedraw();
     }
 
     public getUiState(): UiState {
@@ -593,7 +612,7 @@ export class NexusCharts {
         this.analyticsOptions = this.normalizeAnalyticsOptions(options);
         trimObserverFramesToLimitUi(this.observerFrames, this.analyticsOptions.maxFrames);
         persistChartState(this.canvasId, this.uiOptions, this.analyticsOptions);
-        this.redrawDrawings();
+        this.requestRedraw();
     }
 
     public pushObserverFrame(frame: ObserverFrame): void {
@@ -608,8 +627,12 @@ export class NexusCharts {
         }
         this.observerFrames.push(normalized);
         trimObserverFramesToLimitUi(this.observerFrames, this.analyticsOptions.maxFrames);
-        this.syncObserverFrameToEngine(normalized);
-        this.redrawDrawings();
+        if (this.isBatchingUpdates()) {
+            this.queueObserverSync();
+        } else {
+            this.syncObserverFrameToEngine(normalized);
+        }
+        this.requestRedraw();
     }
 
     public setObserverFrames(frames: ObserverFrame[]): void {
@@ -626,8 +649,8 @@ export class NexusCharts {
             }
         }
         trimObserverFramesToLimitUi(this.observerFrames, this.analyticsOptions.maxFrames);
-        this.syncAllObserverFramesToEngine();
-        this.redrawDrawings();
+        this.queueObserverSync();
+        this.requestRedraw();
     }
 
     public getObserverFrames(): ObserverFrame[] {
@@ -636,8 +659,8 @@ export class NexusCharts {
 
     public clearObserverFrames(): void {
         this.observerFrames.length = 0;
-        this.wasmBridge.clearObserverFrames();
-        this.redrawDrawings();
+        this.queueObserverSync();
+        this.requestRedraw();
     }
 
     public getObserverMetrics(window: number = 0): ObserverMetrics {
@@ -1219,6 +1242,113 @@ export class NexusCharts {
         this.isDragging = false;
     }
 
+    private isBatchingUpdates(): boolean {
+        return this.updateBatchDepth > 0;
+    }
+
+    private requestRedraw(): void {
+        if (this.isBatchingUpdates()) {
+            this.pendingRedraw = true;
+            return;
+        }
+        this.redrawDrawings();
+    }
+
+    private requestHoverRefresh(): void {
+        if (this.isBatchingUpdates()) {
+            this.pendingHoverRefresh = true;
+            return;
+        }
+        this.refreshHoverFromStoredPointer();
+    }
+
+    private requestVisibleRangeEmit(): void {
+        if (this.isBatchingUpdates()) {
+            this.pendingVisibleRangeEmit = true;
+            return;
+        }
+        this.emitVisibleRangeChange();
+    }
+
+    private queueIndicatorRecompute(): void {
+        if (this.isBatchingUpdates()) {
+            this.pendingIndicatorRecompute = true;
+            return;
+        }
+        this.recomputeIndicators();
+    }
+
+    private queueObserverSync(): void {
+        if (this.isBatchingUpdates()) {
+            this.pendingObserverSync = true;
+            return;
+        }
+        this.syncAllObserverFramesToEngine();
+    }
+
+    private queuePrimarySeriesMutation(): void {
+        if (this.isBatchingUpdates()) {
+            this.pendingSeriesSync = true;
+            this.pendingIndicatorRecompute = true;
+            this.pendingAutoScale = true;
+            this.pendingHoverRefresh = true;
+            this.pendingRedraw = true;
+            this.pendingVisibleRangeEmit = true;
+            return;
+        }
+
+        const primary = this.getPrimaryCandlestickSeriesEntry();
+        if (primary) {
+            this.syncSeriesToEngine(primary.id);
+        }
+        this.recomputeIndicators();
+        this.autoScaleVisibleY();
+        this.refreshHoverFromStoredPointer();
+        this.redrawDrawings();
+        this.requestVisibleRangeEmit();
+    }
+
+    private flushPendingUpdates(): void {
+        const shouldSyncSeries = this.pendingSeriesSync;
+        const shouldRecomputeIndicators = this.pendingIndicatorRecompute;
+        const shouldSyncObservers = this.pendingObserverSync;
+        const shouldAutoScale = this.pendingAutoScale;
+        const shouldRefreshHover = this.pendingHoverRefresh;
+        const shouldRedraw = this.pendingRedraw;
+        const shouldEmitVisibleRange = this.pendingVisibleRangeEmit;
+
+        this.pendingSeriesSync = false;
+        this.pendingIndicatorRecompute = false;
+        this.pendingObserverSync = false;
+        this.pendingAutoScale = false;
+        this.pendingHoverRefresh = false;
+        this.pendingRedraw = false;
+        this.pendingVisibleRangeEmit = false;
+
+        if (shouldSyncSeries) {
+            this.syncAllSeriesToEngine();
+        }
+        if (shouldRecomputeIndicators) {
+            this.recomputeIndicators();
+        }
+        if (shouldSyncObservers) {
+            this.syncAllObserverFramesToEngine();
+        }
+        if (shouldAutoScale) {
+            this.autoScaleVisibleY();
+        }
+        if (shouldRefreshHover) {
+            this.refreshHoverFromStoredPointer();
+        }
+        if (shouldRedraw) {
+            this.redrawDrawings();
+            return;
+        }
+        if (shouldEmitVisibleRange) {
+            this.emitVisibleRangeChange();
+        }
+    }
+
     private syncSeriesToEngine(seriesId: string): void {
         if (!this.wasmBridge.isReady()) {
             return;
@@ -1574,17 +1704,19 @@ export class NexusCharts {
         return entry ? entry.data : [];
     }
 
-    private buildSeriesGeometry(): SeriesGeometry | null {
+    private getPrimarySeriesStats(): {
+        entry: { id: string; data: CandleDataPoint[]; revision: number };
+        validCount: number;
+        minPrice: number;
+        maxPrice: number;
+        preserveGaps: boolean;
+        minTime: number;
+        maxTime: number;
+    } | null {
         const entry = this.getPrimaryCandlestickSeriesEntry();
         if (!entry) {
             return null;
         }
-
-        if (this.geometryCache && this.geometryCache.seriesId === entry.id && this.geometryCache.revision === entry.revision) {
-            return this.geometryCache.geometry;
-        }
-
-        const source = entry.data;
 
         let minPrice = Number.POSITIVE_INFINITY;
         let maxPrice = Number.NEGATIVE_INFINITY;
@@ -1593,8 +1725,8 @@ export class NexusCharts {
         let minTime = Number.POSITIVE_INFINITY;
         let maxTime = Number.NEGATIVE_INFINITY;
 
-        for (let i = 0; i < source.length; i += 1) {
-            const point = source[i];
+        for (let i = 0; i < entry.data.length; i += 1) {
+            const point = entry.data[i];
             const open = Number(point.open);
             const high = Number(point.high);
             const low = Number(point.low);
@@ -1622,19 +1754,41 @@ export class NexusCharts {
         }
 
         if (validCount === 0) {
-            this.geometryCache = { seriesId: entry.id, revision: entry.revision, geometry: null };
-            this.timeSeriesCache = null;
             return null;
         }
 
         preserveGaps = preserveGaps && validCount > 1 && Number.isFinite(minTime) && Number.isFinite(maxTime);
 
-        const range = Math.max(maxPrice - minPrice, 1e-5);
+        return {
+            entry,
+            validCount,
+            minPrice,
+            maxPrice,
+            preserveGaps,
+            minTime,
+            maxTime,
+        };
+    }
+
+    private buildSeriesGeometry(): SeriesGeometry | null {
+        const stats = this.getPrimarySeriesStats();
+        if (!stats) {
+            return null;
+        }
+
+        const entry = stats.entry;
+
+        if (this.geometryCache && this.geometryCache.seriesId === entry.id && this.geometryCache.revision === entry.revision) {
+            return this.geometryCache.geometry;
+        }
+
+        const source = entry.data;
+        const range = Math.max(stats.maxPrice - stats.minPrice, 1e-5);
         const scale = 1.7 / range;
         const startX = -0.92;
-        const stepX = validCount > 1 ? 1.84 / (validCount - 1) : 0.0;
-        const timeSpan = preserveGaps ? Math.max(1, maxTime - minTime) : 1;
-        const candles = new Array<NormalizedCandleDataPoint>(validCount);
+        const stepX = stats.validCount > 1 ? 1.84 / (stats.validCount - 1) : 0.0;
+        const timeSpan = stats.preserveGaps ? Math.max(1, stats.maxTime - stats.minTime) : 1;
+        const candles = new Array<NormalizedCandleDataPoint>(stats.validCount);
 
         for (let i = 0, writeIndex = 0; i < source.length; i += 1) {
             const point = source[i];
@@ -1648,22 +1802,22 @@ export class NexusCharts {
 
             const pointHigh = Math.max(high, open, close, low);
             const pointLow = Math.min(low, open, close, high);
-            const x = preserveGaps
-                ? startX + ((1.84 * (this.normalizeTimestampMs(this.toNumericTime(point.time) as number) - minTime)) / timeSpan)
+            const x = stats.preserveGaps
+                ? startX + ((1.84 * (this.normalizeTimestampMs(this.toNumericTime(point.time) as number) - stats.minTime)) / timeSpan)
                 : startX + (stepX * writeIndex);
 
             candles[writeIndex] = {
                 source: point,
                 x,
-                open: ((open - minPrice) * scale) - 0.85,
-                high: ((pointHigh - minPrice) * scale) - 0.85,
-                low: ((pointLow - minPrice) * scale) - 0.85,
-                close: ((close - minPrice) * scale) - 0.85,
+                open: ((open - stats.minPrice) * scale) - 0.85,
+                high: ((pointHigh - stats.minPrice) * scale) - 0.85,
+                low: ((pointLow - stats.minPrice) * scale) - 0.85,
+                close: ((close - stats.minPrice) * scale) - 0.85,
             };
             writeIndex += 1;
         }
 
-        const geometry: SeriesGeometry = { candles, minPrice, maxPrice, scale };
+        const geometry: SeriesGeometry = { candles, minPrice: stats.minPrice, maxPrice: stats.maxPrice, scale };
         this.geometryCache = { seriesId: entry.id, revision: entry.revision, geometry };
         this.timeSeriesCache = null;
         return geometry;
@@ -2302,6 +2456,7 @@ export class NexusCharts {
         this.wasmBridge.resizeViewport(nextWidth, nextHeight);
         this.refreshHoverFromStoredPointer();
         this.redrawDrawings();
+        this.requestVisibleRangeEmit();
     }
 
     private resolveCanvasCssSize(baseCanvas: HTMLCanvasElement): { cssWidth: number; cssHeight: number } {
@@ -2391,7 +2546,7 @@ export class NexusCharts {
         const width = this.overlayCanvas.width;
         const height = this.overlayCanvas.height;
         ctx.clearRect(0, 0, width, height);
-        const geometry = this.buildSeriesGeometry();
+        const geometry = this.shouldBuildOverlayGeometry() ? this.buildSeriesGeometry() : null;
 
         const hoveredDrawingId = this.drawingManager.getHoveredDrawingId();
         const activeDrawingId = this.drawingManager.getActiveDrawingId();
@@ -2419,11 +2574,38 @@ export class NexusCharts {
         }, this.theme);
         renderAnalyticsOverlayUi(ctx, width, height, this.observerFrames, this.analyticsOptions, toCanvas, this.theme);
         renderSelectedCandleOverlay(ctx, height, this.getCandleByIndex(this.selectedCandleIndex, geometry), this.theme);
-        this.renderCrosshairOverlay(ctx, width, height);
-        this.renderTooltipOverlay(ctx, width, height);
+        this.renderCrosshairOverlay(ctx, width, height, geometry);
+        this.renderTooltipOverlay(ctx, width, height, geometry);
         this.renderControlBarOverlay(ctx, width, height);
         this.perfTracker.recordSample(this.perfTracker.nowMs() - startMs);
-        this.emitVisibleRangeChange();
+    }
+
+    private hasOverlaySeriesData(): boolean {
+        for (const series of this.seriesManager.values()) {
+            if (series.type !== "candlestick" && series.data.length > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private shouldBuildOverlayGeometry(): boolean {
+        if (this.selectedCandleIndex !== null || this.hoveredCandle !== null) {
+            return true;
+        }
+        if (this.uiOptions.showAxes) {
+            return true;
+        }
+        if (this.uiOptions.showCrosshair && (this.hoverCanvasX !== null || this.hoverCanvasY !== null)) {
+            return true;
+        }
+        if (this.uiOptions.showTooltip && (this.hoverCanvasX !== null || this.hoverCanvasY !== null)) {
+            return true;
+        }
+        if (this.indicatorPaneManager.getLowerIndicators().length > 0) {
+            return true;
+        }
+        return this.hasOverlaySeriesData();
     }
 
     private renderSeriesOverlay(
@@ -2688,8 +2870,12 @@ export class NexusCharts {
         ctx.restore();
     }
 
-    private renderCrosshairOverlay(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-        const geometry = this.buildSeriesGeometry();
+    private renderCrosshairOverlay(
+        ctx: CanvasRenderingContext2D,
+        width: number,
+        height: number,
+        geometry: SeriesGeometry | null
+    ): void {
         const activeCandle = this.hoveredCandle ?? this.getCandleByIndex(this.selectedCandleIndex, geometry);
         const activeY = this.hoverCanvasY ?? activeCandle?.screenY ?? null;
         if (!this.uiOptions.showCrosshair || !activeCandle || activeY === null || !geometry) {
@@ -2921,8 +3107,12 @@ export class NexusCharts {
         });
     }
 
-    private renderTooltipOverlay(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-        const geometry = this.buildSeriesGeometry();
+    private renderTooltipOverlay(
+        ctx: CanvasRenderingContext2D,
+        width: number,
+        height: number,
+        geometry: SeriesGeometry | null
+    ): void {
         const selectedCandle = this.getCandleByIndex(this.selectedCandleIndex, geometry);
 
         renderTooltipOverlayUi(ctx, width, height, {

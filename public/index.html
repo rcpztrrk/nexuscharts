@@ -844,28 +844,39 @@
                 chart.addIndicator({ type: "rsi", period: 14, pane: "lower" });
             };
 
+            const applyUiMode = (enableOverlays) => {
+                chart.configureUi({
+                    showAxes: enableOverlays,
+                    showCrosshair: enableOverlays,
+                    showTooltip: enableOverlays,
+                });
+            };
+
             const applyDataset = (count, pauseStream = true) => {
                 overlaysEnabled = count < datasetThreshold;
                 analyticsEnabled = overlaysEnabled;
                 const nextCandles = generateCandles(count, currentTimeframeKey);
+                const frames = analyticsEnabled ? buildObserverFrames(nextCandles, maxObserverFrames) : [];
                 candles = nextCandles;
 
-                applyIndicators(overlaysEnabled);
-                applySeriesData(candles, overlaysEnabled);
+                chart.batchUpdates(() => {
+                    applyUiMode(overlaysEnabled);
+                    applyIndicators(overlaysEnabled);
+                    applySeriesData(candles, overlaysEnabled);
 
-                chart.configureAnalytics({
-                    showHeatmap: analyticsEnabled,
-                    showRewardCurve: analyticsEnabled,
-                    showPnlCurve: analyticsEnabled,
-                    maxFrames: maxObserverFrames
+                    chart.configureAnalytics({
+                        showHeatmap: analyticsEnabled,
+                        showRewardCurve: analyticsEnabled,
+                        showPnlCurve: analyticsEnabled,
+                        maxFrames: maxObserverFrames
+                    });
+                    chart.setObserverFrames(frames);
+                    if (overlaysEnabled) {
+                        applyDrawings(candles);
+                    } else {
+                        chart.clearDrawings();
+                    }
                 });
-                const frames = analyticsEnabled ? buildObserverFrames(candles, maxObserverFrames) : [];
-                chart.setObserverFrames(frames);
-                if (overlaysEnabled) {
-                    applyDrawings(candles);
-                } else {
-                    chart.clearDrawings();
-                }
 
                 streamIndex = frames.length;
                 cumulativePnl = frames.length ? frames[frames.length - 1].pnl : 0;
