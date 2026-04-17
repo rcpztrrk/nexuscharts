@@ -621,6 +621,7 @@
             let liveIndex = 0;
             let lastClose = 102;
             let inProgressTicks = 0;
+            let streamUiTick = 0;
 
             const updateDatasetStatus = () => {
                 if (datasetStatus) {
@@ -1006,20 +1007,16 @@
                 if (inProgressTicks < 2) {
                     const last = candles[candles.length - 1];
                     const drift = (Math.random() - 0.5) * 0.9;
-                    const close = last.close + drift;
-                    const high = Math.max(last.high, close);
-                    const low = Math.min(last.low, close);
-                    const volume = (last.volume ?? 0) + (Math.abs(drift) * 120) + (Math.random() * 30);
+                    const close = Number((last.close + drift).toFixed(2));
+                    const high = Number(Math.max(last.high, close).toFixed(2));
+                    const low = Number(Math.min(last.low, close).toFixed(2));
+                    const volume = Number(((last.volume ?? 0) + (Math.abs(drift) * 120) + (Math.random() * 30)).toFixed(2));
 
-                    activeCandle = {
-                        ...last,
-                        close: Number(close.toFixed(2)),
-                        high: Number(high.toFixed(2)),
-                        low: Number(low.toFixed(2)),
-                        volume: Number(volume.toFixed(2))
-                    };
-
-                    candles[candles.length - 1] = activeCandle;
+                    last.close = close;
+                    last.high = high;
+                    last.low = low;
+                    last.volume = volume;
+                    activeCandle = last;
                     lastClose = activeCandle.close;
 
                     series.updateLast(activeCandle);
@@ -1070,6 +1067,7 @@
                 const confidence = Math.min(1, 0.45 + (Math.abs(reward) / 3.5));
                 const x = -0.9 + ((1.8 * (streamIndex % maxObserverFrames)) / Math.max(1, maxObserverFrames - 1));
                 const y = action === "buy" ? 0.48 : action === "sell" ? -0.48 : 0.0;
+                streamUiTick = (streamUiTick + 1) % 4;
 
                 if (analyticsEnabled) {
                     chart.pushObserverFrame({
@@ -1082,8 +1080,8 @@
                         y
                     });
 
-                    const metrics = chart.getObserverMetrics(60);
-                    if (metricsLabel) {
+                    if (metricsLabel && streamUiTick === 0) {
+                        const metrics = chart.getObserverMetrics(60);
                         metricsLabel.textContent =
                             `Observer stream (${metrics.source}) | frames: ${metrics.frameCount} | ` +
                             `R: ${metrics.lastReward.toFixed(3)} | ` +
@@ -1094,8 +1092,8 @@
                     metricsLabel.textContent = "Observer stream disabled (benchmark mode).";
                 }
 
-                const perf = chart.getPerfMetrics(60);
-                if (perfLabel) {
+                if (perfLabel && streamUiTick === 0) {
+                    const perf = chart.getPerfMetrics(60);
                     const heap = (perf.heapUsedMB !== null && perf.heapTotalMB !== null)
                         ? `${perf.heapUsedMB.toFixed(1)}/${perf.heapTotalMB.toFixed(1)} MB`
                         : "n/a";

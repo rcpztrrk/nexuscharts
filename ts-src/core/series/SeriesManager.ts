@@ -105,8 +105,12 @@ export class SeriesManager {
             } else {
                 this.ensureOwnedData(series);
                 const lastIndex = series.data.length - 1;
-                const last = series.data[lastIndex];
-                series.data[lastIndex] = { ...last, ...point };
+                if (hooks.isCompleteCandle(point)) {
+                    series.data[lastIndex] = point;
+                } else {
+                    const last = series.data[lastIndex];
+                    series.data[lastIndex] = { ...last, ...point };
+                }
             }
 
             series.revision += 1;

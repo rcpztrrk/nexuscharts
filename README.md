@@ -9,7 +9,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Phase 9 largely complete: realtime updates (append/update last candle), perf metrics, and large dataset render optimizations.
 - Phase 10 largely complete: unified theme model, `applyTheme()`, and demo presets are now in place.
 - Phase 11 largely complete: NexusCharts.ts has been split into focused modules (series, indicators, drawings, WASM bridge).
-- Phase 12 in progress: performance tuning is now benchmarked after TS/WASM allocation and renderer cache optimizations; remaining work is focused on further 1M spike reduction.
+- Phase 12 in progress: performance tuning is now benchmarked after TS/WASM allocation and renderer cache optimizations; recent primary-series caching work significantly reduced 1M redraw spikes, with heap/streaming tuning remaining active.
 - Phase 14 started: responsive layout and HiDPI-aware canvas sizing are now available.
 - Demo now supports benchmark mode for large datasets (50k+), reducing overlay load to keep interaction responsive.
 
@@ -146,11 +146,12 @@ Post-optimization headless benchmark mode snapshot (Edge headless, autorun bench
 
 These figures were collected in benchmark mode with overlays disabled to validate the latest TS and WASM renderer optimization passes.
 
-Latest script-run verification on the current local machine (2026-04-16, 100K sample via `scripts/run-benchmark.mjs`):
+Latest script-run verification on the current local machine:
 
 | Dataset | Redraw avg/max/last | Heap | Notes |
 |---|---|---|---|
-| 100K | 46.17 / 1552.10 / 0.90 ms | 40.7 / 79.7 MB | Current local run; confirms the benchmark runner is working and also shows that first-spike tuning is still an active problem. |
+| 100K | 46.17 / 1552.10 / 0.90 ms | 40.7 / 79.7 MB | 2026-04-16 local runner validation; confirmed benchmark automation and exposed the remaining spike issue. |
+| 1M | 42.16 / 455.30 / 0.10 ms | 236.6 / 238.9 MB | 2026-04-17 local runner validation after primary-series stats caching; large redraw spikes are substantially reduced, with heap/streaming work still open. |
 
 Scriptable benchmark runner is also available for repeatable local checks:
 

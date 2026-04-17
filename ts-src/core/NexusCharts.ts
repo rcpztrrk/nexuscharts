@@ -119,6 +119,9 @@ export class NexusCharts {
     private lastVisibleRangeKey: string | null = null;
     private lastTimeScaleKey: string | null = null;
     private readonly seriesManager = new SeriesManager();
+    private primarySeriesStatsCache:
+        | { seriesId: string; revision: number; gapMode: "compress" | "preserve"; stats: PrimarySeriesStats | null }
+        | null = null;
     private geometryCache: { seriesId: string; revision: number; geometry: SeriesGeometry | null } | null = null;
     private timeSeriesCache:
         | { seriesId: string; revision: number; series: Array<{ time: number | string; numeric: number | null; x: number }> }
@@ -572,6 +575,7 @@ export class NexusCharts {
 
     public configureTimeAxis(options: TimeAxisOptions): void {
         this.timeAxisOptions = this.normalizeTimeAxisOptions(options);
+        this.primarySeriesStatsCache = null;
         this.geometryCache = null;
         this.timeSeriesCache = null;
         this.lastVisibleRangeKey = null;
@@ -1631,12 +1635,36 @@ export class NexusCharts {
     }
 
     private getPrimarySeriesStats(): PrimarySeriesStats | null {
-        return buildPrimarySeriesStats(this.getPrimaryCandlestickSeriesEntry(), {
+        const entry = this.getPrimaryCandlestickSeriesEntry();
+        const gapMode = this.timeAxisOptions.gapMode;
+        if (!entry) {
+            this.primarySeriesStatsCache = null;
+            return null;
+        }
+
+        const cache = this.primarySeriesStatsCache;
+        if (
+            cache
+            && cache.seriesId === entry.id
+            && cache.revision === entry.revision
+            && cache.gapMode === gapMode
+        ) {
+            return cache.stats;
+        }
+
+        const stats = buildPrimarySeriesStats(entry, {
             preserveGaps: this.timeAxisOptions.gapMode === "preserve",
             toNumericTime: this.toNumericTime.bind(this),
             isLikelyTimestamp: this.isLikelyTimestamp.bind(this),
             normalizeTimestampMs: this.normalizeTimestampMs.bind(this),
         });
+        this.primarySeriesStatsCache = {
+            seriesId: entry.id,
+            revision: entry.revision,
+            gapMode,
+            stats,
+        };
+        return stats;
     }
 
     private buildSeriesGeometry(): SeriesGeometry | null {

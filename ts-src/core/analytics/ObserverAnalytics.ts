@@ -62,7 +62,8 @@ export function normalizeObserverFrame(
 export function trimObserverFramesToLimit(frames: NormalizedObserverFrame[], maxFrames: number): void {
     const overflow = frames.length - maxFrames;
     if (overflow > 0) {
-        frames.splice(0, overflow);
+        frames.copyWithin(0, overflow);
+        frames.length = maxFrames;
     }
 }
 
@@ -102,10 +103,12 @@ export function renderAnalyticsOverlay(
         return;
     }
 
-    const slice = frames.slice(-options.maxFrames);
+    const startIndex = Math.max(0, frames.length - options.maxFrames);
+    const visibleCount = frames.length - startIndex;
 
     if (options.showHeatmap) {
-        for (const frame of slice) {
+        for (let i = startIndex; i < frames.length; i += 1) {
+            const frame = frames[i];
             const point = toCanvas({ x: frame.x, y: frame.y });
             const radius = 2.5 + (frame.confidence * 4.5);
             let color = theme.analytics.heatmapHold;
@@ -126,7 +129,7 @@ export function renderAnalyticsOverlay(
         return;
     }
 
-    const analyticsPanel = getAnalyticsPanelBounds(slice.length, options, width, height);
+    const analyticsPanel = getAnalyticsPanelBounds(visibleCount, options, width, height);
     if (!analyticsPanel) {
         return;
     }
@@ -147,7 +150,8 @@ export function renderAnalyticsOverlay(
 
     let minValue = Number.POSITIVE_INFINITY;
     let maxValue = Number.NEGATIVE_INFINITY;
-    for (const frame of slice) {
+    for (let i = startIndex; i < frames.length; i += 1) {
+        const frame = frames[i];
         if (options.showRewardCurve) {
             minValue = Math.min(minValue, frame.reward);
             maxValue = Math.max(maxValue, frame.reward);
@@ -167,7 +171,7 @@ export function renderAnalyticsOverlay(
     }
 
     const xForIndex = (index: number): number => {
-        const d = Math.max(1, slice.length - 1);
+        const d = Math.max(1, visibleCount - 1);
         return plotX + ((index / d) * plotW);
     };
     const yForValue = (value: number): number => {
@@ -197,10 +201,10 @@ export function renderAnalyticsOverlay(
         ctx.strokeStyle = color;
         ctx.lineWidth = 2;
         ctx.beginPath();
-        for (let i = 0; i < slice.length; i += 1) {
-            const x = xForIndex(i);
-            const y = yForValue(extract(slice[i]));
-            if (i === 0) {
+        for (let i = startIndex, plotIndex = 0; i < frames.length; i += 1, plotIndex += 1) {
+            const x = xForIndex(plotIndex);
+            const y = yForValue(extract(frames[i]));
+            if (plotIndex === 0) {
                 ctx.moveTo(x, y);
             } else {
                 ctx.lineTo(x, y);
@@ -216,7 +220,7 @@ export function renderAnalyticsOverlay(
         drawCurve((frame) => frame.pnl, theme.analytics.pnlCurve);
     }
 
-    const last = slice[slice.length - 1];
+    const last = frames[frames.length - 1];
     ctx.font = fontSpec(theme.typography.analyticsSize, theme);
     ctx.fillStyle = theme.analytics.panelText;
     ctx.fillText("Observer Analytics", panelX + 10, panelY + 16);
