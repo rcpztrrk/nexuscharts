@@ -51,6 +51,12 @@ import { IndicatorPaneManager } from "./indicators/IndicatorPaneManager";
 import type { IndicatorPaneRect } from "./indicators/IndicatorOverlayRenderer";
 import { renderIndicatorOverlay } from "./indicators/IndicatorOverlayRenderer";
 import { SeriesManager } from "./series/SeriesManager";
+import { NexusChartUpdateBatch } from "./NexusChartUpdateBatch";
+import {
+    buildPrimarySeriesGeometry,
+    buildPrimarySeriesStats,
+    type PrimarySeriesStats,
+} from "./series/PrimarySeriesGeometry";
 import { createChartTheme, fontSpec } from "./theme/ChartTheme";
 import { renderControlBar, type ControlButtonState } from "./ui/ControlBar";
 import { renderCrosshairOverlay as renderCrosshairOverlayUi } from "./ui/CrosshairOverlay";
@@ -155,17 +161,10 @@ export class NexusCharts {
     };
     private timeAxisOptions: Required<TimeAxisOptions> = this.normalizeTimeAxisOptions();
     private readonly perfTracker = new PerfTracker(360);
+    private readonly updateBatch: NexusChartUpdateBatch;
     private idCounter: number = 0;
     private readonly readyPromise: Promise<void>;
     private resolveReady!: () => void;
-    private updateBatchDepth: number = 0;
-    private pendingSeriesSync: boolean = false;
-    private pendingIndicatorRecompute: boolean = false;
-    private pendingObserverSync: boolean = false;
-    private pendingAutoScale: boolean = false;
-    private pendingHoverRefresh: boolean = false;
-    private pendingRedraw: boolean = false;
-    private pendingVisibleRangeEmit: boolean = false;
 
     constructor(options: InitOptions) {
         this.canvasId = options.canvasId;
@@ -198,6 +197,15 @@ export class NexusCharts {
         }
         this.readyPromise = new Promise<void>((resolve) => {
             this.resolveReady = resolve;
+        });
+        this.updateBatch = new NexusChartUpdateBatch({
+            syncAllSeries: () => this.syncAllSeriesToEngine(),
+            recomputeIndicators: () => this.recomputeIndicators(),
+            syncAllObserverFrames: () => this.syncAllObserverFramesToEngine(),
+            autoScaleVisibleY: () => this.autoScaleVisibleY(),
+            refreshHoverFromStoredPointer: () => this.refreshHoverFromStoredPointer(),
+            redrawDrawings: () => this.redrawDrawings(),
+            emitVisibleRangeChange: () => this.emitVisibleRangeChange(),
         });
 
         this.canvas = document.getElementById(options.canvasId) as HTMLCanvasElement;
@@ -237,15 +245,7 @@ export class NexusCharts {
     }
 
     public batchUpdates<T>(callback: () => T): T {
-        this.updateBatchDepth += 1;
-        try {
-            return callback();
-        } finally {
-            this.updateBatchDepth = Math.max(0, this.updateBatchDepth - 1);
-            if (this.updateBatchDepth === 0) {
-                this.flushPendingUpdates();
-            }
-        }
+        return this.updateBatch.run(callback);
     }
 
     public pan(deltaX: number, deltaY: number): void {
@@ -1243,110 +1243,36 @@ export class NexusCharts {
     }
 
     private isBatchingUpdates(): boolean {
-        return this.updateBatchDepth > 0;
+        return this.updateBatch.isBatching();
     }
 
     private requestRedraw(): void {
-        if (this.isBatchingUpdates()) {
-            this.pendingRedraw = true;
-            return;
-        }
-        this.redrawDrawings();
+        this.updateBatch.requestRedraw();
     }
 
     private requestHoverRefresh(): void {
-        if (this.isBatchingUpdates()) {
-            this.pendingHoverRefresh = true;
-            return;
-        }
-        this.refreshHoverFromStoredPointer();
+        this.updateBatch.requestHoverRefresh();
     }
 
     private requestVisibleRangeEmit(): void {
-        if (this.isBatchingUpdates()) {
-            this.pendingVisibleRangeEmit = true;
-            return;
-        }
-        this.emitVisibleRangeChange();
+        this.updateBatch.requestVisibleRangeEmit();
     }
 
     private queueIndicatorRecompute(): void {
-        if (this.isBatchingUpdates()) {
-            this.pendingIndicatorRecompute = true;
-            return;
-        }
-        this.recomputeIndicators();
+        this.updateBatch.queueIndicatorRecompute();
     }
 
     private queueObserverSync(): void {
-        if (this.isBatchingUpdates()) {
-            this.pendingObserverSync = true;
-            return;
-        }
-        this.syncAllObserverFramesToEngine();
+        this.updateBatch.queueObserverSync();
     }
 
     private queuePrimarySeriesMutation(): void {
-        if (this.isBatchingUpdates()) {
-            this.pendingSeriesSync = true;
-            this.pendingIndicatorRecompute = true;
-            this.pendingAutoScale = true;
-            this.pendingHoverRefresh = true;
-            this.pendingRedraw = true;
-            this.pendingVisibleRangeEmit = true;
-            return;
-        }
-
-        const primary = this.getPrimaryCandlestickSeriesEntry();
-        if (primary) {
-            this.syncSeriesToEngine(primary.id);
-        }
-        this.recomputeIndicators();
-        this.autoScaleVisibleY();
-        this.refreshHoverFromStoredPointer();
-        this.redrawDrawings();
-        this.requestVisibleRangeEmit();
-    }
-
-    private flushPendingUpdates(): void {
-        const shouldSyncSeries = this.pendingSeriesSync;
-        const shouldRecomputeIndicators = this.pendingIndicatorRecompute;
-        const shouldSyncObservers = this.pendingObserverSync;
-        const shouldAutoScale = this.pendingAutoScale;
-        const shouldRefreshHover = this.pendingHoverRefresh;
-        const shouldRedraw = this.pendingRedraw;
-        const shouldEmitVisibleRange = this.pendingVisibleRangeEmit;
-
-        this.pendingSeriesSync = false;
-        this.pendingIndicatorRecompute = false;
-        this.pendingObserverSync = false;
-        this.pendingAutoScale = false;
-        this.pendingHoverRefresh = false;
-        this.pendingRedraw = false;
-        this.pendingVisibleRangeEmit = false;
-
-        if (shouldSyncSeries) {
-            this.syncAllSeriesToEngine();
-        }
-        if (shouldRecomputeIndicators) {
-            this.recomputeIndicators();
-        }
-        if (shouldSyncObservers) {
-            this.syncAllObserverFramesToEngine();
-        }
-        if (shouldAutoScale) {
-            this.autoScaleVisibleY();
-        }
-        if (shouldRefreshHover) {
-            this.refreshHoverFromStoredPointer();
-        }
-        if (shouldRedraw) {
-            this.redrawDrawings();
-            return;
-        }
-        if (shouldEmitVisibleRange) {
-            this.emitVisibleRangeChange();
-        }
+        this.updateBatch.queuePrimarySeriesMutation(() => {
+            const primary = this.getPrimaryCandlestickSeriesEntry();
+            if (primary) {
+                this.syncSeriesToEngine(primary.id);
+            }
+        });
     }
 
     private syncSeriesToEngine(seriesId: string): void {
@@ -1704,70 +1630,13 @@ export class NexusCharts {
         return entry ? entry.data : [];
     }
 
-    private getPrimarySeriesStats(): {
-        entry: { id: string; data: CandleDataPoint[]; revision: number };
-        validCount: number;
-        minPrice: number;
-        maxPrice: number;
-        preserveGaps: boolean;
-        minTime: number;
-        maxTime: number;
-    } | null {
-        const entry = this.getPrimaryCandlestickSeriesEntry();
-        if (!entry) {
-            return null;
-        }
-
-        let minPrice = Number.POSITIVE_INFINITY;
-        let maxPrice = Number.NEGATIVE_INFINITY;
-        let validCount = 0;
-        let preserveGaps = this.timeAxisOptions.gapMode === "preserve";
-        let minTime = Number.POSITIVE_INFINITY;
-        let maxTime = Number.NEGATIVE_INFINITY;
-
-        for (let i = 0; i < entry.data.length; i += 1) {
-            const point = entry.data[i];
-            const open = Number(point.open);
-            const high = Number(point.high);
-            const low = Number(point.low);
-            const close = Number(point.close);
-            if (!Number.isFinite(open) || !Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) {
-                continue;
-            }
-
-            const pointLow = Math.min(low, open, close, high);
-            const pointHigh = Math.max(high, open, close, low);
-            minPrice = Math.min(minPrice, pointLow);
-            maxPrice = Math.max(maxPrice, pointHigh);
-            validCount += 1;
-
-            if (preserveGaps) {
-                const numericTime = this.toNumericTime(point.time);
-                if (!this.isLikelyTimestamp(numericTime)) {
-                    preserveGaps = false;
-                } else {
-                    const normalizedTime = this.normalizeTimestampMs(numericTime);
-                    minTime = Math.min(minTime, normalizedTime);
-                    maxTime = Math.max(maxTime, normalizedTime);
-                }
-            }
-        }
-
-        if (validCount === 0) {
-            return null;
-        }
-
-        preserveGaps = preserveGaps && validCount > 1 && Number.isFinite(minTime) && Number.isFinite(maxTime);
-
-        return {
-            entry,
-            validCount,
-            minPrice,
-            maxPrice,
-            preserveGaps,
-            minTime,
-            maxTime,
-        };
+    private getPrimarySeriesStats(): PrimarySeriesStats | null {
+        return buildPrimarySeriesStats(this.getPrimaryCandlestickSeriesEntry(), {
+            preserveGaps: this.timeAxisOptions.gapMode === "preserve",
+            toNumericTime: this.toNumericTime.bind(this),
+            isLikelyTimestamp: this.isLikelyTimestamp.bind(this),
+            normalizeTimestampMs: this.normalizeTimestampMs.bind(this),
+        });
     }
 
     private buildSeriesGeometry(): SeriesGeometry | null {
@@ -1782,42 +1651,10 @@ export class NexusCharts {
             return this.geometryCache.geometry;
         }
 
-        const source = entry.data;
-        const range = Math.max(stats.maxPrice - stats.minPrice, 1e-5);
-        const scale = 1.7 / range;
-        const startX = -0.92;
-        const stepX = stats.validCount > 1 ? 1.84 / (stats.validCount - 1) : 0.0;
-        const timeSpan = stats.preserveGaps ? Math.max(1, stats.maxTime - stats.minTime) : 1;
-        const candles = new Array<NormalizedCandleDataPoint>(stats.validCount);
-
-        for (let i = 0, writeIndex = 0; i < source.length; i += 1) {
-            const point = source[i];
-            const open = Number(point.open);
-            const high = Number(point.high);
-            const low = Number(point.low);
-            const close = Number(point.close);
-            if (!Number.isFinite(open) || !Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) {
-                continue;
-            }
-
-            const pointHigh = Math.max(high, open, close, low);
-            const pointLow = Math.min(low, open, close, high);
-            const x = stats.preserveGaps
-                ? startX + ((1.84 * (this.normalizeTimestampMs(this.toNumericTime(point.time) as number) - stats.minTime)) / timeSpan)
-                : startX + (stepX * writeIndex);
-
-            candles[writeIndex] = {
-                source: point,
-                x,
-                open: ((open - stats.minPrice) * scale) - 0.85,
-                high: ((pointHigh - stats.minPrice) * scale) - 0.85,
-                low: ((pointLow - stats.minPrice) * scale) - 0.85,
-                close: ((close - stats.minPrice) * scale) - 0.85,
-            };
-            writeIndex += 1;
-        }
-
-        const geometry: SeriesGeometry = { candles, minPrice: stats.minPrice, maxPrice: stats.maxPrice, scale };
+        const geometry = buildPrimarySeriesGeometry(stats, {
+            toNumericTime: this.toNumericTime.bind(this),
+            normalizeTimestampMs: this.normalizeTimestampMs.bind(this),
+        });
         this.geometryCache = { seriesId: entry.id, revision: entry.revision, geometry };
         this.timeSeriesCache = null;
         return geometry;
