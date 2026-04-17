@@ -65,6 +65,12 @@ import {
     getWorldUnitsPerPixel as getWorldUnitsPerPixelUi,
     worldToCanvasPoint as worldToCanvasPointUi,
 } from "./ui/ChartViewport";
+import {
+    buildNiceTicks,
+    buildVisibleTimeLabels as buildVisibleTimeLabelsUi,
+    formatTimeLabel as formatTimeLabelUi,
+    type TimeAxisLabel,
+} from "./ui/TimeAxisHelpers";
 import { renderCrosshairOverlay as renderCrosshairOverlayUi } from "./ui/CrosshairOverlay";
 import {
     renderSelectedCandleOverlay,
@@ -88,11 +94,6 @@ interface OverlayRect {
     y: number;
     width: number;
     height: number;
-}
-
-interface TimeAxisLabel {
-    x: number;
-    text: string;
 }
 
 export class NexusCharts {
@@ -1672,64 +1673,13 @@ export class NexusCharts {
     }
 
     private formatTimeLabel(value: number | string, spanHintMs: number | null = null): string {
-        if (typeof value === "number") {
-            if (this.isLikelyTimestamp(value)) {
-                return this.formatTimestampLabel(this.normalizeTimestampMs(value), spanHintMs);
-            }
-            if (Number.isInteger(value)) {
-                return String(value);
-            }
-            return Number(value).toFixed(2);
-        }
-
-        const parsedDate = Date.parse(value);
-        if (Number.isFinite(parsedDate)) {
-            return this.formatTimestampLabel(parsedDate, spanHintMs);
-        }
-        return String(value);
-    }
-
-    private formatTimestampLabel(timestampMs: number, spanHintMs: number | null = null): string {
-        const date = new Date(timestampMs);
-        if (!Number.isFinite(date.getTime())) {
-            return String(timestampMs);
-        }
-
-        const formatterOptions: Intl.DateTimeFormatOptions = {
-            timeZone: this.timeAxisOptions.timezone,
-        };
-
-        if (spanHintMs === null) {
-            formatterOptions.month = "short";
-            formatterOptions.day = "2-digit";
-            formatterOptions.hour = "2-digit";
-            formatterOptions.minute = "2-digit";
-            return new Intl.DateTimeFormat(undefined, formatterOptions).format(date);
-        }
-
-        if (spanHintMs <= (12 * 60 * 60 * 1000)) {
-            formatterOptions.hour = "2-digit";
-            formatterOptions.minute = "2-digit";
-            return new Intl.DateTimeFormat(undefined, formatterOptions).format(date);
-        }
-
-        if (spanHintMs <= (3 * 24 * 60 * 60 * 1000)) {
-            formatterOptions.month = "short";
-            formatterOptions.day = "2-digit";
-            formatterOptions.hour = "2-digit";
-            formatterOptions.minute = "2-digit";
-            return new Intl.DateTimeFormat(undefined, formatterOptions).format(date);
-        }
-
-        if (spanHintMs <= (180 * 24 * 60 * 60 * 1000)) {
-            formatterOptions.month = "short";
-            formatterOptions.day = "2-digit";
-            return new Intl.DateTimeFormat(undefined, formatterOptions).format(date);
-        }
-
-        formatterOptions.year = "numeric";
-        formatterOptions.month = "short";
-        return new Intl.DateTimeFormat(undefined, formatterOptions).format(date);
+        return formatTimeLabelUi(
+            value,
+            this.timeAxisOptions.timezone,
+            this.isLikelyTimestamp.bind(this),
+            this.normalizeTimestampMs.bind(this),
+            spanHintMs
+        );
     }
 
     private worldYToPriceValueInternal(worldY: number, geometry: SeriesGeometry): number {
@@ -1769,49 +1719,6 @@ export class NexusCharts {
         const close = Number(point.close);
         return Number.isFinite(open) && Number.isFinite(high) && Number.isFinite(low) && Number.isFinite(close);
     }
-    private niceStep(rawStep: number): number {
-        if (!Number.isFinite(rawStep) || rawStep <= 0) {
-            return 1;
-        }
-        const exponent = Math.floor(Math.log10(rawStep));
-        const power = Math.pow(10, exponent);
-        const fraction = rawStep / power;
-        if (fraction <= 1) return power;
-        if (fraction <= 2) return 2 * power;
-        if (fraction <= 5) return 5 * power;
-        return 10 * power;
-    }
-
-    private buildNiceTicks(minValue: number, maxValue: number, targetCount: number): number[] {
-        if (!Number.isFinite(minValue) || !Number.isFinite(maxValue)) {
-            return [];
-        }
-
-        if (Math.abs(maxValue - minValue) < 1e-9) {
-            return [minValue];
-        }
-
-        const desired = Math.max(2, targetCount);
-        const rawStep = Math.abs(maxValue - minValue) / Math.max(1, desired - 1);
-        const step = this.niceStep(rawStep);
-        const start = Math.ceil(minValue / step) * step;
-        const ticks: number[] = [];
-
-        for (let value = start; value <= (maxValue + (step * 0.5)); value += step) {
-            ticks.push(Number(value.toFixed(8)));
-            if (ticks.length > 200) {
-                break;
-            }
-        }
-
-        if (ticks.length === 0) {
-            ticks.push(Number(minValue.toFixed(8)));
-            ticks.push(Number(maxValue.toFixed(8)));
-        }
-
-        return ticks;
-    }
-
     private toNumericTime(value: number | string): number | null {
         if (typeof value === "number") {
             return Number.isFinite(value) ? value : null;
@@ -1830,51 +1737,6 @@ export class NexusCharts {
 
     private normalizeTimestampMs(value: number): number {
         return Math.abs(value) < 1e12 ? value * 1000 : value;
-    }
-
-    private buildTemporalTicks(minTimeMs: number, maxTimeMs: number, targetCount: number): number[] {
-        const span = Math.max(1, maxTimeMs - minTimeMs);
-        const desired = Math.max(2, targetCount);
-        const candidates = [
-            60 * 1000,
-            5 * 60 * 1000,
-            15 * 60 * 1000,
-            30 * 60 * 1000,
-            60 * 60 * 1000,
-            2 * 60 * 60 * 1000,
-            4 * 60 * 60 * 1000,
-            6 * 60 * 60 * 1000,
-            12 * 60 * 60 * 1000,
-            24 * 60 * 60 * 1000,
-            2 * 24 * 60 * 60 * 1000,
-            7 * 24 * 60 * 60 * 1000,
-            30 * 24 * 60 * 60 * 1000,
-            90 * 24 * 60 * 60 * 1000,
-            365 * 24 * 60 * 60 * 1000,
-        ];
-
-        let step = candidates[candidates.length - 1];
-        for (const candidate of candidates) {
-            if ((span / candidate) <= (desired * 1.35)) {
-                step = candidate;
-                break;
-            }
-        }
-
-        const start = Math.ceil(minTimeMs / step) * step;
-        const ticks: number[] = [];
-        for (let value = start; value <= (maxTimeMs + (step * 0.5)); value += step) {
-            ticks.push(value);
-            if (ticks.length > 256) {
-                break;
-            }
-        }
-
-        if (ticks.length === 0) {
-            ticks.push(minTimeMs, maxTimeMs);
-        }
-
-        return ticks;
     }
 
     private buildTimeSeries(geometry: SeriesGeometry): Array<{ time: number | string; numeric: number | null; x: number }> {
@@ -1981,152 +1843,18 @@ export class NexusCharts {
         height: number,
         targetCount: number
     ): TimeAxisLabel[] {
-        const candles = geometry.candles;
-        if (candles.length === 0) {
-            return [];
-        }
-
-        const range = this.getVisibleCandleIndexRange(geometry, width, height, 0);
-        const rangeSize = Math.max(0, (range.end - range.start) + 1);
-        const desiredSource = Math.max(24, Math.min(rangeSize, Math.max(120, targetCount * 12)));
-        const sampleStep = rangeSize > 0 ? Math.max(1, Math.floor(rangeSize / desiredSource)) : 1;
-
-        const source: Array<{ index: number; candle: NormalizedCandleDataPoint; x: number; timeValue: number | null }> = [];
-        if (rangeSize > 0) {
-            for (let i = range.start; i <= range.end; i += sampleStep) {
-                const candle = candles[i];
-                source.push({
-                    index: i,
-                    candle,
-                    x: this.worldToCanvasPoint(candle.x, 0, width, height).x,
-                    timeValue: this.toNumericTime(candle.source.time),
-                });
-            }
-            if (source.length > 0 && source[source.length - 1].index !== range.end) {
-                const candle = candles[range.end];
-                source.push({
-                    index: range.end,
-                    candle,
-                    x: this.worldToCanvasPoint(candle.x, 0, width, height).x,
-                    timeValue: this.toNumericTime(candle.source.time),
-                });
-            }
-        }
-
-        if (source.length === 0) {
-            const step = Math.max(1, Math.floor(candles.length / Math.max(2, targetCount)));
-            for (let i = 0; i < candles.length; i += step) {
-                const candle = candles[i];
-                source.push({
-                    index: i,
-                    candle,
-                    x: this.worldToCanvasPoint(candle.x, 0, width, height).x,
-                    timeValue: this.toNumericTime(candle.source.time),
-                });
-            }
-            if (source.length > 0 && source[source.length - 1].index !== (candles.length - 1)) {
-                const candle = candles[candles.length - 1];
-                source.push({
-                    index: candles.length - 1,
-                    candle,
-                    x: this.worldToCanvasPoint(candle.x, 0, width, height).x,
-                    timeValue: this.toNumericTime(candle.source.time),
-                });
-            }
-        }
-
-        if (source.length === 0) {
-            return [];
-        }
-
-        const labels: TimeAxisLabel[] = [];
-        const numericEntries = source.filter((entry) => entry.timeValue !== null) as Array<{
-            index: number;
-            candle: NormalizedCandleDataPoint;
-            x: number;
-            timeValue: number;
-        }>;
-
-        if (numericEntries.length === source.length) {
-            const useTemporalTicks = numericEntries.length > 1 && numericEntries.every((entry) => this.isLikelyTimestamp(entry.timeValue));
-            if (useTemporalTicks) {
-                const normalizedEntries = numericEntries.map((entry) => ({
-                    ...entry,
-                    timestampMs: this.normalizeTimestampMs(entry.timeValue),
-                }));
-                const minTime = normalizedEntries[0].timestampMs;
-                const maxTime = normalizedEntries[normalizedEntries.length - 1].timestampMs;
-                const spanHintMs = Math.max(1, maxTime - minTime);
-                const ticks = this.buildTemporalTicks(minTime, maxTime, targetCount);
-                const used = new Set<number>();
-                for (const tick of ticks) {
-                    let nearest = normalizedEntries[0];
-                    let nearestDistance = Math.abs(nearest.timestampMs - tick);
-                    for (let i = 1; i < normalizedEntries.length; i += 1) {
-                        const candidate = normalizedEntries[i];
-                        const distance = Math.abs(candidate.timestampMs - tick);
-                        if (distance < nearestDistance) {
-                            nearest = candidate;
-                            nearestDistance = distance;
-                        }
-                    }
-                    if (used.has(nearest.index)) {
-                        continue;
-                    }
-                    used.add(nearest.index);
-                    labels.push({
-                        x: nearest.x,
-                        text: this.formatTimeLabel(nearest.candle.source.time, spanHintMs),
-                    });
-                }
-                labels.sort((a, b) => a.x - b.x);
-                return labels;
-            }
-
-            const minTime = numericEntries[0].timeValue;
-            const maxTime = numericEntries[numericEntries.length - 1].timeValue;
-            const ticks = this.buildNiceTicks(minTime, maxTime, targetCount);
-            const used = new Set<number>();
-            for (const tick of ticks) {
-                let nearest = numericEntries[0];
-                let nearestDistance = Math.abs(nearest.timeValue - tick);
-                for (let i = 1; i < numericEntries.length; i += 1) {
-                    const candidate = numericEntries[i];
-                    const distance = Math.abs(candidate.timeValue - tick);
-                    if (distance < nearestDistance) {
-                        nearest = candidate;
-                        nearestDistance = distance;
-                    }
-                }
-                if (used.has(nearest.index)) {
-                    continue;
-                }
-                used.add(nearest.index);
-                labels.push({
-                    x: nearest.x,
-                    text: this.formatTimeLabel(nearest.candle.source.time),
-                });
-            }
-            labels.sort((a, b) => a.x - b.x);
-            return labels;
-        }
-
-        const step = Math.max(1, Math.floor(source.length / Math.max(2, targetCount)));
-        for (let i = 0; i < source.length; i += step) {
-            const entry = source[i];
-            labels.push({
-                x: entry.x,
-                text: this.formatTimeLabel(entry.candle.source.time),
-            });
-        }
-        if (labels.length > 0) {
-            const last = source[source.length - 1];
-            const lastLabel = this.formatTimeLabel(last.candle.source.time);
-            if (labels[labels.length - 1].text !== lastLabel) {
-                labels.push({ x: last.x, text: lastLabel });
-            }
-        }
-        return labels;
+        return buildVisibleTimeLabelsUi({
+            geometry,
+            width,
+            height,
+            targetCount,
+            getVisibleCandleIndexRange: this.getVisibleCandleIndexRange.bind(this),
+            worldToCanvasX: (worldX, canvasWidth, canvasHeight) => this.worldToCanvasPoint(worldX, 0, canvasWidth, canvasHeight).x,
+            toNumericTime: this.toNumericTime.bind(this),
+            isLikelyTimestamp: this.isLikelyTimestamp.bind(this),
+            normalizeTimestampMs: this.normalizeTimestampMs.bind(this),
+            formatTimeLabel: this.formatTimeLabel.bind(this),
+        });
     }
 
     private getCandleByIndex(index: number | null, geometry: SeriesGeometry | null): HoveredCandle | null {
@@ -2668,7 +2396,7 @@ export class NexusCharts {
         const bottomWorldY = this.currentCenterY - this.currentZoomY;
         const visibleMinPrice = this.worldYToPriceValueInternal(bottomWorldY, geometry);
         const visibleMaxPrice = this.worldYToPriceValueInternal(topWorldY, geometry);
-        const priceTicks = this.buildNiceTicks(visibleMinPrice, visibleMaxPrice, tickCount);
+        const priceTicks = buildNiceTicks(visibleMinPrice, visibleMaxPrice, tickCount);
 
         for (const price of priceTicks) {
             const worldY = this.priceToWorldYValue(price, geometry);
