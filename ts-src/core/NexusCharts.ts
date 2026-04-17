@@ -59,6 +59,12 @@ import {
 } from "./series/PrimarySeriesGeometry";
 import { createChartTheme, fontSpec } from "./theme/ChartTheme";
 import { renderControlBar, type ControlButtonState } from "./ui/ControlBar";
+import {
+    canvasToWorldPoint as canvasToWorldPointUi,
+    getVisibleCandleIndexRange as getVisibleCandleIndexRangeUi,
+    getWorldUnitsPerPixel as getWorldUnitsPerPixelUi,
+    worldToCanvasPoint as worldToCanvasPointUi,
+} from "./ui/ChartViewport";
 import { renderCrosshairOverlay as renderCrosshairOverlayUi } from "./ui/CrosshairOverlay";
 import {
     renderSelectedCandleOverlay,
@@ -1542,31 +1548,21 @@ export class NexusCharts {
     }
 
     private worldToCanvasPoint(worldX: number, worldY: number, width: number, height: number): ScreenPoint {
-        const safeWidth = Math.max(1, width);
-        const safeHeight = Math.max(1, height);
-        const halfHeight = this.currentZoomY;
-        const halfWidth = this.currentZoomX;
-        const left = this.currentCenterX - halfWidth;
-        const bottom = this.currentCenterY - halfHeight;
-
-        return {
-            x: ((worldX - left) / (halfWidth * 2.0)) * safeWidth,
-            y: safeHeight - (((worldY - bottom) / (halfHeight * 2.0)) * safeHeight),
-        };
+        return worldToCanvasPointUi(worldX, worldY, width, height, {
+            centerX: this.currentCenterX,
+            centerY: this.currentCenterY,
+            zoomX: this.currentZoomX,
+            zoomY: this.currentZoomY,
+        });
     }
 
     private canvasToWorldPoint(canvasX: number, canvasY: number, width: number, height: number): WorldPoint {
-        const safeWidth = Math.max(1, width);
-        const safeHeight = Math.max(1, height);
-        const halfHeight = this.currentZoomY;
-        const halfWidth = this.currentZoomX;
-        const left = this.currentCenterX - halfWidth;
-        const bottom = this.currentCenterY - halfHeight;
-
-        return {
-            x: left + ((canvasX / safeWidth) * halfWidth * 2.0),
-            y: bottom + (((safeHeight - canvasY) / safeHeight) * halfHeight * 2.0),
-        };
+        return canvasToWorldPointUi(canvasX, canvasY, width, height, {
+            centerX: this.currentCenterX,
+            centerY: this.currentCenterY,
+            zoomX: this.currentZoomX,
+            zoomY: this.currentZoomY,
+        });
     }
 
     private getVisibleCandleIndexRange(
@@ -1575,42 +1571,21 @@ export class NexusCharts {
         height: number,
         padding: number = 2
     ): { start: number; end: number } {
-        const candles = geometry.candles;
-        const count = candles.length;
-        if (count === 0) {
-            return { start: 0, end: -1 };
-        }
-        if (count === 1) {
-            return { start: 0, end: 0 };
-        }
-
-        const safeWidth = Math.max(1, width);
-        const safeHeight = Math.max(1, height);
-        const halfWidth = this.currentZoomX;
-        const left = this.currentCenterX - halfWidth;
-        const right = this.currentCenterX + halfWidth;
-
-        const startX = candles[0].x;
-        const stepX = candles[1].x - startX;
-        if (Math.abs(stepX) < 1e-9) {
-            return { start: 0, end: count - 1 };
-        }
-
-        const rawStart = Math.floor((left - startX) / stepX) - padding;
-        const rawEnd = Math.ceil((right - startX) / stepX) + padding;
-        const start = Math.max(0, Math.min(count - 1, rawStart));
-        const end = Math.max(0, Math.min(count - 1, rawEnd));
-        return start <= end ? { start, end } : { start: 0, end: -1 };
+        return getVisibleCandleIndexRangeUi(geometry, width, {
+            centerX: this.currentCenterX,
+            centerY: this.currentCenterY,
+            zoomX: this.currentZoomX,
+            zoomY: this.currentZoomY,
+        }, padding);
     }
 
     private getWorldUnitsPerPixel(width: number, height: number): { x: number; y: number } {
-        const safeWidth = Math.max(1, width);
-        const safeHeight = Math.max(1, height);
-        const aspect = safeWidth / safeHeight;
-        return {
-            x: (2.0 * this.currentZoomX) / safeWidth,
-            y: (2.0 * this.currentZoomY) / safeHeight,
-        };
+        return getWorldUnitsPerPixelUi(width, height, {
+            centerX: this.currentCenterX,
+            centerY: this.currentCenterY,
+            zoomX: this.currentZoomX,
+            zoomY: this.currentZoomY,
+        });
     }
 
     private updateHoveredDrawingFromCanvas(canvasX: number, canvasY: number, width: number, height: number): void {
