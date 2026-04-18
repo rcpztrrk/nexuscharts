@@ -269,9 +269,6 @@ void BuildRenderInstancesRange(
     std::vector<RenderingInstance>* bodyInstances,
     std::vector<RenderingInstance>* wickInstances
 ) {
-    constexpr float kBodyHalfWidth = 0.020f;
-    constexpr float kWickHalfWidth = 0.004f;
-
     bodyInstances->clear();
     wickInstances->clear();
     if (range.end < range.start) {
@@ -285,6 +282,12 @@ void BuildRenderInstancesRange(
     bodyInstances->reserve(static_cast<size_t>(span));
     wickInstances->reserve(static_cast<size_t>(span));
 
+    const float stepX = (count > 1)
+        ? std::abs(ohlc[1].x - ohlc[0].x)
+        : 0.0f;
+    const float bodyHalfWidth = std::clamp(stepX * 0.42f, 0.00045f, 0.012f);
+    const float wickHalfWidth = std::clamp(stepX * 0.10f, 0.00012f, 0.0035f);
+
     for (int i = start; i <= end; ++i) {
         const RenderingCandleOhlc& candle = ohlc[static_cast<size_t>(i)];
         const bool isUp = candle.close >= candle.open;
@@ -293,7 +296,7 @@ void BuildRenderInstancesRange(
             candle.x,
             candle.open,
             candle.close,
-            kBodyHalfWidth,
+            bodyHalfWidth,
             isUp ? 0.18f : 0.92f,
             isUp ? 0.80f : 0.28f,
             isUp ? 0.34f : 0.30f
@@ -303,7 +306,7 @@ void BuildRenderInstancesRange(
             candle.x,
             candle.low,
             candle.high,
-            kWickHalfWidth,
+            wickHalfWidth,
             0.78f,
             0.82f,
             0.90f

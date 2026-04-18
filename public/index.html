@@ -853,6 +853,17 @@
                 });
             };
 
+            const getInitialVisibleBars = (count, timeframeKey) => {
+                const defaults = {
+                    "1m": 180,
+                    "5m": 160,
+                    "1h": 140,
+                    "1d": 120,
+                };
+                const preferred = defaults[timeframeKey] ?? 140;
+                return Math.max(24, Math.min(count, preferred));
+            };
+
             const applyDataset = (count, pauseStream = true) => {
                 overlaysEnabled = count < datasetThreshold;
                 analyticsEnabled = overlaysEnabled;
@@ -878,6 +889,8 @@
                         chart.clearDrawings();
                     }
                 });
+
+                chart.focusLatestData(getInitialVisibleBars(candles.length, currentTimeframeKey));
 
                 streamIndex = frames.length;
                 cumulativePnl = frames.length ? frames[frames.length - 1].pnl : 0;

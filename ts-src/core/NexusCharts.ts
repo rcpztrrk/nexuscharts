@@ -501,6 +501,46 @@ export class NexusCharts {
         this.requestVisibleRangeEmit();
     }
 
+    public focusLatestData(visibleCandles: number = 140): void {
+        const surface = this.overlayCanvas ?? this.canvas;
+        const geometry = this.buildSeriesGeometry();
+        if (!geometry || !surface || geometry.candles.length === 0) {
+            return;
+        }
+
+        const candles = geometry.candles;
+        const endIndex = candles.length - 1;
+        const visibleCount = Math.max(10, Math.min(candles.length, Math.floor(visibleCandles)));
+        const startIndex = Math.max(0, endIndex - visibleCount + 1);
+        const startCandle = candles[startIndex];
+        const endCandle = candles[endIndex];
+
+        let minY = Number.POSITIVE_INFINITY;
+        let maxY = Number.NEGATIVE_INFINITY;
+        for (let i = startIndex; i <= endIndex; i += 1) {
+            const candle = candles[i];
+            minY = Math.min(minY, candle.low);
+            maxY = Math.max(maxY, candle.high);
+        }
+
+        const spanX = Math.max(1e-5, endCandle.x - startCandle.x);
+        const spanY = Math.max(1e-5, maxY - minY);
+        const rightPadding = Math.max(spanX * 0.08, 0.01);
+        const paddingX = Math.max(spanX * 0.06, 0.01);
+        const paddingY = Math.max(spanY * 0.18, 0.18);
+        const minX = startCandle.x - paddingX;
+        const maxX = endCandle.x + rightPadding;
+
+        this.currentCenterX = (minX + maxX) * 0.5;
+        this.currentCenterY = (minY + maxY) * 0.5;
+        this.currentZoomX = Math.min(5.0, Math.max(0.2, (maxX - minX) * 0.5));
+        this.currentZoomY = Math.min(5.0, Math.max(0.2, ((maxY - minY) * 0.5) + paddingY));
+        this.applyCameraView();
+        this.refreshHoverFromStoredPointer();
+        this.redrawDrawings();
+        this.requestVisibleRangeEmit();
+    }
+
     public createSeries(options: SeriesOptions = {}): SeriesApi {
         return this.seriesManager.createSeries(options, {
             createId: () => this.nextId("series"),
