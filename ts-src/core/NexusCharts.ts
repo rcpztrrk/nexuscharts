@@ -64,6 +64,7 @@ import {
     getVisibleCandleIndexRange as getVisibleCandleIndexRangeUi,
     getWorldUnitsPerPixel as getWorldUnitsPerPixelUi,
     worldToCanvasPoint as worldToCanvasPointUi,
+    type ChartViewportState,
 } from "./ui/ChartViewport";
 import {
     buildNiceTicks,
@@ -131,7 +132,13 @@ export class NexusCharts {
         | null = null;
     private geometryCache: { seriesId: string; revision: number; geometry: SeriesGeometry | null } | null = null;
     private timeSeriesCache:
-        | { seriesId: string; revision: number; series: Array<{ time: number | string; numeric: number | null; x: number }> }
+        | {
+            seriesId: string;
+            revision: number;
+            numericCount: number;
+            numericTimes: Float64Array;
+            numericXs: Float64Array;
+        }
         | null = null;
     private readonly drawingManager = new DrawingManager();
     private readonly drawingCoordinateApi: DrawingCoordinateApi = {
@@ -175,6 +182,12 @@ export class NexusCharts {
     private idCounter: number = 0;
     private readonly readyPromise: Promise<void>;
     private resolveReady!: () => void;
+    private readonly viewportStateScratch: ChartViewportState = {
+        centerX: 0,
+        centerY: 0,
+        zoomX: 1,
+        zoomY: 1,
+    };
 
     constructor(options: InitOptions) {
         this.canvasId = options.canvasId;
@@ -1549,21 +1562,11 @@ export class NexusCharts {
     }
 
     private worldToCanvasPoint(worldX: number, worldY: number, width: number, height: number): ScreenPoint {
-        return worldToCanvasPointUi(worldX, worldY, width, height, {
-            centerX: this.currentCenterX,
-            centerY: this.currentCenterY,
-            zoomX: this.currentZoomX,
-            zoomY: this.currentZoomY,
-        });
+        return worldToCanvasPointUi(worldX, worldY, width, height, this.getViewportState());
     }
 
     private canvasToWorldPoint(canvasX: number, canvasY: number, width: number, height: number): WorldPoint {
-        return canvasToWorldPointUi(canvasX, canvasY, width, height, {
-            centerX: this.currentCenterX,
-            centerY: this.currentCenterY,
-            zoomX: this.currentZoomX,
-            zoomY: this.currentZoomY,
-        });
+        return canvasToWorldPointUi(canvasX, canvasY, width, height, this.getViewportState());
     }
 
     private getVisibleCandleIndexRange(
@@ -1572,21 +1575,19 @@ export class NexusCharts {
         height: number,
         padding: number = 2
     ): { start: number; end: number } {
-        return getVisibleCandleIndexRangeUi(geometry, width, {
-            centerX: this.currentCenterX,
-            centerY: this.currentCenterY,
-            zoomX: this.currentZoomX,
-            zoomY: this.currentZoomY,
-        }, padding);
+        return getVisibleCandleIndexRangeUi(geometry, width, this.getViewportState(), padding);
     }
 
     private getWorldUnitsPerPixel(width: number, height: number): { x: number; y: number } {
-        return getWorldUnitsPerPixelUi(width, height, {
-            centerX: this.currentCenterX,
-            centerY: this.currentCenterY,
-            zoomX: this.currentZoomX,
-            zoomY: this.currentZoomY,
-        });
+        return getWorldUnitsPerPixelUi(width, height, this.getViewportState());
+    }
+
+    private getViewportState(): ChartViewportState {
+        this.viewportStateScratch.centerX = this.currentCenterX;
+        this.viewportStateScratch.centerY = this.currentCenterY;
+        this.viewportStateScratch.zoomX = this.currentZoomX;
+        this.viewportStateScratch.zoomY = this.currentZoomY;
+        return this.viewportStateScratch;
     }
 
     private updateHoveredDrawingFromCanvas(canvasX: number, canvasY: number, width: number, height: number): void {
@@ -1739,7 +1740,11 @@ export class NexusCharts {
         return Math.abs(value) < 1e12 ? value * 1000 : value;
     }
 
-    private buildTimeSeries(geometry: SeriesGeometry): Array<{ time: number | string; numeric: number | null; x: number }> {
+    private buildTimeSeries(geometry: SeriesGeometry): {
+        numericCount: number;
+        numericTimes: Float64Array;
+        numericXs: Float64Array;
+    } {
         const geometryCache = this.geometryCache;
         const cache = this.timeSeriesCache;
         if (
@@ -1749,57 +1754,90 @@ export class NexusCharts {
             && cache.seriesId === geometryCache.seriesId
             && cache.revision === geometryCache.revision
         ) {
-            return cache.series;
+            return cache;
         }
 
-        const series = geometry.candles.map((candle) => ({
-            time: candle.source.time,
-            numeric: this.toNumericTime(candle.source.time),
-            x: candle.x,
-        }));
+        const numericTimes = new Float64Array(geometry.candles.length);
+        const numericXs = new Float64Array(geometry.candles.length);
+        let numericCount = 0;
+
+        for (let i = 0; i < geometry.candles.length; i += 1) {
+            const candle = geometry.candles[i];
+            const numeric = this.toNumericTime(candle.source.time);
+            if (numeric === null) {
+                continue;
+            }
+            numericTimes[numericCount] = numeric;
+            numericXs[numericCount] = candle.x;
+            numericCount += 1;
+        }
 
         if (geometryCache && geometryCache.geometry === geometry) {
-            this.timeSeriesCache = { seriesId: geometryCache.seriesId, revision: geometryCache.revision, series };
+            this.timeSeriesCache = {
+                seriesId: geometryCache.seriesId,
+                revision: geometryCache.revision,
+                numericCount,
+                numericTimes,
+                numericXs,
+            };
         }
 
-        return series;
+        return { numericCount, numericTimes, numericXs };
     }
 
     private timeToWorldXInternal(time: number | string, geometry: SeriesGeometry): number | null {
-        const series = this.buildTimeSeries(geometry);
-        if (series.length === 0) {
+        if (geometry.candles.length === 0) {
             return null;
         }
 
         const numericTarget = this.toNumericTime(time);
         if (numericTarget === null) {
-            const match = series.find((entry) => entry.time === time);
-            return match ? match.x : null;
-        }
-
-        const numericSeries = series.filter((entry) => entry.numeric !== null) as Array<{ time: number | string; numeric: number; x: number }>;
-        if (numericSeries.length === 0) {
+            for (let i = 0; i < geometry.candles.length; i += 1) {
+                const candle = geometry.candles[i];
+                if (candle.source.time === time) {
+                    return candle.x;
+                }
+            }
             return null;
         }
 
-        let lower = numericSeries[0];
-        let upper = numericSeries[numericSeries.length - 1];
+        const series = this.buildTimeSeries(geometry);
+        if (series.numericCount === 0) {
+            return null;
+        }
 
-        for (const entry of numericSeries) {
-            if (entry.numeric <= numericTarget && entry.numeric >= lower.numeric) {
-                lower = entry;
-            }
-            if (entry.numeric >= numericTarget && entry.numeric <= upper.numeric) {
-                upper = entry;
+        const { numericTimes, numericXs, numericCount } = series;
+        if (numericTarget <= numericTimes[0]) {
+            return numericXs[0];
+        }
+        if (numericTarget >= numericTimes[numericCount - 1]) {
+            return numericXs[numericCount - 1];
+        }
+
+        let lowerBound = 0;
+        let upperBound = numericCount - 1;
+        while (lowerBound < upperBound) {
+            const mid = Math.floor((lowerBound + upperBound) * 0.5);
+            if (numericTimes[mid] < numericTarget) {
+                lowerBound = mid + 1;
+            } else {
+                upperBound = mid;
             }
         }
 
-        if (Math.abs(upper.numeric - lower.numeric) < 1e-9) {
-            return lower.x;
+        const upperIndex = lowerBound;
+        const lowerIndex = Math.max(0, upperIndex - 1);
+        const lowerTime = numericTimes[lowerIndex];
+        const upperTime = numericTimes[upperIndex];
+        const lowerX = numericXs[lowerIndex];
+        const upperX = numericXs[upperIndex];
+
+        if (Math.abs(upperTime - lowerTime) < 1e-9) {
+            return lowerX;
         }
 
-        const t = (numericTarget - lower.numeric) / (upper.numeric - lower.numeric);
-        return lower.x + ((upper.x - lower.x) * t);
+        const t = (numericTarget - lowerTime) / (upperTime - lowerTime);
+        return lowerX + ((upperX - lowerX) * t);
     }
 
     private worldXToTimeInternal(worldX: number, geometry: SeriesGeometry): number | string | null {

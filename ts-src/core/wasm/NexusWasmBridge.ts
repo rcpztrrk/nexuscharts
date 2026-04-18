@@ -8,7 +8,12 @@ interface NexusWasmModule {
     zoomCamera: (zoomFactor: number) => void;
     resizeViewport?: (width: number, height: number) => void;
     setCameraView?: (centerX: number, centerY: number, zoomX: number, zoomY: number) => void;
-    setSeriesData?: (opens: number[], highs: number[], lows: number[], closes: number[]) => void;
+    setSeriesData?: (
+        opens: ArrayLike<number>,
+        highs: ArrayLike<number>,
+        lows: ArrayLike<number>,
+        closes: ArrayLike<number>
+    ) => void;
     pushObserverFrame?: (
         time: number,
         reward: number,
@@ -56,10 +61,10 @@ export class NexusWasmBridge {
     private warnMissingObserverBridge: boolean = true;
     private warnMissingSetCameraView: boolean = true;
     private readonly seriesSyncScratch = {
-        opens: [] as number[],
-        highs: [] as number[],
-        lows: [] as number[],
-        closes: [] as number[],
+        opens: new Float32Array(0),
+        highs: new Float32Array(0),
+        lows: new Float32Array(0),
+        closes: new Float32Array(0),
     };
     private static wasmLoadPromise: Promise<NexusWasmModule> | null = null;
 
@@ -154,10 +159,7 @@ export class NexusWasmBridge {
 
         const scratch = this.seriesSyncScratch;
         const sourceLength = data.length;
-        scratch.opens.length = sourceLength;
-        scratch.highs.length = sourceLength;
-        scratch.lows.length = sourceLength;
-        scratch.closes.length = sourceLength;
+        this.ensureSeriesSyncCapacity(sourceLength);
 
         let writeIndex = 0;
         for (let i = 0; i < sourceLength; i += 1) {
@@ -176,18 +178,28 @@ export class NexusWasmBridge {
             writeIndex += 1;
         }
 
-        if (writeIndex !== sourceLength) {
-            scratch.opens.length = writeIndex;
-            scratch.highs.length = writeIndex;
-            scratch.lows.length = writeIndex;
-            scratch.closes.length = writeIndex;
-        }
+        const opens = scratch.opens.subarray(0, writeIndex);
+        const highs = scratch.highs.subarray(0, writeIndex);
+        const lows = scratch.lows.subarray(0, writeIndex);
+        const closes = scratch.closes.subarray(0, writeIndex);
 
         try {
-            this.module.setSeriesData(scratch.opens, scratch.highs, scratch.lows, scratch.closes);
+            this.module.setSeriesData(opens, highs, lows, closes);
         } catch (error) {
             console.warn("[NexusCharts] Failed to push series data to WASM.", { seriesId, error });
         }
+    }
+
+    private ensureSeriesSyncCapacity(requiredLength: number): void {
+        const scratch = this.seriesSyncScratch;
+        if (scratch.opens.length >= requiredLength) {
+            return;
+        }
+
+        scratch.opens = new Float32Array(requiredLength);
+        scratch.highs = new Float32Array(requiredLength);
+        scratch.lows = new Float32Array(requiredLength);
+        scratch.closes = new Float32Array(requiredLength);
     }
 
     public pushObserverFrame(frame: NormalizedObserverFrame): void {
