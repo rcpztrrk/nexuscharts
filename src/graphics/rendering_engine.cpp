@@ -285,8 +285,9 @@ void BuildRenderInstancesRange(
     const float stepX = (count > 1)
         ? std::abs(ohlc[1].x - ohlc[0].x)
         : 0.0f;
-    const float bodyHalfWidth = std::clamp(stepX * 0.42f, 0.00045f, 0.012f);
-    const float wickHalfWidth = std::clamp(stepX * 0.10f, 0.00012f, 0.0035f);
+    const float densityFactor = std::clamp(140.0f / std::max(40.0f, static_cast<float>(span)), 0.52f, 1.0f);
+    const float bodyHalfWidth = std::clamp(stepX * 0.42f * densityFactor, 0.00028f, 0.012f);
+    const float wickHalfWidth = std::clamp(stepX * 0.10f * std::sqrt(densityFactor), 0.00010f, 0.0035f);
 
     for (int i = start; i <= end; ++i) {
         const RenderingCandleOhlc& candle = ohlc[static_cast<size_t>(i)];
