@@ -616,17 +616,24 @@
             });
 
             let candles = [];
+            let allCandles = [];
+            let loadedHistoryStartIndex = 0;
             let streamIndex = 0;
             let cumulativePnl = 0;
             let liveIndex = 0;
             let lastClose = 102;
             let inProgressTicks = 0;
             let streamUiTick = 0;
+            let historyLoading = false;
 
             const updateDatasetStatus = () => {
                 if (datasetStatus) {
                     const modeLabel = overlaysEnabled ? "Full" : "Benchmark";
-                    datasetStatus.textContent = `Size: ${candles.length.toLocaleString()} | TF: ${currentTimeframeKey.toUpperCase()} | TZ: ${currentTimezone} | Gaps: ${currentGapMode} | Mode: ${modeLabel}`;
+                    const loadedLabel = candles.length === allCandles.length
+                        ? `${candles.length.toLocaleString()}`
+                        : `${candles.length.toLocaleString()}/${allCandles.length.toLocaleString()}`;
+                    datasetStatus.textContent =
+                        `Size: ${loadedLabel} | TF: ${currentTimeframeKey.toUpperCase()} | TZ: ${currentTimezone} | Gaps: ${currentGapMode} | Mode: ${modeLabel}`;
                 }
             };
 
@@ -678,7 +685,7 @@
             };
 
             const collectBenchmarkSample = async (size) => {
-                applyDataset(size, true);
+                applyDataset(size, true, true);
                 await wait(60);
                 chart.fitToData();
                 await wait(40);
@@ -864,12 +871,32 @@
                 return Math.max(24, Math.min(count, preferred));
             };
 
-            const applyDataset = (count, pauseStream = true) => {
+            const getInitialLoadBars = (count, timeframeKey) => {
+                const visibleBars = getInitialVisibleBars(count, timeframeKey);
+                const preferred = Math.max(visibleBars * 3, 320);
+                return Math.max(visibleBars, Math.min(count, preferred));
+            };
+
+            const getHistoryBatchSize = (timeframeKey) => {
+                const defaults = {
+                    "1m": 220,
+                    "5m": 180,
+                    "1h": 160,
+                    "1d": 140,
+                };
+                return defaults[timeframeKey] ?? 180;
+            };
+
+            const applyDataset = (count, pauseStream = true, forceFullLoad = false) => {
                 overlaysEnabled = count < datasetThreshold;
                 analyticsEnabled = overlaysEnabled;
-                const nextCandles = generateCandles(count, currentTimeframeKey);
-                const frames = analyticsEnabled ? buildObserverFrames(nextCandles, maxObserverFrames) : [];
-                candles = nextCandles;
+                allCandles = generateCandles(count, currentTimeframeKey);
+                const initialLoadBars = forceFullLoad
+                    ? allCandles.length
+                    : getInitialLoadBars(allCandles.length, currentTimeframeKey);
+                loadedHistoryStartIndex = Math.max(0, allCandles.length - initialLoadBars);
+                candles = allCandles.slice(loadedHistoryStartIndex);
+                const frames = analyticsEnabled ? buildObserverFrames(candles, maxObserverFrames) : [];
 
                 chart.batchUpdates(() => {
                     applyUiMode(overlaysEnabled);
@@ -894,9 +921,10 @@
 
                 streamIndex = frames.length;
                 cumulativePnl = frames.length ? frames[frames.length - 1].pnl : 0;
-                liveIndex = candles.length;
-                lastClose = candles.length ? candles[candles.length - 1].close : 102;
+                liveIndex = allCandles.length;
+                lastClose = allCandles.length ? allCandles[allCandles.length - 1].close : 102;
                 inProgressTicks = 0;
+                historyLoading = false;
 
                 updateDatasetStatus();
 
@@ -970,6 +998,38 @@
                     ? `#${event.startIndex}-${event.endIndex} | ${formatEventTime(event.fromTime)} -> ${formatEventTime(event.toTime)}`
                     : "empty";
                 renderEventState();
+
+                if (
+                    historyLoading
+                    || benchmarkRunning
+                    || loadedHistoryStartIndex <= 0
+                    || event.endIndex < event.startIndex
+                    || event.fromTime === null
+                    || event.toTime === null
+                ) {
+                    return;
+                }
+
+                const preloadThreshold = 12;
+                if (event.startIndex > preloadThreshold) {
+                    return;
+                }
+
+                historyLoading = true;
+                const fromTime = event.fromTime;
+                const toTime = event.toTime;
+                const batchSize = Math.min(getHistoryBatchSize(currentTimeframeKey), loadedHistoryStartIndex);
+                loadedHistoryStartIndex = Math.max(0, loadedHistoryStartIndex - batchSize);
+                candles = allCandles.slice(loadedHistoryStartIndex);
+                const frames = analyticsEnabled ? buildObserverFrames(candles, maxObserverFrames) : [];
+
+                chart.batchUpdates(() => {
+                    applySeriesData(candles, overlaysEnabled);
+                    chart.setObserverFrames(frames);
+                });
+                chart.focusTimeRange(fromTime, toTime, true);
+                updateDatasetStatus();
+                historyLoading = false;
             });
 
             chart.subscribe("timeScaleChange", (event) => {
@@ -1018,7 +1078,7 @@
                 let activeCandle;
 
                 if (inProgressTicks < 2) {
-                    const last = candles[candles.length - 1];
+                    const last = allCandles[allCandles.length - 1];
                     const drift = (Math.random() - 0.5) * 0.9;
                     const close = Number((last.close + drift).toFixed(2));
                     const high = Number(Math.max(last.high, close).toFixed(2));
@@ -1041,14 +1101,15 @@
 
                         const customPoint = {
                             ...activeCandle,
-                            value: activeCandle.close + (Math.sin((candles.length - 1) * 0.55) * 1.4)
+                            value: activeCandle.close + (Math.sin((allCandles.length - 1) * 0.55) * 1.4)
                         };
                         customSeries.updateLast(customPoint);
                     }
 
                     inProgressTicks += 1;
                 } else {
-                    activeCandle = generateNextCandle(liveIndex, lastClose, candles[candles.length - 1]?.time ?? Date.now(), currentTimeframeKey);
+                    activeCandle = generateNextCandle(liveIndex, lastClose, allCandles[allCandles.length - 1]?.time ?? Date.now(), currentTimeframeKey);
+                    allCandles.push(activeCandle);
                     candles.push(activeCandle);
                     lastClose = activeCandle.close;
 

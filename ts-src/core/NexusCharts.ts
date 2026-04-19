@@ -541,6 +541,55 @@ export class NexusCharts {
         this.requestVisibleRangeEmit();
     }
 
+    public focusTimeRange(
+        fromTime: number | string,
+        toTime: number | string,
+        preserveY: boolean = true
+    ): void {
+        const geometry = this.buildSeriesGeometry();
+        if (!geometry || geometry.candles.length === 0) {
+            return;
+        }
+
+        const fromX = this.timeToWorldXInternal(fromTime, geometry);
+        const toX = this.timeToWorldXInternal(toTime, geometry);
+        if (fromX === null || toX === null) {
+            return;
+        }
+
+        const minX = Math.min(fromX, toX);
+        const maxX = Math.max(fromX, toX);
+        const spanX = Math.max(1e-5, maxX - minX);
+        const paddingX = Math.max(spanX * 0.06, 0.01);
+
+        this.currentCenterX = (minX + maxX) * 0.5;
+        this.currentZoomX = Math.min(5.0, Math.max(0.2, ((maxX - minX) * 0.5) + paddingX));
+
+        if (!preserveY) {
+            let minY = Number.POSITIVE_INFINITY;
+            let maxY = Number.NEGATIVE_INFINITY;
+            for (const candle of geometry.candles) {
+                if (candle.x < minX || candle.x > maxX) {
+                    continue;
+                }
+                minY = Math.min(minY, candle.low);
+                maxY = Math.max(maxY, candle.high);
+            }
+
+            if (Number.isFinite(minY) && Number.isFinite(maxY)) {
+                const spanY = Math.max(1e-5, maxY - minY);
+                const paddingY = Math.max(spanY * 0.18, 0.18);
+                this.currentCenterY = (minY + maxY) * 0.5;
+                this.currentZoomY = Math.min(5.0, Math.max(0.2, ((maxY - minY) * 0.5) + paddingY));
+            }
+        }
+
+        this.applyCameraView();
+        this.refreshHoverFromStoredPointer();
+        this.redrawDrawings();
+        this.requestVisibleRangeEmit();
+    }
+
     public createSeries(options: SeriesOptions = {}): SeriesApi {
         return this.seriesManager.createSeries(options, {
             createId: () => this.nextId("series"),
