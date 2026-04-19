@@ -625,6 +625,8 @@
             let inProgressTicks = 0;
             let streamUiTick = 0;
             let historyLoading = false;
+            let liveEdgeFollow = true;
+            let currentVisibleBars = 140;
 
             const updateDatasetStatus = () => {
                 if (datasetStatus) {
@@ -918,6 +920,8 @@
                 });
 
                 chart.focusLatestData(getInitialVisibleBars(candles.length, currentTimeframeKey));
+                currentVisibleBars = getInitialVisibleBars(candles.length, currentTimeframeKey);
+                liveEdgeFollow = true;
 
                 streamIndex = frames.length;
                 cumulativePnl = frames.length ? frames[frames.length - 1].pnl : 0;
@@ -999,6 +1003,11 @@
                     : "empty";
                 renderEventState();
 
+                if (event.endIndex >= event.startIndex) {
+                    currentVisibleBars = Math.max(24, (event.endIndex - event.startIndex) + 1);
+                    liveEdgeFollow = event.endIndex >= (candles.length - 4);
+                }
+
                 if (
                     historyLoading
                     || benchmarkRunning
@@ -1028,6 +1037,7 @@
                     chart.setObserverFrames(frames);
                 });
                 chart.focusTimeRange(fromTime, toTime, true);
+                currentVisibleBars = Math.max(24, (event.endIndex - event.startIndex) + 1);
                 updateDatasetStatus();
                 historyLoading = false;
             });
@@ -1129,6 +1139,10 @@
 
                     inProgressTicks = 0;
                     liveIndex += 1;
+
+                    if (liveEdgeFollow) {
+                        chart.focusLatestData(currentVisibleBars);
+                    }
                 }
 
                 const reward = activeCandle.close - activeCandle.open;
