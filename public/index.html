@@ -634,8 +634,13 @@
                     const loadedLabel = candles.length === allCandles.length
                         ? `${candles.length.toLocaleString()}`
                         : `${candles.length.toLocaleString()}/${allCandles.length.toLocaleString()}`;
+                    const historyLabel = historyLoading
+                        ? " | History: loading..."
+                        : loadedHistoryStartIndex > 0
+                            ? ` | History: ${loadedHistoryStartIndex.toLocaleString()} older`
+                            : " | History: complete";
                     datasetStatus.textContent =
-                        `Size: ${loadedLabel} | TF: ${currentTimeframeKey.toUpperCase()} | TZ: ${currentTimezone} | Gaps: ${currentGapMode} | Mode: ${modeLabel}`;
+                        `Size: ${loadedLabel} | TF: ${currentTimeframeKey.toUpperCase()} | TZ: ${currentTimezone} | Gaps: ${currentGapMode} | Mode: ${modeLabel}${historyLabel}`;
                 }
             };
 
@@ -1025,6 +1030,7 @@
                 }
 
                 historyLoading = true;
+                updateDatasetStatus();
                 const fromTime = event.fromTime;
                 const toTime = event.toTime;
                 const batchSize = Math.min(getHistoryBatchSize(currentTimeframeKey), loadedHistoryStartIndex);
@@ -1038,8 +1044,8 @@
                 });
                 chart.focusTimeRange(fromTime, toTime, true);
                 currentVisibleBars = Math.max(24, (event.endIndex - event.startIndex) + 1);
-                updateDatasetStatus();
                 historyLoading = false;
+                updateDatasetStatus();
             });
 
             chart.subscribe("timeScaleChange", (event) => {
