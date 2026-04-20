@@ -244,6 +244,16 @@
             "1d": 24 * 60 * 60 * 1000,
         };
 
+        const timeframeViewPresets = {
+            "1m": { datasetSize: 2000, visibleBars: 180, initialLoadBars: 720, historyBatchSize: 240 },
+            "5m": { datasetSize: 2000, visibleBars: 160, initialLoadBars: 640, historyBatchSize: 220 },
+            "1h": { datasetSize: 10000, visibleBars: 180, initialLoadBars: 760, historyBatchSize: 260 },
+            "1d": { datasetSize: 10000, visibleBars: 220, initialLoadBars: 900, historyBatchSize: 300 },
+        };
+
+        const getTimeframeViewPreset = (timeframeKey) =>
+            timeframeViewPresets[timeframeKey] ?? timeframeViewPresets["5m"];
+
         const isWeekend = (timestamp) => {
             const day = new Date(timestamp).getUTCDay();
             return day === 0 || day === 6;
@@ -909,30 +919,18 @@
             };
 
             const getInitialVisibleBars = (count, timeframeKey) => {
-                const defaults = {
-                    "1m": 180,
-                    "5m": 160,
-                    "1h": 140,
-                    "1d": 120,
-                };
-                const preferred = defaults[timeframeKey] ?? 140;
+                const preferred = getTimeframeViewPreset(timeframeKey).visibleBars;
                 return Math.max(24, Math.min(count, preferred));
             };
 
             const getInitialLoadBars = (count, timeframeKey) => {
                 const visibleBars = getInitialVisibleBars(count, timeframeKey);
-                const preferred = Math.max(visibleBars * 3, 320);
+                const preferred = getTimeframeViewPreset(timeframeKey).initialLoadBars;
                 return Math.max(visibleBars, Math.min(count, preferred));
             };
 
             const getHistoryBatchSize = (timeframeKey) => {
-                const defaults = {
-                    "1m": 220,
-                    "5m": 180,
-                    "1h": 160,
-                    "1d": 140,
-                };
-                return defaults[timeframeKey] ?? 180;
+                return getTimeframeViewPreset(timeframeKey).historyBatchSize;
             };
 
             const applyDataset = (count, pauseStream = true, forceFullLoad = false) => {
@@ -998,7 +996,7 @@
                 });
             }
 
-            const defaultDatasetSize = 200;
+            const defaultDatasetSize = getTimeframeViewPreset(currentTimeframeKey).datasetSize;
             if (datasetSelect) {
                 datasetSelect.value = String(defaultDatasetSize);
             }
@@ -1028,7 +1026,10 @@
                 timeframeSelect.value = currentTimeframeKey;
                 timeframeSelect.addEventListener("change", () => {
                     currentTimeframeKey = timeframeSelect.value in timeframePresets ? timeframeSelect.value : "5m";
-                    const size = Number(datasetSelect?.value) || candles.length || defaultDatasetSize;
+                    const size = getTimeframeViewPreset(currentTimeframeKey).datasetSize;
+                    if (datasetSelect) {
+                        datasetSelect.value = String(size);
+                    }
                     applyDataset(size, true);
                 });
             }
