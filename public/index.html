@@ -63,6 +63,7 @@
         }
 
         #stream-toggle,
+        #live-edge-toggle,
         .toolbar-card {
             margin-top: 0;
             padding: 6px 12px;
@@ -74,11 +75,13 @@
             letter-spacing: 0.2px;
         }
 
-        #stream-toggle {
+        #stream-toggle,
+        #live-edge-toggle {
             cursor: pointer;
         }
 
-        #stream-toggle.is-paused {
+        #stream-toggle.is-paused,
+        #live-edge-toggle.is-paused {
             color: var(--shell-accent);
             border-color: color-mix(in srgb, var(--shell-accent) 60%, transparent);
         }
@@ -207,6 +210,7 @@
             </select>
         </div>
         <button id="stream-toggle">Stream: On</button>
+        <button id="live-edge-toggle">Follow: Live</button>
     </div>
     <div id="chart-container">
         <canvas id="canvas" width="800" height="600"></canvas>
@@ -357,6 +361,7 @@
             const metricsLabel = document.getElementById("metrics-label");
             const perfLabel = document.getElementById("perf-label");
             const streamToggle = document.getElementById("stream-toggle");
+            const liveEdgeToggle = document.getElementById("live-edge-toggle");
             const datasetSelect = document.getElementById("dataset-size");
             const datasetLoad = document.getElementById("dataset-load");
             const benchmarkRun = document.getElementById("benchmark-run");
@@ -576,6 +581,38 @@
                 });
             }
 
+            const updateLiveEdgeToggle = () => {
+                if (!liveEdgeToggle) {
+                    return;
+                }
+                const label = !liveEdgeAutoEnabled
+                    ? "Off"
+                    : liveEdgeFollow ? "Live" : "Away";
+                liveEdgeToggle.textContent = `Follow: ${label}`;
+                liveEdgeToggle.classList.toggle("is-paused", !liveEdgeAutoEnabled || !liveEdgeFollow);
+                liveEdgeToggle.title = liveEdgeAutoEnabled
+                    ? "Auto-follow is enabled. Pan left to inspect history without being pulled back."
+                    : "Auto-follow is disabled. Click to jump back to the latest bar.";
+            };
+
+            const setLiveEdgeAutoEnabled = (nextState) => {
+                liveEdgeAutoEnabled = nextState;
+                if (liveEdgeAutoEnabled) {
+                    liveEdgeFollow = true;
+                    chart.focusLatestData(currentVisibleBars);
+                } else {
+                    liveEdgeFollow = false;
+                }
+                updateLiveEdgeToggle();
+                updateDatasetStatus();
+            };
+
+            if (liveEdgeToggle) {
+                liveEdgeToggle.addEventListener("click", () => {
+                    setLiveEdgeAutoEnabled(!liveEdgeAutoEnabled);
+                });
+            }
+
             const series = chart.createSeries({ type: "candlestick" });
             const lineSeries = chart.createSeries({ type: "line", lineWidth: 2 });
             const areaSeries = chart.createSeries({ type: "area", opacity: 0.12, lineWidth: 1.5 });
@@ -625,6 +662,7 @@
             let inProgressTicks = 0;
             let streamUiTick = 0;
             let historyLoading = false;
+            let liveEdgeAutoEnabled = true;
             let liveEdgeFollow = true;
             let currentVisibleBars = 140;
 
@@ -639,8 +677,11 @@
                         : loadedHistoryStartIndex > 0
                             ? ` | History: ${loadedHistoryStartIndex.toLocaleString()} older`
                             : " | History: complete";
+                    const followLabel = liveEdgeAutoEnabled
+                        ? (liveEdgeFollow ? " | Follow: live" : " | Follow: away")
+                        : " | Follow: off";
                     datasetStatus.textContent =
-                        `Size: ${loadedLabel} | TF: ${currentTimeframeKey.toUpperCase()} | TZ: ${currentTimezone} | Gaps: ${currentGapMode} | Mode: ${modeLabel}${historyLabel}`;
+                        `Size: ${loadedLabel} | TF: ${currentTimeframeKey.toUpperCase()} | TZ: ${currentTimezone} | Gaps: ${currentGapMode} | Mode: ${modeLabel}${historyLabel}${followLabel}`;
                 }
             };
 
@@ -926,7 +967,9 @@
 
                 chart.focusLatestData(getInitialVisibleBars(candles.length, currentTimeframeKey));
                 currentVisibleBars = getInitialVisibleBars(candles.length, currentTimeframeKey);
+                liveEdgeAutoEnabled = true;
                 liveEdgeFollow = true;
+                updateLiveEdgeToggle();
 
                 streamIndex = frames.length;
                 cumulativePnl = frames.length ? frames[frames.length - 1].pnl : 0;
@@ -1010,7 +1053,9 @@
 
                 if (event.endIndex >= event.startIndex) {
                     currentVisibleBars = Math.max(24, (event.endIndex - event.startIndex) + 1);
-                    liveEdgeFollow = event.endIndex >= (candles.length - 4);
+                    liveEdgeFollow = liveEdgeAutoEnabled && event.endIndex >= (candles.length - 4);
+                    updateLiveEdgeToggle();
+                    updateDatasetStatus();
                 }
 
                 if (
