@@ -103,13 +103,13 @@ export class SeriesManager {
                 this.ensureOwnedData(series);
                 series.data.push(point);
             } else {
+                const shouldDetachLastObject = !series.ownsData;
                 this.ensureOwnedData(series);
                 const lastIndex = series.data.length - 1;
                 if (hooks.isCompleteCandle(point)) {
                     series.data[lastIndex] = point;
                 } else {
-                    const last = series.data[lastIndex];
-                    series.data[lastIndex] = { ...last, ...point };
+                    this.applyPartialLastUpdate(series, lastIndex, point, shouldDetachLastObject);
                 }
             }
 
@@ -186,5 +186,20 @@ export class SeriesManager {
         }
         series.data = [...series.data];
         series.ownsData = true;
+    }
+
+    private applyPartialLastUpdate(
+        series: StoredSeries,
+        lastIndex: number,
+        point: Partial<CandleDataPoint>,
+        shouldDetachLastObject: boolean
+    ): void {
+        const last = series.data[lastIndex];
+        if (shouldDetachLastObject) {
+            series.data[lastIndex] = { ...last, ...point };
+            return;
+        }
+
+        Object.assign(last, point);
     }
 }

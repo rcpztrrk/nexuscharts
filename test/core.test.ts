@@ -59,6 +59,29 @@ test("SeriesManager detaches external arrays only when mutation happens", () => 
   assert.equal(manager.get(series.id)?.data[1].close, 15);
 });
 
+test("SeriesManager reuses internal last candle during streaming updates", () => {
+  const manager = new SeriesManager();
+  const hooks = createSeriesHooks();
+  const series = manager.createSeries({ type: "line" }, hooks, baseTheme);
+  const source = [
+    { time: 1, open: 10, high: 12, low: 9, close: 11 },
+    { time: 2, open: 11, high: 13, low: 10, close: 12 },
+  ];
+
+  series.setData(source);
+  series.updateLast({ close: 14 });
+
+  const firstInternalLast = manager.get(series.id)?.data[1];
+  assert.notEqual(firstInternalLast, source[1]);
+  assert.equal(source[1].close, 12);
+
+  series.updateLast({ high: 16 });
+
+  assert.equal(manager.get(series.id)?.data[1], firstInternalLast);
+  assert.equal(manager.get(series.id)?.data[1].close, 14);
+  assert.equal(manager.get(series.id)?.data[1].high, 16);
+});
+
 test("SeriesManager respects custom colors and refreshes default colors on theme apply", () => {
   const manager = new SeriesManager();
   const hooks = createSeriesHooks();
