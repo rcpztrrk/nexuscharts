@@ -195,6 +195,8 @@
                 <option value="midnight">Midnight</option>
                 <option value="ocean">Ocean</option>
                 <option value="ember">Ember</option>
+                <option value="light">Light</option>
+                <option value="terminal">Terminal</option>
             </select>
             <span>TZ</span>
             <select id="timezone-preset">
@@ -544,6 +546,190 @@
                         shellSubtle: "#c99f88",
                         shellHint: "#a68070",
                         shellAccent: "#ffbf69"
+                    }
+                },
+                light: {
+                    chart: {
+                        surface: {
+                            chartBackground: "#f5f7fb",
+                            panelBackground: "rgba(255, 255, 255, 0.96)",
+                            panelBorder: "rgba(74, 91, 118, 0.22)",
+                            axisLabelBackground: "rgba(237, 242, 249, 0.95)",
+                            axisLabelText: "#46566f",
+                            menuBackground: "rgba(255, 255, 255, 0.98)",
+                            menuBorder: "rgba(74, 91, 118, 0.24)",
+                            menuText: "#172033",
+                            menuShadow: "0 10px 24px rgba(27, 39, 63, 0.14)"
+                        },
+                        axes: {
+                            grid: "rgba(89, 108, 134, 0.18)",
+                            labelBackground: "rgba(237, 242, 249, 0.95)",
+                            labelText: "#46566f"
+                        },
+                        controls: {
+                            actionFill: "rgba(245, 248, 252, 0.96)",
+                            toggleActiveFill: "rgba(31, 111, 235, 0.9)",
+                            toggleInactiveFill: "rgba(245, 248, 252, 0.86)",
+                            activeStroke: "rgba(31, 111, 235, 0.52)",
+                            inactiveStroke: "rgba(74, 91, 118, 0.24)",
+                            actionText: "#172033",
+                            toggleActiveText: "#ffffff",
+                            toggleInactiveText: "#53637c",
+                            activeHint: "#ffe08a",
+                            inactiveHint: "rgba(83, 99, 124, 0.72)"
+                        },
+                        tooltip: {
+                            background: "rgba(255, 255, 255, 0.96)",
+                            border: "rgba(74, 91, 118, 0.24)",
+                            label: "#2563eb",
+                            value: "#172033",
+                            positive: "#16a34a",
+                            negative: "#dc2626"
+                        },
+                        crosshair: {
+                            line: "rgba(37, 99, 235, 0.42)",
+                            point: "rgba(14, 165, 233, 0.9)",
+                            labelBackground: "rgba(239, 246, 255, 0.98)",
+                            labelBorder: "rgba(37, 99, 235, 0.36)",
+                            labelText: "#1e40af"
+                        },
+                        selection: {
+                            fill: "rgba(245, 158, 11, 0.10)",
+                            stroke: "rgba(217, 119, 6, 0.62)",
+                            labelBackground: "rgba(255, 251, 235, 0.96)",
+                            labelText: "#92400e"
+                        },
+                        drawings: {
+                            line: "#2563eb",
+                            activeHandle: "rgba(245, 158, 11, 0.9)",
+                            hoveredHandle: "rgba(14, 165, 233, 0.9)",
+                            handleStroke: "rgba(255, 255, 255, 0.92)",
+                            menuDeleteHover: "rgba(220, 38, 38, 0.10)"
+                        },
+                        analytics: {
+                            heatmapHold: "#f59e0b",
+                            heatmapBuy: "#16a34a",
+                            heatmapSell: "#dc2626",
+                            panelBackground: "rgba(255, 255, 255, 0.82)",
+                            panelBorder: "rgba(74, 91, 118, 0.24)",
+                            zeroLine: "rgba(74, 91, 118, 0.26)",
+                            rewardCurve: "#0284c7",
+                            pnlCurve: "#f97316",
+                            panelText: "#172033"
+                        },
+                        indicators: {
+                            paneBackground: "rgba(247, 250, 252, 0.94)",
+                            paneBorder: "rgba(74, 91, 118, 0.22)",
+                            paneLabel: "#53637c",
+                            guide: "rgba(89, 108, 134, 0.28)",
+                            sma: "#ca8a04",
+                            ema: "#0284c7",
+                            rsi: "#7c3aed"
+                        },
+                        series: {
+                            line: "#2563eb",
+                            area: "#3b82f6",
+                            histogram: "#f59e0b",
+                            volume: "#0ea5e9",
+                            custom: "#db2777"
+                        },
+                        candles: {
+                            up: "#16a34a",
+                            down: "#dc2626",
+                            wick: "#4b5563"
+                        }
+                    },
+                    shell: {
+                        pageBg: "#eef2f7",
+                        pageText: "#111827",
+                        containerBorder: "rgba(74, 91, 118, 0.20)",
+                        containerShadow: "0 8px 24px rgba(27, 39, 63, 0.14)",
+                        shellBg: "rgba(255, 255, 255, 0.88)",
+                        shellBorder: "rgba(74, 91, 118, 0.24)",
+                        shellHover: "rgba(37, 99, 235, 0.55)",
+                        shellText: "#172033",
+                        shellMuted: "#53637c",
+                        shellSubtle: "#64748b",
+                        shellHint: "#64748b",
+                        shellAccent: "#2563eb"
+                    }
+                },
+                terminal: {
+                    chart: {
+                        surface: {
+                            chartBackground: "#0b1118",
+                            panelBackground: "rgba(5, 10, 18, 0.94)",
+                            panelBorder: "rgba(81, 103, 136, 0.42)",
+                            axisLabelBackground: "rgba(7, 12, 20, 0.9)",
+                            axisLabelText: "#8ca3c2",
+                            menuBackground: "rgba(5, 10, 18, 0.97)",
+                            menuBorder: "rgba(81, 103, 136, 0.46)",
+                            menuText: "#d7e2f3"
+                        },
+                        axes: {
+                            grid: "rgba(81, 103, 136, 0.24)",
+                            labelBackground: "rgba(7, 12, 20, 0.9)",
+                            labelText: "#8ca3c2"
+                        },
+                        controls: {
+                            actionFill: "rgba(10, 18, 30, 0.94)",
+                            toggleActiveFill: "rgba(18, 83, 139, 0.86)",
+                            toggleInactiveFill: "rgba(10, 18, 30, 0.82)",
+                            activeStroke: "rgba(84, 189, 255, 0.55)",
+                            inactiveStroke: "rgba(81, 103, 136, 0.34)",
+                            actionText: "#d7e2f3",
+                            toggleActiveText: "#f1f7ff",
+                            toggleInactiveText: "#8ca3c2",
+                            activeHint: "#f6c453",
+                            inactiveHint: "rgba(140, 163, 194, 0.72)"
+                        },
+                        tooltip: {
+                            background: "rgba(5, 10, 18, 0.94)",
+                            border: "rgba(81, 103, 136, 0.46)",
+                            label: "#54bdff",
+                            value: "#d7e2f3",
+                            positive: "#00c076",
+                            negative: "#ff4d4f"
+                        },
+                        analytics: {
+                            heatmapHold: "#f6c453",
+                            heatmapBuy: "#00c076",
+                            heatmapSell: "#ff4d4f",
+                            rewardCurve: "#54bdff",
+                            pnlCurve: "#f6a04d",
+                            panelText: "#d7e2f3"
+                        },
+                        indicators: {
+                            sma: "#f6c453",
+                            ema: "#54bdff",
+                            rsi: "#b48cff"
+                        },
+                        series: {
+                            line: "#54bdff",
+                            area: "#00b3ff",
+                            histogram: "#f6c453",
+                            volume: "#2dd4bf",
+                            custom: "#ff7ab6"
+                        },
+                        candles: {
+                            up: "#00c076",
+                            down: "#ff4d4f",
+                            wick: "#b8c7dc"
+                        }
+                    },
+                    shell: {
+                        pageBg: "#17181f",
+                        pageText: "#f4f7fb",
+                        containerBorder: "rgba(81, 103, 136, 0.30)",
+                        containerShadow: "0 8px 24px rgba(0, 0, 0, 0.48)",
+                        shellBg: "rgba(8, 14, 24, 0.9)",
+                        shellBorder: "rgba(81, 103, 136, 0.44)",
+                        shellHover: "rgba(84, 189, 255, 0.72)",
+                        shellText: "#d7e2f3",
+                        shellMuted: "#8ca3c2",
+                        shellSubtle: "#7890b3",
+                        shellHint: "#6f86aa",
+                        shellAccent: "#f6c453"
                     }
                 }
             };

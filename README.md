@@ -7,7 +7,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 
 - Phase 1-8 completed: WASM/WebGL2 core, instanced candlesticks, interaction, API, indicators, multipane UX, drawings, and time/price anchoring.
 - Phase 9 largely complete: realtime updates (append/update last candle), perf metrics, and large dataset render optimizations.
-- Phase 10 largely complete: unified theme model, `applyTheme()`, and demo presets are now in place.
+- Phase 10 largely complete: unified theme model, `applyTheme()`, and expanded demo presets are now in place.
 - Phase 11 largely complete: NexusCharts.ts has been split into focused modules (series, indicators, drawings, WASM bridge).
 - Phase 12 in progress: performance tuning is now benchmarked after TS/WASM allocation and renderer cache optimizations; recent primary-series caching work significantly reduced 1M redraw spikes, with heap/streaming tuning remaining active.
 - Phase 14 started: responsive layout and HiDPI-aware canvas sizing are now available.
@@ -30,7 +30,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Real-time updates via `append` and `updateLast` helpers for live candles.
 - Responsive canvas sizing with `ResizeObserver`, HiDPI pixel ratio support, and manual `resize()` fallback.
 - Performance metrics via `getPerfMetrics()` (avg/max/last redraw and heap telemetry where available).
-- Development demo page served from `public/`, including dataset benchmark mode and theme presets.
+- Development demo page served from `public/`, including dataset benchmark mode and Midnight/Ocean/Ember/Light/Terminal theme presets.
 
 ## API Snapshot
 
