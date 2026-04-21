@@ -5,7 +5,6 @@ import type {
     AnalyticsOptions,
     CandleDataPoint,
     ChartEventHandler,
-    ChartEventMap,
     ChartEventName,
     ChartTheme,
     ChartDrawingUpdateMode,
@@ -35,6 +34,7 @@ import type {
 } from "../types";
 
 import { PerfTracker } from "./perf/PerfTracker";
+import { ChartEventBus } from "./events/ChartEventBus";
 import { DrawingManager, type DrawingHitTestApi } from "./drawings/DrawingManager";
 import {
     applyAnchorsToDrawing,
@@ -123,7 +123,7 @@ export class NexusCharts {
     private hoveredCandle: HoveredCandle | null = null;
     private selectedCandleIndex: number | null = null;
     private cleanupHandlers: Array<() => void> = [];
-    private readonly eventListeners: Partial<Record<ChartEventName, Set<(payload: unknown) => void>>> = {};
+    private readonly eventBus = new ChartEventBus();
     private lastVisibleRangeKey: string | null = null;
     private lastTimeScaleKey: string | null = null;
     private readonly seriesManager = new SeriesManager();
@@ -819,20 +819,11 @@ export class NexusCharts {
     }
 
     public subscribe<K extends ChartEventName>(eventName: K, handler: ChartEventHandler<K>): () => void {
-        const listeners = this.eventListeners[eventName] ?? new Set<(payload: unknown) => void>();
-        listeners.add(handler as (payload: unknown) => void);
-        this.eventListeners[eventName] = listeners;
-        return () => {
-            this.unsubscribe(eventName, handler);
-        };
+        return this.eventBus.subscribe(eventName, handler);
     }
 
     public unsubscribe<K extends ChartEventName>(eventName: K, handler: ChartEventHandler<K>): boolean {
-        const listeners = this.eventListeners[eventName];
-        if (!listeners) {
-            return false;
-        }
-        return listeners.delete(handler as (payload: unknown) => void);
+        return this.eventBus.unsubscribe(eventName, handler);
     }
 
     private async initEngine(): Promise<void> {
@@ -2622,35 +2613,20 @@ export class NexusCharts {
         }
     }
 
-    private emitEvent<K extends ChartEventName>(eventName: K, payload: ChartEventMap[K]): void {
-        const listeners = this.eventListeners[eventName];
-        if (!listeners || listeners.size === 0) {
-            return;
-        }
-
-        for (const listener of listeners) {
-            try {
-                (listener as ChartEventHandler<K>)(payload);
-            } catch (error) {
-                console.error(`[NexusCharts] Event listener for '${eventName}' failed.`, error);
-            }
-        }
-    }
-
     private emitCrosshairMove(): void {
-        this.emitEvent("crosshairMove", {
+        this.eventBus.emit("crosshairMove", {
             candle: this.getHoveredCandle(),
         });
     }
 
     private emitSelectionChange(): void {
-        this.emitEvent("selectionChange", {
+        this.eventBus.emit("selectionChange", {
             candle: this.getSelectedCandle(),
         });
     }
 
     private emitClick(clientX: number, clientY: number, source: "mouse" | "touch"): void {
-        this.emitEvent("click", {
+        this.eventBus.emit("click", {
             candle: this.getHoveredCandle() ?? this.getSelectedCandle(),
             drawing: this.getDrawingSnapshot(this.drawingManager.getActiveDrawingId()),
             point: this.screenToTimePrice(clientX, clientY),
@@ -2661,7 +2637,7 @@ export class NexusCharts {
     }
 
     private emitDrawingSelected(): void {
-        this.emitEvent("drawingSelected", {
+        this.eventBus.emit("drawingSelected", {
             drawing: this.getDrawingSnapshot(this.drawingManager.getActiveDrawingId()),
         });
     }
@@ -2671,7 +2647,7 @@ export class NexusCharts {
         reason: "drag",
         meta: { mode: ChartDrawingUpdateMode; pointIndex: number | null; previousDrawing: DrawingDefinition | null }
     ): void {
-        this.emitEvent("drawingUpdated", {
+        this.eventBus.emit("drawingUpdated", {
             drawing: this.cloneDrawingDefinition(drawing) ?? drawing,
             previousDrawing: this.cloneDrawingDefinition(meta.previousDrawing),
             reason,
@@ -2681,7 +2657,7 @@ export class NexusCharts {
     }
 
     private emitDrawingDeleted(drawing: DrawingDefinition, reason: "api" | "contextMenu" | "clearAll"): void {
-        this.emitEvent("drawingDeleted", {
+        this.eventBus.emit("drawingDeleted", {
             drawing: this.cloneDrawingDefinition(drawing) ?? drawing,
             reason,
         });
@@ -2701,7 +2677,7 @@ export class NexusCharts {
                     fromPrice: null,
                     toPrice: null,
                 };
-                this.emitEvent("visibleRangeChange", visibleRange);
+                this.eventBus.emit("visibleRangeChange", visibleRange);
                 this.emitTimeScaleChange(visibleRange);
             }
             return;
@@ -2719,7 +2695,7 @@ export class NexusCharts {
                     fromPrice: null,
                     toPrice: null,
                 };
-                this.emitEvent("visibleRangeChange", visibleRange);
+                this.eventBus.emit("visibleRangeChange", visibleRange);
                 this.emitTimeScaleChange(visibleRange);
             }
             return;
@@ -2751,7 +2727,7 @@ export class NexusCharts {
 
         if (nextKey !== this.lastVisibleRangeKey) {
             this.lastVisibleRangeKey = nextKey;
-            this.emitEvent("visibleRangeChange", visibleRange);
+            this.eventBus.emit("visibleRangeChange", visibleRange);
         }
         this.emitTimeScaleChange(visibleRange);
     }
@@ -2789,7 +2765,7 @@ export class NexusCharts {
         }
 
         this.lastTimeScaleKey = nextKey;
-        this.emitEvent("timeScaleChange", {
+        this.eventBus.emit("timeScaleChange", {
             zoom: this.currentZoomX,
             zoomX: this.currentZoomX,
             zoomY: this.currentZoomY,
