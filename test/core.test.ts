@@ -5,6 +5,7 @@ import { SeriesManager } from "../ts-src/core/series/SeriesManager.ts";
 import { IndicatorEngine } from "../ts-src/core/indicators/IndicatorEngine.ts";
 import { createChartTheme, mergeChartTheme, cloneTheme } from "../ts-src/core/theme/ChartTheme.ts";
 import { PerfTracker } from "../ts-src/core/perf/PerfTracker.ts";
+import { NexusWasmBridge } from "../ts-src/core/wasm/NexusWasmBridge.ts";
 
 const baseTheme = createChartTheme();
 
@@ -164,4 +165,20 @@ test("PerfTracker keeps a sliding window and reports aggregate metrics", () => {
   assert.equal(metrics.lastRedrawMs, 20);
   assert.equal(metrics.maxRedrawMs, 20);
   assert.equal(metrics.avgRedrawMs, 15);
+});
+
+test("NexusWasmBridge grows series sync buffers geometrically", () => {
+  const bridge = new NexusWasmBridge();
+  const unsafeBridge = bridge as any;
+
+  unsafeBridge.ensureSeriesSyncCapacity(65);
+  const firstCapacity = unsafeBridge.seriesSyncScratch.opens.length;
+  unsafeBridge.ensureSeriesSyncCapacity(66);
+  const secondCapacity = unsafeBridge.seriesSyncScratch.opens.length;
+  unsafeBridge.ensureSeriesSyncCapacity(firstCapacity + 1);
+  const thirdCapacity = unsafeBridge.seriesSyncScratch.opens.length;
+
+  assert.equal(firstCapacity, 128);
+  assert.equal(secondCapacity, firstCapacity);
+  assert.equal(thirdCapacity, firstCapacity * 2);
 });

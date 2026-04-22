@@ -65,6 +65,11 @@ export class NexusWasmBridge {
         highs: new Float32Array(0),
         lows: new Float32Array(0),
         closes: new Float32Array(0),
+        opensView: new Float32Array(0),
+        highsView: new Float32Array(0),
+        lowsView: new Float32Array(0),
+        closesView: new Float32Array(0),
+        viewLength: -1,
     };
     private static wasmLoadPromise: Promise<NexusWasmModule> | null = null;
 
@@ -178,10 +183,7 @@ export class NexusWasmBridge {
             writeIndex += 1;
         }
 
-        const opens = scratch.opens.subarray(0, writeIndex);
-        const highs = scratch.highs.subarray(0, writeIndex);
-        const lows = scratch.lows.subarray(0, writeIndex);
-        const closes = scratch.closes.subarray(0, writeIndex);
+        const { opens, highs, lows, closes } = this.getSeriesSyncViews(writeIndex);
 
         try {
             this.module.setSeriesData(opens, highs, lows, closes);
@@ -196,10 +198,49 @@ export class NexusWasmBridge {
             return;
         }
 
-        scratch.opens = new Float32Array(requiredLength);
-        scratch.highs = new Float32Array(requiredLength);
-        scratch.lows = new Float32Array(requiredLength);
-        scratch.closes = new Float32Array(requiredLength);
+        const nextCapacity = this.nextSeriesSyncCapacity(requiredLength);
+        scratch.opens = new Float32Array(nextCapacity);
+        scratch.highs = new Float32Array(nextCapacity);
+        scratch.lows = new Float32Array(nextCapacity);
+        scratch.closes = new Float32Array(nextCapacity);
+        scratch.viewLength = -1;
+    }
+
+    private getSeriesSyncViews(length: number): {
+        opens: Float32Array;
+        highs: Float32Array;
+        lows: Float32Array;
+        closes: Float32Array;
+    } {
+        const scratch = this.seriesSyncScratch;
+        if (scratch.viewLength === length) {
+            return {
+                opens: scratch.opensView,
+                highs: scratch.highsView,
+                lows: scratch.lowsView,
+                closes: scratch.closesView,
+            };
+        }
+
+        scratch.opensView = length === scratch.opens.length ? scratch.opens : scratch.opens.subarray(0, length);
+        scratch.highsView = length === scratch.highs.length ? scratch.highs : scratch.highs.subarray(0, length);
+        scratch.lowsView = length === scratch.lows.length ? scratch.lows : scratch.lows.subarray(0, length);
+        scratch.closesView = length === scratch.closes.length ? scratch.closes : scratch.closes.subarray(0, length);
+        scratch.viewLength = length;
+        return {
+            opens: scratch.opensView,
+            highs: scratch.highsView,
+            lows: scratch.lowsView,
+            closes: scratch.closesView,
+        };
+    }
+
+    private nextSeriesSyncCapacity(requiredLength: number): number {
+        let capacity = Math.max(64, this.seriesSyncScratch.opens.length || 0);
+        while (capacity < requiredLength) {
+            capacity *= 2;
+        }
+        return capacity;
     }
 
     public pushObserverFrame(frame: NormalizedObserverFrame): void {
