@@ -60,6 +60,9 @@ import {
 import { createChartTheme, fontSpec } from "./theme/ChartTheme";
 import { renderControlBar, type ControlButtonState } from "./ui/ControlBar";
 import {
+    calculateFitToDataViewport,
+    calculateLatestDataViewport,
+    calculateTimeRangeViewport,
     canvasToWorldPoint as canvasToWorldPointUi,
     getVisibleCandleIndexRange as getVisibleCandleIndexRangeUi,
     getWorldUnitsPerPixel as getWorldUnitsPerPixelUi,
@@ -482,23 +485,10 @@ export class NexusCharts {
             return;
         }
 
-        const paddingY = 0.18;
-        const paddingX = 0.08;
-        const minX = -0.92;
-        const maxX = stats.validCount > 1 ? 0.92 : -0.92;
-        const minY = -0.85;
-        const maxY = 0.85;
-        const halfHeightFromY = Math.max(0.35, ((maxY - minY) * 0.5) + paddingY);
-        const halfWidthFromX = Math.max(0.35, ((maxX - minX) * 0.5) + paddingX);
-
-        this.currentCenterX = (minX + maxX) * 0.5;
-        this.currentCenterY = (minY + maxY) * 0.5;
-        this.currentZoomX = Math.min(5.0, Math.max(0.2, halfWidthFromX));
-        this.currentZoomY = Math.min(5.0, Math.max(0.2, halfHeightFromY));
-        this.applyCameraView();
-        this.refreshHoverFromStoredPointer();
-        this.redrawDrawings();
-        this.requestVisibleRangeEmit();
+        const viewport = calculateFitToDataViewport(stats);
+        if (viewport) {
+            this.applyViewportState(viewport);
+        }
     }
 
     public focusLatestData(visibleCandles: number = 140): void {
@@ -508,37 +498,10 @@ export class NexusCharts {
             return;
         }
 
-        const candles = geometry.candles;
-        const endIndex = candles.length - 1;
-        const visibleCount = Math.max(10, Math.min(candles.length, Math.floor(visibleCandles)));
-        const startIndex = Math.max(0, endIndex - visibleCount + 1);
-        const startCandle = candles[startIndex];
-        const endCandle = candles[endIndex];
-
-        let minY = Number.POSITIVE_INFINITY;
-        let maxY = Number.NEGATIVE_INFINITY;
-        for (let i = startIndex; i <= endIndex; i += 1) {
-            const candle = candles[i];
-            minY = Math.min(minY, candle.low);
-            maxY = Math.max(maxY, candle.high);
+        const viewport = calculateLatestDataViewport(geometry, visibleCandles);
+        if (viewport) {
+            this.applyViewportState(viewport);
         }
-
-        const spanX = Math.max(1e-5, endCandle.x - startCandle.x);
-        const spanY = Math.max(1e-5, maxY - minY);
-        const rightPadding = Math.max(spanX * 0.08, 0.01);
-        const paddingX = Math.max(spanX * 0.06, 0.01);
-        const paddingY = Math.max(spanY * 0.18, 0.18);
-        const minX = startCandle.x - paddingX;
-        const maxX = endCandle.x + rightPadding;
-
-        this.currentCenterX = (minX + maxX) * 0.5;
-        this.currentCenterY = (minY + maxY) * 0.5;
-        this.currentZoomX = Math.min(5.0, Math.max(0.2, (maxX - minX) * 0.5));
-        this.currentZoomY = Math.min(5.0, Math.max(0.2, ((maxY - minY) * 0.5) + paddingY));
-        this.applyCameraView();
-        this.refreshHoverFromStoredPointer();
-        this.redrawDrawings();
-        this.requestVisibleRangeEmit();
     }
 
     public focusTimeRange(
@@ -557,37 +520,13 @@ export class NexusCharts {
             return;
         }
 
-        const minX = Math.min(fromX, toX);
-        const maxX = Math.max(fromX, toX);
-        const spanX = Math.max(1e-5, maxX - minX);
-        const paddingX = Math.max(spanX * 0.06, 0.01);
-
-        this.currentCenterX = (minX + maxX) * 0.5;
-        this.currentZoomX = Math.min(5.0, Math.max(0.2, ((maxX - minX) * 0.5) + paddingX));
-
-        if (!preserveY) {
-            let minY = Number.POSITIVE_INFINITY;
-            let maxY = Number.NEGATIVE_INFINITY;
-            for (const candle of geometry.candles) {
-                if (candle.x < minX || candle.x > maxX) {
-                    continue;
-                }
-                minY = Math.min(minY, candle.low);
-                maxY = Math.max(maxY, candle.high);
-            }
-
-            if (Number.isFinite(minY) && Number.isFinite(maxY)) {
-                const spanY = Math.max(1e-5, maxY - minY);
-                const paddingY = Math.max(spanY * 0.18, 0.18);
-                this.currentCenterY = (minY + maxY) * 0.5;
-                this.currentZoomY = Math.min(5.0, Math.max(0.2, ((maxY - minY) * 0.5) + paddingY));
-            }
-        }
-
-        this.applyCameraView();
-        this.refreshHoverFromStoredPointer();
-        this.redrawDrawings();
-        this.requestVisibleRangeEmit();
+        this.applyViewportState(calculateTimeRangeViewport(
+            geometry,
+            fromX,
+            toX,
+            this.getViewportState(),
+            preserveY
+        ));
     }
 
     public createSeries(options: SeriesOptions = {}): SeriesApi {
@@ -1668,6 +1607,17 @@ export class NexusCharts {
         this.viewportStateScratch.zoomX = this.currentZoomX;
         this.viewportStateScratch.zoomY = this.currentZoomY;
         return this.viewportStateScratch;
+    }
+
+    private applyViewportState(viewport: ChartViewportState): void {
+        this.currentCenterX = viewport.centerX;
+        this.currentCenterY = viewport.centerY;
+        this.currentZoomX = viewport.zoomX;
+        this.currentZoomY = viewport.zoomY;
+        this.applyCameraView();
+        this.refreshHoverFromStoredPointer();
+        this.redrawDrawings();
+        this.requestVisibleRangeEmit();
     }
 
     private updateHoveredDrawingFromCanvas(canvasX: number, canvasY: number, width: number, height: number): void {
