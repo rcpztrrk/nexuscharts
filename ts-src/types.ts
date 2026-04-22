@@ -151,6 +151,33 @@ export interface CandleDataPoint {
     value?: number;
 }
 
+export interface DataAdapterRequest {
+    symbol?: string;
+    timeframe?: string;
+    from?: number | string;
+    to?: number | string;
+    limit?: number;
+}
+
+export type DataAdapterApplyMode = "replace" | "append";
+
+export type DataAdapterLoadResult =
+    | CandleDataPoint[]
+    | {
+        data: CandleDataPoint[];
+        mode?: DataAdapterApplyMode;
+    };
+
+export interface DataAdapterStreamHandlers {
+    onCandle: (point: CandleDataPoint, mode?: "append" | "updateLast") => void;
+    onError?: (error: unknown) => void;
+}
+
+export interface ChartDataAdapter {
+    load: (request?: DataAdapterRequest) => DataAdapterLoadResult | Promise<DataAdapterLoadResult>;
+    subscribe?: (handlers: DataAdapterStreamHandlers) => () => void;
+}
+
 export type SeriesType = "candlestick" | "line" | "area" | "histogram" | "volume" | "custom";
 
 export type AgentAction = "buy" | "sell" | "hold";

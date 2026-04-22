@@ -14,25 +14,37 @@ const filterPrivateMembers = (source) => source
     .join('\n');
 
 const main = async () => {
-    const [typesSource, chartSource] = await Promise.all([
+    const [typesSource, chartSource, dataAdapterSource] = await Promise.all([
         readFile(path.join(internalTypesDir, 'types.d.ts'), 'utf8'),
         readFile(path.join(internalTypesDir, 'core', 'NexusCharts.d.ts'), 'utf8'),
+        readFile(path.join(internalTypesDir, 'core', 'data', 'DataAdapter.d.ts'), 'utf8'),
     ]);
 
     const publicTypes = typesSource.replace('./core/NexusCharts', './NexusCharts');
     const publicChart = filterPrivateMembers(
         chartSource.replace('../types', './types')
     ).trimEnd() + '\n';
+    const publicDataAdapter = dataAdapterSource.replace('../../types', './types').trimEnd() + '\n';
 
     await mkdir(publicTypesDir, { recursive: true });
     await Promise.all([
         writeFile(
             path.join(publicTypesDir, 'index.d.ts'),
-            'export * from "./types";\nexport { NexusCharts } from "./NexusCharts";\n',
+            [
+                'export * from "./types";',
+                'export { NexusCharts } from "./NexusCharts";',
+                'export {',
+                '    connectSeriesDataAdapter,',
+                '    loadSeriesData,',
+                '    type SeriesDataAdapterConnection,',
+                '} from "./DataAdapter";',
+                '',
+            ].join('\n'),
             'utf8'
         ),
         writeFile(path.join(publicTypesDir, 'types.d.ts'), publicTypes, 'utf8'),
         writeFile(path.join(publicTypesDir, 'NexusCharts.d.ts'), publicChart, 'utf8'),
+        writeFile(path.join(publicTypesDir, 'DataAdapter.d.ts'), publicDataAdapter, 'utf8'),
     ]);
 };
 

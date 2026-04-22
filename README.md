@@ -28,6 +28,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Persistent UI preferences (`localStorage`) and tooltip mode switching (`follow` / `fixed`).
 - Indicator engine (SMA/EMA/RSI) with a secondary pane overlay.
 - Real-time updates via `append` and `updateLast` helpers for live candles.
+- Data adapter helpers (`loadSeriesData`, `connectSeriesDataAdapter`) for external REST/WebSocket style feeds.
 - Responsive canvas sizing with `ResizeObserver`, HiDPI pixel ratio support, and manual `resize()` fallback.
 - Performance metrics via `getPerfMetrics()` (avg/max/last redraw and heap telemetry where available).
 - Development demo page served from `public/`, including dataset benchmark mode and Midnight/Ocean/Ember/Light/Terminal theme presets.

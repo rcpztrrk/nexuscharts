@@ -6,6 +6,7 @@ import { IndicatorEngine } from "../ts-src/core/indicators/IndicatorEngine.ts";
 import { createChartTheme, mergeChartTheme, cloneTheme } from "../ts-src/core/theme/ChartTheme.ts";
 import { PerfTracker } from "../ts-src/core/perf/PerfTracker.ts";
 import { NexusWasmBridge } from "../ts-src/core/wasm/NexusWasmBridge.ts";
+import { connectSeriesDataAdapter, loadSeriesData } from "../ts-src/core/data/DataAdapter.ts";
 
 const baseTheme = createChartTheme();
 
@@ -181,4 +182,39 @@ test("NexusWasmBridge grows series sync buffers geometrically", () => {
   assert.equal(firstCapacity, 128);
   assert.equal(secondCapacity, firstCapacity);
   assert.equal(thirdCapacity, firstCapacity * 2);
+});
+
+test("DataAdapter helpers load and stream candles into a series", async () => {
+  const manager = new SeriesManager();
+  const series = manager.createSeries({ type: "candlestick" }, createSeriesHooks(), baseTheme);
+  const candles = [
+    { time: 1, open: 10, high: 11, low: 9, close: 10.5 },
+    { time: 2, open: 10.5, high: 12, low: 10, close: 11.5 },
+  ];
+  let streamHandlers: any = null;
+  let disconnected = false;
+
+  const adapter = {
+    load: () => ({ data: candles, mode: "replace" as const }),
+    subscribe: (handlers: any) => {
+      streamHandlers = handlers;
+      return () => {
+        disconnected = true;
+      };
+    },
+  };
+
+  const loaded = await loadSeriesData(series, adapter);
+  assert.equal(loaded, candles);
+  assert.deepEqual(series.getData(), candles);
+
+  const connection = connectSeriesDataAdapter(series, adapter);
+  streamHandlers.onCandle({ time: 3, open: 11.5, high: 13, low: 11, close: 12.5 });
+  streamHandlers.onCandle({ time: 3, close: 13 } as any, "updateLast");
+
+  assert.equal(series.getData().length, 3);
+  assert.equal(series.getData()[2].close, 13);
+
+  connection.disconnect();
+  assert.equal(disconnected, true);
 });
