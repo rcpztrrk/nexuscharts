@@ -266,6 +266,7 @@ VisibleRange ComputeVisibleRange(const Camera* camera, int viewportWidth, int vi
 void BuildRenderInstancesRange(
     const std::vector<RenderingCandleOhlc>& ohlc,
     const VisibleRange& range,
+    const RenderingTheme& theme,
     std::vector<RenderingInstance>* bodyInstances,
     std::vector<RenderingInstance>* wickInstances
 ) {
@@ -298,9 +299,9 @@ void BuildRenderInstancesRange(
             candle.open,
             candle.close,
             bodyHalfWidth,
-            isUp ? 0.18f : 0.92f,
-            isUp ? 0.80f : 0.28f,
-            isUp ? 0.34f : 0.30f
+            isUp ? theme.upR : theme.downR,
+            isUp ? theme.upG : theme.downG,
+            isUp ? theme.upB : theme.downB
         });
 
         wickInstances->push_back({
@@ -308,9 +309,9 @@ void BuildRenderInstancesRange(
             candle.low,
             candle.high,
             wickHalfWidth,
-            0.78f,
-            0.82f,
-            0.90f
+            theme.wickR,
+            theme.wickG,
+            theme.wickB
         });
     }
 }
@@ -409,6 +410,35 @@ void RenderingEngine::SetViewportSize(int width, int height) {
     }
 }
 
+void RenderingEngine::SetThemeColors(
+    float clearR,
+    float clearG,
+    float clearB,
+    float upR,
+    float upG,
+    float upB,
+    float downR,
+    float downG,
+    float downB,
+    float wickR,
+    float wickG,
+    float wickB
+) {
+    theme_.clearR = std::clamp(clearR, 0.0f, 1.0f);
+    theme_.clearG = std::clamp(clearG, 0.0f, 1.0f);
+    theme_.clearB = std::clamp(clearB, 0.0f, 1.0f);
+    theme_.upR = std::clamp(upR, 0.0f, 1.0f);
+    theme_.upG = std::clamp(upG, 0.0f, 1.0f);
+    theme_.upB = std::clamp(upB, 0.0f, 1.0f);
+    theme_.downR = std::clamp(downR, 0.0f, 1.0f);
+    theme_.downG = std::clamp(downG, 0.0f, 1.0f);
+    theme_.downB = std::clamp(downB, 0.0f, 1.0f);
+    theme_.wickR = std::clamp(wickR, 0.0f, 1.0f);
+    theme_.wickG = std::clamp(wickG, 0.0f, 1.0f);
+    theme_.wickB = std::clamp(wickB, 0.0f, 1.0f);
+    hasAppliedVisibleRange_ = false;
+}
+
 bool RenderingEngine::InitializePipeline() {
     pipelineAttempted_ = true;
 
@@ -446,7 +476,7 @@ bool RenderingEngine::InitializePipeline() {
         viewportHeight_,
         static_cast<int>(candleCache_.size())
     );
-    BuildRenderInstancesRange(candleCache_, visibleRange, &bodyInstancesScratch_, &wickInstancesScratch_);
+    BuildRenderInstancesRange(candleCache_, visibleRange, theme_, &bodyInstancesScratch_, &wickInstancesScratch_);
 
     glGenBuffers(1, &quadVbo_);
     glBindBuffer(GL_ARRAY_BUFFER, quadVbo_);
@@ -541,7 +571,7 @@ void RenderingEngine::RefreshInstanceBuffersIfNeeded() {
         return;
     }
 
-    BuildRenderInstancesRange(candleCache_, visibleRange, &bodyInstancesScratch_, &wickInstancesScratch_);
+    BuildRenderInstancesRange(candleCache_, visibleRange, theme_, &bodyInstancesScratch_, &wickInstancesScratch_);
 
     UploadInstances(bodyInstanceVbo_, bodyInstancesScratch_, &bodyInstanceCount_, &bodyInstanceBufferCapacityBytes_);
     UploadInstances(wickInstanceVbo_, wickInstancesScratch_, &wickInstanceCount_, &wickInstanceBufferCapacityBytes_);
@@ -556,7 +586,7 @@ void RenderingEngine::RefreshInstanceBuffersIfNeeded() {
 
 void RenderingEngine::Render() {
     glViewport(0, 0, viewportWidth_, viewportHeight_);
-    glClearColor(0.07f, 0.09f, 0.13f, 1.0f);
+    glClearColor(theme_.clearR, theme_.clearG, theme_.clearB, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
     if (!initialized_) {

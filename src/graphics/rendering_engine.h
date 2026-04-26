@@ -26,6 +26,21 @@ struct RenderingInstance {
     float colorB;
 };
 
+struct RenderingTheme {
+    float clearR = 0.07f;
+    float clearG = 0.09f;
+    float clearB = 0.13f;
+    float upR = 0.18f;
+    float upG = 0.80f;
+    float upB = 0.34f;
+    float downR = 0.92f;
+    float downG = 0.28f;
+    float downB = 0.30f;
+    float wickR = 0.78f;
+    float wickG = 0.82f;
+    float wickB = 0.90f;
+};
+
 class RenderingEngine {
 public:
     RenderingEngine(int viewportWidth, int viewportHeight);
@@ -34,6 +49,20 @@ public:
     void SetCamera(const Camera* camera);
     void SetDataManager(const DataManager* dataManager);
     void SetViewportSize(int width, int height);
+    void SetThemeColors(
+        float clearR,
+        float clearG,
+        float clearB,
+        float upR,
+        float upG,
+        float upB,
+        float downR,
+        float downG,
+        float downB,
+        float wickR,
+        float wickG,
+        float wickB
+    );
 
 private:
     bool InitializePipeline();
@@ -65,4 +94,5 @@ private:
     std::vector<RenderingInstance> wickInstancesScratch_;
     std::size_t bodyInstanceBufferCapacityBytes_ = 0;
     std::size_t wickInstanceBufferCapacityBytes_ = 0;
+    RenderingTheme theme_;
 };

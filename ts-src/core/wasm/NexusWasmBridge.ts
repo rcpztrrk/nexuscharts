@@ -1,4 +1,4 @@
-import type { AgentAction, CandleDataPoint, ObserverMetrics } from "../../types";
+import type { AgentAction, CandleDataPoint, ChartTheme, ObserverMetrics } from "../../types";
 import type { NormalizedObserverFrame } from "../analytics/ObserverAnalytics";
 
 interface NexusWasmModule {
@@ -8,6 +8,20 @@ interface NexusWasmModule {
     zoomCamera: (zoomFactor: number) => void;
     resizeViewport?: (width: number, height: number) => void;
     setCameraView?: (centerX: number, centerY: number, zoomX: number, zoomY: number) => void;
+    setThemeColors?: (
+        clearR: number,
+        clearG: number,
+        clearB: number,
+        upR: number,
+        upG: number,
+        upB: number,
+        downR: number,
+        downG: number,
+        downB: number,
+        wickR: number,
+        wickG: number,
+        wickB: number
+    ) => void;
     setSeriesData?: (
         opens: ArrayLike<number>,
         highs: ArrayLike<number>,
@@ -60,6 +74,7 @@ export class NexusWasmBridge {
     private warnMissingSetSeriesData: boolean = true;
     private warnMissingObserverBridge: boolean = true;
     private warnMissingSetCameraView: boolean = true;
+    private warnMissingSetThemeColors: boolean = true;
     private readonly seriesSyncScratch = {
         opens: new Float32Array(0),
         highs: new Float32Array(0),
@@ -147,6 +162,34 @@ export class NexusWasmBridge {
             this.warnMissingSetCameraView = false;
         }
         return false;
+    }
+
+
+    public applyTheme(theme: Pick<ChartTheme, "surface" | "candles">): boolean {
+        if (!this.moduleLoaded || !this.module) {
+            return false;
+        }
+
+        if (typeof this.module.setThemeColors !== "function") {
+            if (this.warnMissingSetThemeColors) {
+                console.warn("[NexusCharts] WASM export 'setThemeColors' is not available.");
+                this.warnMissingSetThemeColors = false;
+            }
+            return false;
+        }
+
+        const background = this.parseColor(theme.surface.chartBackground, [0.07, 0.09, 0.13]);
+        const up = this.parseColor(theme.candles.up, [0.18, 0.80, 0.34]);
+        const down = this.parseColor(theme.candles.down, [0.92, 0.28, 0.30]);
+        const wick = this.parseColor(theme.candles.wick, [0.78, 0.82, 0.90]);
+
+        this.module.setThemeColors(
+            background[0], background[1], background[2],
+            up[0], up[1], up[2],
+            down[0], down[1], down[2],
+            wick[0], wick[1], wick[2]
+        );
+        return true;
     }
 
     public syncCandlestickSeries(seriesId: string, data: CandleDataPoint[]): void {
@@ -377,6 +420,44 @@ export class NexusWasmBridge {
         });
 
         return NexusWasmBridge.wasmLoadPromise;
+    }
+
+    private parseColor(input: string, fallback: readonly [number, number, number]): [number, number, number] {
+        const value = input.trim();
+        const hex = value.startsWith("#") ? value.slice(1) : null;
+        if (hex) {
+            const normalized = hex.length === 3
+                ? hex.split("").map((part) => part + part).join("")
+                : hex;
+            if (normalized.length === 6 && /^[0-9a-fA-F]{6}$/.test(normalized)) {
+                return [
+                    parseInt(normalized.slice(0, 2), 16) / 255,
+                    parseInt(normalized.slice(2, 4), 16) / 255,
+                    parseInt(normalized.slice(4, 6), 16) / 255,
+                ];
+            }
+        }
+
+        const rgbMatch = value.match(/^rgba?\(([^)]+)\)$/i);
+        if (rgbMatch) {
+            const parts = rgbMatch[1].split(",").map((part) => Number.parseFloat(part.trim()));
+            if (parts.length >= 3 && parts.slice(0, 3).every((part) => Number.isFinite(part))) {
+                return [
+                    this.normalizeColorChannel(parts[0]),
+                    this.normalizeColorChannel(parts[1]),
+                    this.normalizeColorChannel(parts[2]),
+                ];
+            }
+        }
+
+        return [fallback[0], fallback[1], fallback[2]];
+    }
+
+    private normalizeColorChannel(channel: number): number {
+        if (channel <= 1) {
+            return Math.max(0, Math.min(1, channel));
+        }
+        return Math.max(0, Math.min(1, channel / 255));
     }
 
     private actionToCode(action: AgentAction): number {

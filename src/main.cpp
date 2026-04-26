@@ -95,6 +95,42 @@ void ResizeViewport(int width, int height) {
     g_renderingEngine->SetViewportSize(sanitizedWidth, sanitizedHeight);
 }
 
+
+void SetThemeColors(
+    double clearR,
+    double clearG,
+    double clearB,
+    double upR,
+    double upG,
+    double upB,
+    double downR,
+    double downG,
+    double downB,
+    double wickR,
+    double wickG,
+    double wickB
+) {
+    if (g_renderingEngine == nullptr) {
+        std::cerr << "[NexusCharts:WASM] setThemeColors called before RenderingEngine initialization." << std::endl;
+        return;
+    }
+
+    g_renderingEngine->SetThemeColors(
+        std::clamp(SanitizeFiniteFloat(clearR, 0.07f), 0.0f, 1.0f),
+        std::clamp(SanitizeFiniteFloat(clearG, 0.09f), 0.0f, 1.0f),
+        std::clamp(SanitizeFiniteFloat(clearB, 0.13f), 0.0f, 1.0f),
+        std::clamp(SanitizeFiniteFloat(upR, 0.18f), 0.0f, 1.0f),
+        std::clamp(SanitizeFiniteFloat(upG, 0.80f), 0.0f, 1.0f),
+        std::clamp(SanitizeFiniteFloat(upB, 0.34f), 0.0f, 1.0f),
+        std::clamp(SanitizeFiniteFloat(downR, 0.92f), 0.0f, 1.0f),
+        std::clamp(SanitizeFiniteFloat(downG, 0.28f), 0.0f, 1.0f),
+        std::clamp(SanitizeFiniteFloat(downB, 0.30f), 0.0f, 1.0f),
+        std::clamp(SanitizeFiniteFloat(wickR, 0.78f), 0.0f, 1.0f),
+        std::clamp(SanitizeFiniteFloat(wickG, 0.82f), 0.0f, 1.0f),
+        std::clamp(SanitizeFiniteFloat(wickB, 0.90f), 0.0f, 1.0f)
+    );
+}
+
 void SetSeriesData(val opens, val highs, val lows, val closes) {
     if (g_dataManager == nullptr) {
         std::cerr << "[NexusCharts:WASM] setSeriesData called before DataManager initialization." << std::endl;
@@ -299,6 +335,7 @@ EMSCRIPTEN_BINDINGS(nexus_charts_module) {
     function("zoomCamera", &ZoomCamera);
     function("resizeViewport", &ResizeViewport);
     function("setCameraView", &SetCameraView);
+    function("setThemeColors", &SetThemeColors);
     function("setSeriesData", &SetSeriesData);
     function("pushObserverFrame", &PushObserverFrame);
     function("clearObserverFrames", &ClearObserverFrames);

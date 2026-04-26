@@ -611,6 +611,7 @@ export class NexusCharts {
     public applyTheme(themeInput: ThemeInput): void {
         this.theme = createChartTheme(themeInput);
         this.applyCanvasTheme();
+        this.applyWasmTheme();
         this.seriesManager.applyTheme(this.theme);
         this.indicatorPaneManager.applyTheme(this.theme);
         this.drawingManager.applyMenuTheme(this.theme);
@@ -779,6 +780,7 @@ export class NexusCharts {
         }
 
         try {
+            this.applyWasmTheme();
             this.syncAllSeriesToEngine();
             this.syncAllObserverFramesToEngine();
             if (this.enableInteraction && this.canvas) {
@@ -2561,6 +2563,10 @@ export class NexusCharts {
         if (parent) {
             parent.style.backgroundColor = this.theme.surface.chartBackground;
         }
+    }
+
+    private applyWasmTheme(): void {
+        this.wasmBridge.applyTheme(this.theme);
     }
 
     private emitCrosshairMove(): void {
