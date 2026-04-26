@@ -224,7 +224,10 @@
     <div id="ux-hint">Hover for OHLC tooltip, click to select candle, drag to pan, wheel to zoom time axis, Shift+wheel to zoom price axis, double click to fit. Touch: drag to pan, pinch to zoom, long-press to lock tooltip, double-tap to fit. Shortcuts: F/A/C/T/Y/M/H/G, arrows, Home/End, Esc.</div>
 
     <script type="module">
-        import { NexusCharts } from "./nexus-charts.esm.js";
+        import {
+            NexusCharts,
+            connectSeriesDataAdapter,
+        } from "./nexus-charts.esm.js";
 
         const defaultTimezone = "UTC";
         const defaultGapMode = "compress";
@@ -861,6 +864,51 @@
             let liveEdgeAutoEnabled = true;
             let liveEdgeFollow = true;
             let currentVisibleBars = 140;
+            const adapterSubscribers = new Set();
+
+            const demoSeriesAdapter = {
+                load: async (request = {}) => {
+                    let data = candles;
+                    const hasTimeRange = request.from !== undefined || request.to !== undefined;
+                    if (hasTimeRange) {
+                        data = candles.filter((candle) => {
+                            const afterFrom = request.from === undefined || candle.time >= request.from;
+                            const beforeTo = request.to === undefined || candle.time <= request.to;
+                            return afterFrom && beforeTo;
+                        });
+                    }
+                    if (Number.isFinite(request.limit) && request.limit > 0 && data.length > request.limit) {
+                        data = data.slice(data.length - request.limit);
+                    }
+                    return {
+                        data,
+                        mode: "replace",
+                    };
+                },
+                subscribe: (handlers) => {
+                    adapterSubscribers.add(handlers);
+                    return () => {
+                        adapterSubscribers.delete(handlers);
+                    };
+                },
+            };
+
+            const emitAdapterCandle = (point, mode) => {
+                for (const handlers of adapterSubscribers) {
+                    try {
+                        handlers.onCandle(point, mode);
+                    } catch (error) {
+                        handlers.onError?.(error);
+                    }
+                }
+            };
+
+
+            const primarySeriesAdapterConnection = connectSeriesDataAdapter(series, demoSeriesAdapter, {
+                onError: (error) => {
+                    console.warn("[NexusCharts Demo] Data adapter stream failed.", error);
+                }
+            });
 
             const updateDatasetStatus = () => {
                 if (datasetStatus) {
@@ -877,7 +925,7 @@
                         ? (liveEdgeFollow ? " | Follow: live" : " | Follow: away")
                         : " | Follow: off";
                     datasetStatus.textContent =
-                        `Size: ${loadedLabel} | TF: ${currentTimeframeKey.toUpperCase()} | TZ: ${currentTimezone} | Gaps: ${currentGapMode} | Mode: ${modeLabel}${historyLabel}${followLabel}`;
+                        `Size: ${loadedLabel} | TF: ${currentTimeframeKey.toUpperCase()} | TZ: ${currentTimezone} | Gaps: ${currentGapMode} | Mode: ${modeLabel} | Source: adapter${historyLabel}${followLabel}`;
                 }
             };
 
@@ -1067,8 +1115,7 @@
                 });
             };
 
-            const applySeriesData = (dataset, enableOverlays) => {
-                series.setData(dataset);
+            const applyOverlaySeriesData = (dataset, enableOverlays) => {
                 if (enableOverlays) {
                     lineSeries.setData(dataset);
                     areaSeries.setData(dataset);
@@ -1119,7 +1166,16 @@
                 return getTimeframeViewPreset(timeframeKey).historyBatchSize;
             };
 
-            const applyDataset = (count, pauseStream = true, forceFullLoad = false) => {
+            const syncPrimarySeriesFromAdapter = async () => {
+                await primarySeriesAdapterConnection.load({
+                    timeframe: currentTimeframeKey,
+                    from: candles[0]?.time,
+                    to: candles[candles.length - 1]?.time,
+                    limit: candles.length,
+                });
+            };
+
+            const applyDataset = async (count, pauseStream = true, forceFullLoad = false) => {
                 overlaysEnabled = count < datasetThreshold;
                 analyticsEnabled = overlaysEnabled;
                 allCandles = generateCandles(count, currentTimeframeKey);
@@ -1133,7 +1189,7 @@
                 chart.batchUpdates(() => {
                     applyUiMode(overlaysEnabled);
                     applyIndicators(overlaysEnabled);
-                    applySeriesData(candles, overlaysEnabled);
+                    applyOverlaySeriesData(candles, overlaysEnabled);
 
                     chart.configureAnalytics({
                         showHeatmap: analyticsEnabled,
@@ -1147,6 +1203,13 @@
                     } else {
                         chart.clearDrawings();
                     }
+                });
+
+                await primarySeriesAdapterConnection.load({
+                    timeframe: currentTimeframeKey,
+                    from: candles[0]?.time,
+                    to: candles[candles.length - 1]?.time,
+                    limit: candles.length,
                 });
 
                 chart.focusLatestData(getInitialVisibleBars(candles.length, currentTimeframeKey));
@@ -1172,7 +1235,7 @@
             if (datasetLoad && datasetSelect) {
                 datasetLoad.addEventListener("click", () => {
                     const size = Number(datasetSelect.value) || 200;
-                    applyDataset(size, true);
+                    void applyDataset(size, true);
                 });
             }
 
@@ -1216,7 +1279,7 @@
                     if (datasetSelect) {
                         datasetSelect.value = String(size);
                     }
-                    applyDataset(size, true);
+                    void applyDataset(size, true);
                 });
             }
             chart.subscribe("click", (event) => {
@@ -1232,7 +1295,7 @@
                 renderEventState();
             });
 
-            chart.subscribe("visibleRangeChange", (event) => {
+            chart.subscribe("visibleRangeChange", async (event) => {
                 eventState.range = event.endIndex >= event.startIndex
                     ? `#${event.startIndex}-${event.endIndex} | ${formatEventTime(event.fromTime)} -> ${formatEventTime(event.toTime)}`
                     : "empty";
@@ -1271,9 +1334,10 @@
                 const frames = analyticsEnabled ? buildObserverFrames(candles, maxObserverFrames) : [];
 
                 chart.batchUpdates(() => {
-                    applySeriesData(candles, overlaysEnabled);
+                    applyOverlaySeriesData(candles, overlaysEnabled);
                     chart.setObserverFrames(frames);
                 });
+                await syncPrimarySeriesFromAdapter();
                 chart.focusTimeRange(fromTime, toTime, true);
                 currentVisibleBars = Math.max(24, (event.endIndex - event.startIndex) + 1);
                 historyLoading = false;
@@ -1307,7 +1371,7 @@
 
             applyThemePreset("midnight");
             applyTimeAxisOptions();
-            applyDataset(defaultDatasetSize, false);
+            void applyDataset(defaultDatasetSize, false);
             setBenchmarkReport("Benchmark sweep: ready. Use Run Sweep for 100k-1M automated measurements.");
             if (shouldAutorunBenchmark) {
                 window.setTimeout(() => {
@@ -1340,7 +1404,7 @@
                     activeCandle = last;
                     lastClose = activeCandle.close;
 
-                    series.updateLast(activeCandle);
+                    emitAdapterCandle(activeCandle, "updateLast");
                     if (overlaysEnabled) {
                         lineSeries.updateLast(activeCandle);
                         areaSeries.updateLast(activeCandle);
@@ -1361,7 +1425,7 @@
                     candles.push(activeCandle);
                     lastClose = activeCandle.close;
 
-                    series.append(activeCandle);
+                    emitAdapterCandle(activeCandle, "append");
                     if (overlaysEnabled) {
                         lineSeries.append(activeCandle);
                         areaSeries.append(activeCandle);
