@@ -194,6 +194,7 @@ test("DataAdapter helpers load and stream candles into a series", async () => {
   ];
   let streamHandlers: any = null;
   let disconnected = false;
+  let batchedLoads = 0;
 
   const adapter = {
     load: () => ({ data: candles, mode: "replace" as const }),
@@ -205,11 +206,25 @@ test("DataAdapter helpers load and stream candles into a series", async () => {
     },
   };
 
-  const loaded = await loadSeriesData(series, adapter);
+  const loaded = await loadSeriesData(series, adapter, undefined, {
+    batch: (callback) => {
+      batchedLoads += 1;
+      return callback();
+    },
+  });
   assert.equal(loaded, candles);
   assert.deepEqual(series.getData(), candles);
+  assert.equal(batchedLoads, 1);
 
   const connection = connectSeriesDataAdapter(series, adapter);
+  await connection.load(undefined, {
+    batch: (callback) => {
+      batchedLoads += 1;
+      return callback();
+    },
+  });
+  assert.equal(batchedLoads, 2);
+
   streamHandlers.onCandle({ time: 3, open: 11.5, high: 13, low: 11, close: 12.5 });
   streamHandlers.onCandle({ time: 3, close: 13 } as any, "updateLast");
 

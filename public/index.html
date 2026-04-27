@@ -1172,6 +1172,8 @@
                     from: candles[0]?.time,
                     to: candles[candles.length - 1]?.time,
                     limit: candles.length,
+                }, {
+                    batch: (callback) => chart.batchUpdates(callback),
                 });
             };
 
@@ -1210,6 +1212,8 @@
                     from: candles[0]?.time,
                     to: candles[candles.length - 1]?.time,
                     limit: candles.length,
+                }, {
+                    batch: (callback) => chart.batchUpdates(callback),
                 });
 
                 chart.focusLatestData(getInitialVisibleBars(candles.length, currentTimeframeKey));

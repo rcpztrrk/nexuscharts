@@ -147,6 +147,11 @@ export class NexusCharts {
             numericXs: Float64Array;
         }
         | null = null;
+    private wasmViewportSyncCache:
+        | { seriesId: string; revision: number; startIndex: number; endIndex: number }
+        | null = null;
+    private readonly wasmViewportSyncThreshold: number = 50000;
+    private readonly wasmViewportSyncPadding: number = 240;
     private readonly drawingManager = new DrawingManager();
     private readonly annotationManager = new PriceAnnotationManager();
     private readonly drawingCoordinateApi: DrawingCoordinateApi = {
@@ -990,6 +995,15 @@ export class NexusCharts {
             return;
         }
 
+        if (this.shouldUseWasmViewportSync(series.data.length) && this.syncPrimaryViewportSeriesToEngine(primary ?? {
+            id: seriesId,
+            data: series.data,
+            revision: series.revision,
+        })) {
+            return;
+        }
+
+        this.wasmViewportSyncCache = null;
         this.wasmBridge.syncCandlestickSeries(seriesId, series.data);
     }
 
@@ -997,6 +1011,56 @@ export class NexusCharts {
         for (const [seriesId] of this.seriesManager.entries()) {
             this.syncSeriesToEngine(seriesId);
         }
+    }
+
+
+    private shouldUseWasmViewportSync(length: number): boolean {
+        return length >= this.wasmViewportSyncThreshold;
+    }
+
+    private syncPrimaryViewportSeriesToEngine(
+        entry: { id: string; data: CandleDataPoint[]; revision: number },
+        geometryOverride?: SeriesGeometry | null,
+        surfaceOverride?: HTMLCanvasElement | null,
+        visibleRangeOverride?: { start: number; end: number }
+    ): boolean {
+        const geometry = geometryOverride ?? this.buildSeriesGeometry();
+        const surface = surfaceOverride ?? (this.overlayCanvas ?? this.canvas);
+        if (!geometry || !surface || geometry.candles.length === 0) {
+            return false;
+        }
+
+        const range = visibleRangeOverride ?? this.getVisibleCandleIndexRange(
+            geometry,
+            surface.width,
+            surface.height,
+            this.wasmViewportSyncPadding
+        );
+        if (range.end < range.start) {
+            return false;
+        }
+
+        const startIndex = Math.max(0, Math.min(entry.data.length - 1, range.start));
+        const endIndex = Math.max(startIndex, Math.min(entry.data.length - 1, range.end));
+        const cache = this.wasmViewportSyncCache;
+        if (
+            cache
+            && cache.seriesId === entry.id
+            && cache.revision === entry.revision
+            && cache.startIndex === startIndex
+            && cache.endIndex === endIndex
+        ) {
+            return true;
+        }
+
+        this.wasmBridge.syncCandlestickSeries(entry.id, entry.data.slice(startIndex, endIndex + 1));
+        this.wasmViewportSyncCache = {
+            seriesId: entry.id,
+            revision: entry.revision,
+            startIndex,
+            endIndex,
+        };
+        return true;
     }
 
     private syncObserverFrameToEngine(frame: NormalizedObserverFrame): void {
@@ -2332,6 +2396,24 @@ export class NexusCharts {
         }
 
         const range = this.getVisibleCandleIndexRange(geometry, surface.width, surface.height, 0);
+        const primaryEntry = this.getPrimaryCandlestickSeriesEntry();
+        const viewportSyncCache = this.wasmViewportSyncCache;
+        if (
+            primaryEntry
+            && this.shouldUseWasmViewportSync(primaryEntry.data.length)
+            && (
+                !viewportSyncCache
+                || viewportSyncCache.seriesId !== primaryEntry.id
+                || viewportSyncCache.revision !== primaryEntry.revision
+                || range.start < viewportSyncCache.startIndex
+                || range.end > viewportSyncCache.endIndex
+            )
+        ) {
+            this.syncPrimaryViewportSeriesToEngine(primaryEntry, geometry, surface, {
+                start: Math.max(0, range.start - this.wasmViewportSyncPadding),
+                end: range.end + this.wasmViewportSyncPadding,
+            });
+        }
         if (range.end < range.start) {
             if (this.lastVisibleRangeKey !== "empty") {
                 this.lastVisibleRangeKey = "empty";
