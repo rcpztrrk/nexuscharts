@@ -11,6 +11,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Phase 11 largely complete: NexusCharts.ts has been split into focused modules (series, indicators, drawings, WASM bridge).
 - Phase 12 in progress: performance tuning is now benchmarked after TS/WASM allocation and renderer cache optimizations; recent primary-series caching work significantly reduced 1M redraw spikes, with heap/streaming tuning remaining active.
 - Phase 14 started: responsive layout and HiDPI-aware canvas sizing are now available.
+- Price annotation API started: price lines and time/price markers can now be added, updated, removed, and rendered over the chart.
 - Demo now supports benchmark mode for large datasets (50k+), reducing overlay load to keep interaction responsive.
 
 ## Core Capabilities
@@ -29,6 +30,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Indicator engine (SMA/EMA/RSI) with a secondary pane overlay.
 - Real-time updates via `append` and `updateLast` helpers for live candles.
 - Data adapter helpers (`loadSeriesData`, `connectSeriesDataAdapter`) for external REST/WebSocket style feeds.
+- Price annotation helpers (`addPriceLine`, `addMarker`, update/remove/clear/get variants) for chart overlays.
 - Responsive canvas sizing with `ResizeObserver`, HiDPI pixel ratio support, and manual `resize()` fallback.
 - Performance metrics via `getPerfMetrics()` (avg/max/last redraw and heap telemetry where available).
 - Development demo page served from `public/`, including dataset benchmark mode and Midnight/Ocean/Ember/Light/Terminal theme presets.
@@ -70,6 +72,9 @@ chart.configureUi({
 chart.addIndicator({ type: "sma", period: 10, color: "#fbbf24" });
 chart.addIndicator({ type: "ema", period: 21, color: "#7dd3fc" });
 chart.addIndicator({ type: "rsi", period: 14, pane: "lower", color: "#a78bfa" });
+
+chart.addPriceLine({ price: 101.25, label: "Entry" });
+chart.addMarker({ time: 1, price: 103, label: "Buy", shape: "arrowUp" });
 
 chart.applyTheme({
   candles: { up: "#22c55e", down: "#fb7185" },
