@@ -14,10 +14,10 @@
     "benchmark": "node scripts/run-benchmark.mjs --sweep",
     "benchmark:1m": "node scripts/run-benchmark.mjs --size=1000000",
     "benchmark:100k": "node scripts/run-benchmark.mjs --size=100000",
-    "test": "node --experimental-strip-types --test --test-isolation=none test/core.test.ts test/integration.test.ts",
+    "test": "node --experimental-strip-types --test test/core.test.ts test/integration.test.ts",
     "pack:check": "npm pack --dry-run",
-    "test:watch": "node --experimental-strip-types --test --test-isolation=none --watch test/core.test.ts test/integration.test.ts",
-    "test:ci": "node --experimental-strip-types --test --test-isolation=none test/core.test.ts test/integration.test.ts",
+    "test:watch": "node --experimental-strip-types --test --watch test/core.test.ts test/integration.test.ts",
+    "test:ci": "node --experimental-strip-types --test test/core.test.ts test/integration.test.ts",
     "check:ci": "npm run build:ts && npm run test:ci"
   },
   "keywords": [
