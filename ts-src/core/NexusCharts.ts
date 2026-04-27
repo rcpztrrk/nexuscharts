@@ -37,8 +37,6 @@ import { PerfTracker } from "./perf/PerfTracker";
 import { ChartEventBus } from "./events/ChartEventBus";
 import { DrawingManager, type DrawingHitTestApi } from "./drawings/DrawingManager";
 import {
-    applyAnchorsToDrawing,
-    applyDragToDrawing,
     distancePointToSegment,
     resolveDrawingPoint,
     resolveDrawingWorldX,
@@ -79,10 +77,10 @@ import { renderCrosshairOverlay as renderCrosshairOverlayUi } from "./ui/Crossha
 import {
     renderSelectedCandleOverlay,
     resolveBoundarySelectionIndex,
-    resolveClickedSelectionIndex,
     resolveSteppedSelectionIndex,
 } from "./ui/CandleSelection";
 import { renderTooltipOverlay as renderTooltipOverlayUi } from "./ui/TooltipOverlay";
+import { attachChartInteractionController } from "./ui/InteractionController";
 import { loadPersistedChartState, persistChartState } from "./ui/Persistence";
 import { NexusWasmBridge } from "./wasm/NexusWasmBridge";
 import {
@@ -796,487 +794,72 @@ export class NexusCharts {
     }
 
     private attachInteractionHandlers(canvas: HTMLCanvasElement): void {
-        let pinchDistance: number | null = null;
-        let touchSelectionArmed = false;
-        let longPressTimer: number | null = null;
-        let longPressTriggered = false;
-        let lastTapAt = 0;
-        let updatedDrawingIdDuringPointer: string | null = null;
-        let dragStartDrawingSnapshot: DrawingDefinition | null = null;
-        let lastTapX = 0;
-        let lastTapY = 0;
-        const longPressDelayMs = 380;
-        const touchDragThresholdPx = 8;
-        const doubleTapDelayMs = 280;
-        const doubleTapDistancePx = 26;
-
-        const clearLongPressTimer = () => {
-            if (longPressTimer !== null) {
-                window.clearTimeout(longPressTimer);
-                longPressTimer = null;
-            }
-        };
-
-        const beginPointerInteraction = (clientX: number, clientY: number): boolean => {
-            if (this.getControlButtonAtClientPosition(clientX, clientY)) {
-                return false;
-            }
-
-            this.draggedDuringPointer = false;
-            this.lastPointerX = clientX;
-            this.lastPointerY = clientY;
-            this.updateHoverFromClientPosition(clientX, clientY);
-            const world = this.screenToWorld(clientX, clientY);
-            const surface = this.overlayCanvas ?? canvas;
-            const geometry = this.buildSeriesGeometry();
-            if (world && surface) {
-                const hit = this.drawingManager.hitTestDrawing(
-                    world,
-                    surface.width,
-                    surface.height,
-                    geometry,
-                    this.drawingHitTestApi
-                );
-                if (hit) {
-                    const drawing = this.drawingManager.getDrawing(hit.id);
-                    if (drawing) {
-                        applyAnchorsToDrawing(drawing, geometry, this.drawingCoordinateApi);
-                        const resolvedPoints = drawing.points
-                            ? drawing.points.map((point) => resolveDrawingPoint(point, geometry, this.drawingCoordinateApi))
-                            : undefined;
-                        const resolvedX = resolveDrawingWorldX(drawing, geometry, this.drawingCoordinateApi);
-                        const resolvedY = resolveDrawingWorldY(drawing, geometry, this.drawingCoordinateApi);
-
-                        this.setActiveDrawingSelection(hit.id);
-                        updatedDrawingIdDuringPointer = null;
-                        dragStartDrawingSnapshot = this.cloneDrawingDefinition(drawing);
-                        this.drawingManager.setActiveDrag({
-                            id: hit.id,
-                            mode: hit.mode,
-                            pointIndex: hit.pointIndex,
-                            startWorld: world,
-                            startPoints: resolvedPoints,
-                            startX: resolvedX ?? drawing.x,
-                            startY: resolvedY ?? drawing.y,
-                        });
-                        this.isDragging = false;
-                        this.redrawDrawings();
-                        return true;
-                    }
-                }
-            }
-            this.clearActiveDrawingInteraction();
-            dragStartDrawingSnapshot = null;
-            this.isDragging = true;
-            return true;
-        };
-
-        const movePointerInteraction = (clientX: number, clientY: number): void => {
-            const activeDrag = this.drawingManager.getActiveDrag();
-            if (activeDrag) {
-                const world = this.screenToWorld(clientX, clientY);
-                if (!world) {
-                    return;
-                }
-                const drag = activeDrag;
-                const drawing = this.drawingManager.getDrawing(drag.id);
-                if (!drawing) {
-                    this.drawingManager.clearActiveInteraction();
-                    return;
-                }
-
-                const geometry = this.buildSeriesGeometry();
-                this.draggedDuringPointer = true;
-                applyDragToDrawing(drawing, drag, world, geometry, this.drawingCoordinateApi);
-                updatedDrawingIdDuringPointer = drawing.id;
-                this.drawingManager.setHoveredDrawingId(drawing.id);
-                this.redrawDrawings();
-                return;
-            }
-
-            if (this.isDragging) {
-                const dx = clientX - this.lastPointerX;
-                const dy = clientY - this.lastPointerY;
-                if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
-                    this.draggedDuringPointer = true;
-                }
-                this.lastPointerX = clientX;
-                this.lastPointerY = clientY;
-
-                const width = canvas.width || 1;
-                const height = canvas.height || 1;
-                const aspect = width / height;
-                const worldUnitsPerPixelX = (2.0 * this.currentZoomX) / width;
-                const worldUnitsPerPixelY = (2.0 * this.currentZoomY) / height;
-
-                this.lastPointerX = clientX;
-                this.lastPointerY = clientY;
-                const panY = this.uiOptions.autoScaleY ? 0 : (dy * worldUnitsPerPixelY);
-                this.pan(-dx * worldUnitsPerPixelX, panY);
-                return;
-            }
-
-            this.lastPointerX = clientX;
-            this.lastPointerY = clientY;
-            this.updateHoverFromClientPosition(clientX, clientY);
-            this.redrawDrawings();
-        };
-
-        const activateSelectionFromPointer = (): void => {
-            if (this.activateHoveredDrawingSelection()) {
-                this.redrawDrawings();
-                return;
-            }
-            this.clearActiveDrawingSelection();
-            const nextIndex = resolveClickedSelectionIndex(
-                this.selectedCandleIndex,
-                this.hoveredCandle,
-                this.draggedDuringPointer
-            );
-            if (nextIndex === undefined) {
-                return;
-            }
-            this.setSelectedCandleIndex(nextIndex);
-        };
-
-        const scheduleLongPress = (clientX: number, clientY: number): void => {
-            clearLongPressTimer();
-            longPressTriggered = false;
-            longPressTimer = window.setTimeout(() => {
-                longPressTimer = null;
-                if (!touchSelectionArmed || this.draggedDuringPointer) {
-                    return;
-                }
-                this.updateHoverFromClientPosition(clientX, clientY);
-                activateSelectionFromPointer();
-                stopDragging();
-                touchSelectionArmed = false;
-                longPressTriggered = true;
-            }, longPressDelayMs);
-        };
-
-        const onMouseDown = (event: MouseEvent) => {
-            beginPointerInteraction(event.clientX, event.clientY);
-        };
-
-        const onMouseMove = (event: MouseEvent) => {
-            movePointerInteraction(event.clientX, event.clientY);
-        };
-
-        const stopDragging = () => {
-            this.isDragging = false;
-            const activeDrag = this.drawingManager.getActiveDrag();
-            if (activeDrag) {
-                this.drawingManager.setActiveDrag(null);
-                if (updatedDrawingIdDuringPointer === activeDrag.id) {
-                    const updatedDrawing = this.getDrawingSnapshot(activeDrag.id);
-                    if (updatedDrawing) {
-                        this.emitDrawingUpdated(updatedDrawing, "drag", {
-                            mode: activeDrag.mode,
-                            pointIndex: activeDrag.pointIndex ?? null,
-                            previousDrawing: dragStartDrawingSnapshot,
-                        });
-                    }
-                }
-            }
-            updatedDrawingIdDuringPointer = null;
-            dragStartDrawingSnapshot = null;
-        };
-
-        const onClick = (event: MouseEvent) => {
-            if (this.handleControlBarClick(event.clientX, event.clientY)) {
-                return;
-            }
-            activateSelectionFromPointer();
-            this.emitClick(event.clientX, event.clientY, "mouse");
-        };
-
-        const onWheel = (event: WheelEvent) => {
-            event.preventDefault();
-            this.updateHoverFromClientPosition(event.clientX, event.clientY);
-            const zoomFactor = event.deltaY > 0 ? 1.08 : 0.92;
-            const axis = (event.shiftKey || event.altKey) ? "y" : "x";
-            this.zoom(zoomFactor, axis);
-        };
-
-        const onContextMenu = (event: MouseEvent) => {
-            event.preventDefault();
-            this.updateHoverFromClientPosition(event.clientX, event.clientY);
-            this.drawingManager.showContextMenuForSelection(event.clientX, event.clientY);
-        };
-
-        const onGlobalDown = (event: MouseEvent) => {
-            const target = event.target as Node | null;
-            this.drawingManager.dismissContextMenuIfOutside(target);
-        };
-
-        const onDoubleClick = () => {
-            this.fitToData();
-        };
-
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (event.repeat) {
-                return;
-            }
-
-            const target = event.target as HTMLElement | null;
-            const tagName = target?.tagName?.toLowerCase();
-            if (target?.isContentEditable || tagName === "input" || tagName === "textarea" || tagName === "select") {
-                return;
-            }
-
-            switch (event.key.toLowerCase()) {
-                case "f":
-                    this.fitToData();
-                    event.preventDefault();
-                    break;
-                case "a":
-                    this.toggleUiFlag("showAxes");
-                    event.preventDefault();
-                    break;
-                case "c":
-                    this.toggleUiFlag("showCrosshair");
-                    event.preventDefault();
-                    break;
-                case "t":
-                    this.toggleUiFlag("showTooltip");
-                    event.preventDefault();
-                    break;
-                case "y":
-                    this.toggleAutoScaleY();
-                    event.preventDefault();
-                    break;
-                case "m":
-                    this.toggleTooltipMode();
-                    event.preventDefault();
-                    break;
-                case "h":
-                    this.toggleAnalyticsFlag("showHeatmap");
-                    event.preventDefault();
-                    break;
-                case "g":
-                    this.toggleAnalyticsPanel();
-                    event.preventDefault();
-                    break;
-                case "arrowleft":
-                    this.moveSelection(-1);
-                    event.preventDefault();
-                    break;
-                case "arrowright":
-                    this.moveSelection(1);
-                    event.preventDefault();
-                    break;
-                case "home":
-                    this.jumpSelection("start");
-                    event.preventDefault();
-                    break;
-                case "end":
-                    this.jumpSelection("end");
-                    event.preventDefault();
-                    break;
-                case "escape":
-                    this.clearSelectedCandle();
-                    this.drawingManager.hideContextMenu();
-                    event.preventDefault();
-                    break;
-                default:
-                    break;
-            }
-        };
-
-        const clearHover = () => {
-            this.hoverCanvasX = null;
-            this.hoverCanvasY = null;
-            this.hoveredCandle = null;
-            this.drawingManager.setHoveredDrawingId(null);
-            this.emitCrosshairMove();
-            this.redrawDrawings();
-        };
-
-        const touchDistance = (touches: TouchList): number => {
-            if (touches.length < 2) {
-                return 0;
-            }
-            const dx = touches[0].clientX - touches[1].clientX;
-            const dy = touches[0].clientY - touches[1].clientY;
-            return Math.hypot(dx, dy);
-        };
-
-        const touchCenter = (touches: TouchList): { x: number; y: number } => {
-            if (touches.length === 0) {
-                return { x: 0, y: 0 };
-            }
-            if (touches.length === 1) {
-                return { x: touches[0].clientX, y: touches[0].clientY };
-            }
-            return {
-                x: (touches[0].clientX + touches[1].clientX) * 0.5,
-                y: (touches[0].clientY + touches[1].clientY) * 0.5,
-            };
-        };
-
-        const onTouchStart = (event: TouchEvent) => {
-            if (event.touches.length === 1) {
-                const touch = event.touches[0];
-                if (this.handleControlBarClick(touch.clientX, touch.clientY)) {
-                    event.preventDefault();
-                    touchSelectionArmed = false;
-                    clearLongPressTimer();
-                    return;
-                }
-
-                pinchDistance = null;
-                longPressTriggered = false;
-                touchSelectionArmed = beginPointerInteraction(touch.clientX, touch.clientY);
-                if (touchSelectionArmed) {
-                    scheduleLongPress(touch.clientX, touch.clientY);
-                }
-                event.preventDefault();
-                return;
-            }
-
-            if (event.touches.length >= 2) {
-                clearLongPressTimer();
-                const center = touchCenter(event.touches);
-                this.updateHoverFromClientPosition(center.x, center.y);
-                this.isDragging = false;
-                this.drawingManager.setActiveDrag(null);
-                this.draggedDuringPointer = true;
-                touchSelectionArmed = false;
-                pinchDistance = touchDistance(event.touches);
-                this.redrawDrawings();
-                event.preventDefault();
-            }
-        };
-
-        const onTouchMove = (event: TouchEvent) => {
-            if (event.touches.length >= 2) {
-                clearLongPressTimer();
-                const nextDistance = touchDistance(event.touches);
-                const center = touchCenter(event.touches);
-                this.updateHoverFromClientPosition(center.x, center.y);
-                if (pinchDistance && nextDistance > 0) {
-                    const zoomFactor = pinchDistance / nextDistance;
-                    if (Number.isFinite(zoomFactor) && Math.abs(zoomFactor - 1) > 0.001) {
-                        this.zoom(zoomFactor, "x");
-                    }
-                }
-                pinchDistance = nextDistance;
-                this.draggedDuringPointer = true;
-                touchSelectionArmed = false;
-                event.preventDefault();
-                return;
-            }
-
-            if (event.touches.length === 1) {
-                const touch = event.touches[0];
-                const moveDistance = Math.hypot(touch.clientX - this.lastPointerX, touch.clientY - this.lastPointerY);
-                if (moveDistance > touchDragThresholdPx) {
-                    clearLongPressTimer();
-                    touchSelectionArmed = false;
-                }
-                movePointerInteraction(touch.clientX, touch.clientY);
-                if (this.draggedDuringPointer) {
-                    touchSelectionArmed = false;
-                    clearLongPressTimer();
-                }
-                event.preventDefault();
-            }
-        };
-
-        const onTouchEnd = (event: TouchEvent) => {
-            if (event.touches.length >= 2) {
-                pinchDistance = touchDistance(event.touches);
-                touchSelectionArmed = false;
-                clearLongPressTimer();
-                event.preventDefault();
-                return;
-            }
-
-            if (event.touches.length === 1) {
-                const touch = event.touches[0];
-                pinchDistance = null;
-                clearLongPressTimer();
-                this.lastPointerX = touch.clientX;
-                this.lastPointerY = touch.clientY;
-                this.isDragging = true;
-                this.drawingManager.setActiveDrag(null);
-                this.draggedDuringPointer = true;
-                touchSelectionArmed = false;
-                event.preventDefault();
-                return;
-            }
-
-            pinchDistance = null;
-            clearLongPressTimer();
-            if (longPressTriggered) {
-                longPressTriggered = false;
-                touchSelectionArmed = false;
-                stopDragging();
-                event.preventDefault();
-                return;
-            }
-
-            if (touchSelectionArmed && !this.draggedDuringPointer) {
-                activateSelectionFromPointer();
-                this.emitClick(this.lastPointerX, this.lastPointerY, "touch");
-                const now = performance.now();
-                const isDoubleTap = (now - lastTapAt) <= doubleTapDelayMs
-                    && Math.hypot(this.lastPointerX - lastTapX, this.lastPointerY - lastTapY) <= doubleTapDistancePx;
-                if (isDoubleTap) {
-                    this.fitToData();
-                    lastTapAt = 0;
-                } else {
-                    lastTapAt = now;
-                    lastTapX = this.lastPointerX;
-                    lastTapY = this.lastPointerY;
-                }
-            }
-            touchSelectionArmed = false;
-            stopDragging();
-            event.preventDefault();
-        };
-
-        const onTouchCancel = () => {
-            pinchDistance = null;
-            touchSelectionArmed = false;
-            clearLongPressTimer();
-            longPressTriggered = false;
-            stopDragging();
-        };
-
-        canvas.addEventListener("mousedown", onMouseDown);
-        window.addEventListener("mousemove", onMouseMove);
-        window.addEventListener("mouseup", stopDragging);
-        canvas.addEventListener("mouseleave", stopDragging);
-        canvas.addEventListener("mouseleave", clearHover);
-        canvas.addEventListener("click", onClick);
-        canvas.addEventListener("dblclick", onDoubleClick);
-        canvas.addEventListener("wheel", onWheel, { passive: false });
-        canvas.addEventListener("contextmenu", onContextMenu);
-        canvas.addEventListener("touchstart", onTouchStart, { passive: false });
-        canvas.addEventListener("touchmove", onTouchMove, { passive: false });
-        canvas.addEventListener("touchend", onTouchEnd, { passive: false });
-        canvas.addEventListener("touchcancel", onTouchCancel, { passive: false });
-        window.addEventListener("keydown", onKeyDown);
-        window.addEventListener("mousedown", onGlobalDown);
-
-        this.cleanupHandlers.push(() => canvas.removeEventListener("mousedown", onMouseDown));
-        this.cleanupHandlers.push(() => window.removeEventListener("mousemove", onMouseMove));
-        this.cleanupHandlers.push(() => window.removeEventListener("mouseup", stopDragging));
-        this.cleanupHandlers.push(() => canvas.removeEventListener("mouseleave", stopDragging));
-        this.cleanupHandlers.push(() => canvas.removeEventListener("mouseleave", clearHover));
-        this.cleanupHandlers.push(() => canvas.removeEventListener("click", onClick));
-        this.cleanupHandlers.push(() => canvas.removeEventListener("dblclick", onDoubleClick));
-        this.cleanupHandlers.push(() => canvas.removeEventListener("wheel", onWheel));
-        this.cleanupHandlers.push(() => canvas.removeEventListener("contextmenu", onContextMenu));
-        this.cleanupHandlers.push(() => canvas.removeEventListener("touchstart", onTouchStart));
-        this.cleanupHandlers.push(() => canvas.removeEventListener("touchmove", onTouchMove));
-        this.cleanupHandlers.push(() => canvas.removeEventListener("touchend", onTouchEnd));
-        this.cleanupHandlers.push(() => canvas.removeEventListener("touchcancel", onTouchCancel));
-        this.cleanupHandlers.push(() => clearLongPressTimer());
-        this.cleanupHandlers.push(() => window.removeEventListener("keydown", onKeyDown));
-        this.cleanupHandlers.push(() => window.removeEventListener("mousedown", onGlobalDown));
+        const self = this;
+        this.cleanupHandlers.push(attachChartInteractionController({
+            canvas,
+            getOverlayCanvas: () => this.overlayCanvas,
+            state: {
+                get isDragging() {
+                    return self.isDragging;
+                },
+                set isDragging(value: boolean) {
+                    self.isDragging = value;
+                },
+                get draggedDuringPointer() {
+                    return self.draggedDuringPointer;
+                },
+                set draggedDuringPointer(value: boolean) {
+                    self.draggedDuringPointer = value;
+                },
+                get lastPointerX() {
+                    return self.lastPointerX;
+                },
+                set lastPointerX(value: number) {
+                    self.lastPointerX = value;
+                },
+                get lastPointerY() {
+                    return self.lastPointerY;
+                },
+                set lastPointerY(value: number) {
+                    self.lastPointerY = value;
+                },
+            },
+            getCurrentZoomX: () => this.currentZoomX,
+            getCurrentZoomY: () => this.currentZoomY,
+            getAutoScaleY: () => this.uiOptions.autoScaleY,
+            getControlButtonAtClientPosition: (clientX, clientY) => this.getControlButtonAtClientPosition(clientX, clientY),
+            updateHoverFromClientPosition: (clientX, clientY) => this.updateHoverFromClientPosition(clientX, clientY),
+            screenToWorld: (clientX, clientY) => this.screenToWorld(clientX, clientY),
+            buildSeriesGeometry: () => this.buildSeriesGeometry(),
+            drawingManager: this.drawingManager,
+            drawingHitTestApi: this.drawingHitTestApi,
+            drawingCoordinateApi: this.drawingCoordinateApi,
+            setActiveDrawingSelection: (id) => this.setActiveDrawingSelection(id),
+            clearActiveDrawingInteraction: () => this.clearActiveDrawingInteraction(),
+            redrawDrawings: () => this.redrawDrawings(),
+            pan: (deltaX, deltaY) => this.pan(deltaX, deltaY),
+            zoom: (zoomFactor, axis) => this.zoom(zoomFactor, axis),
+            activateHoveredDrawingSelection: () => this.activateHoveredDrawingSelection(),
+            clearActiveDrawingSelection: () => this.clearActiveDrawingSelection(),
+            getSelectedCandleIndex: () => this.selectedCandleIndex,
+            getHoveredCandle: () => this.hoveredCandle,
+            setSelectedCandleIndex: (index) => this.setSelectedCandleIndex(index),
+            cloneDrawingDefinition: (drawing) => this.cloneDrawingDefinition(drawing) ?? drawing,
+            getDrawingSnapshot: (id) => this.getDrawingSnapshot(id),
+            emitDrawingUpdated: (drawing, meta) => this.emitDrawingUpdated(drawing, "drag", meta),
+            handleControlBarClick: (clientX, clientY) => this.handleControlBarClick(clientX, clientY),
+            emitClick: (clientX, clientY, source) => this.emitClick(clientX, clientY, source),
+            fitToData: () => this.fitToData(),
+            toggleUiFlag: (flag) => this.toggleUiFlag(flag),
+            toggleAutoScaleY: () => this.toggleAutoScaleY(),
+            toggleTooltipMode: () => this.toggleTooltipMode(),
+            toggleAnalyticsFlag: (flag) => this.toggleAnalyticsFlag(flag),
+            toggleAnalyticsPanel: () => this.toggleAnalyticsPanel(),
+            moveSelection: (step) => this.moveSelection(step),
+            jumpSelection: (edge) => this.jumpSelection(edge),
+            clearSelectedCandle: () => this.clearSelectedCandle(),
+            emitCrosshairMove: () => this.clearHoverState(),
+        }));
     }
 
     private detachInteractionHandlers(): void {
@@ -1950,6 +1533,15 @@ export class NexusCharts {
             screenY: closePoint.y,
             worldX: candle.x,
         };
+    }
+
+    private clearHoverState(): void {
+        this.hoverCanvasX = null;
+        this.hoverCanvasY = null;
+        this.hoveredCandle = null;
+        this.drawingManager.setHoveredDrawingId(null);
+        this.emitCrosshairMove();
+        this.redrawDrawings();
     }
 
     private updateHoverFromClientPosition(clientX: number, clientY: number): void {
