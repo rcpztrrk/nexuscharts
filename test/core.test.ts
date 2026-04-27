@@ -7,6 +7,7 @@ import { createChartTheme, mergeChartTheme, cloneTheme } from "../ts-src/core/th
 import { PerfTracker } from "../ts-src/core/perf/PerfTracker.ts";
 import { NexusWasmBridge } from "../ts-src/core/wasm/NexusWasmBridge.ts";
 import { connectSeriesDataAdapter, loadSeriesData } from "../ts-src/core/data/DataAdapter.ts";
+import { PriceAnnotationManager } from "../ts-src/core/annotations/PriceAnnotationManager.ts";
 
 const baseTheme = createChartTheme();
 
@@ -217,4 +218,31 @@ test("DataAdapter helpers load and stream candles into a series", async () => {
 
   connection.disconnect();
   assert.equal(disconnected, true);
+});
+
+
+test("PriceAnnotationManager stores and updates price lines and markers", () => {
+  const manager = new PriceAnnotationManager();
+  const createId = (() => {
+    let i = 0;
+    return () => `ann_${++i}`;
+  })();
+
+  const priceLineId = manager.addPriceLine({ price: 101.25, label: "Entry" }, createId);
+  const markerId = manager.addMarker({ time: 2, price: 102.5, label: "Buy", shape: "arrowUp" }, createId);
+
+  assert.equal(manager.getPriceLines().length, 1);
+  assert.equal(manager.getMarkers().length, 1);
+  assert.equal(manager.hasAnnotations(), true);
+
+  assert.equal(manager.updatePriceLine(priceLineId, { price: 103.75 }), true);
+  assert.equal(manager.updateMarker(markerId, { label: "Take Profit", shape: "circle" }), true);
+
+  assert.equal(manager.getPriceLines()[0].price, 103.75);
+  assert.equal(manager.getMarkers()[0].label, "Take Profit");
+  assert.equal(manager.getMarkers()[0].shape, "circle");
+
+  assert.equal(manager.removePriceLine(priceLineId), true);
+  manager.clearMarkers();
+  assert.equal(manager.hasAnnotations(), false);
 });

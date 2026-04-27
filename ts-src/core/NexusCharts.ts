@@ -24,6 +24,10 @@ import type {
     IndicatorDefinition,
     IndicatorSeries,
     SeriesApi,
+    PriceLineOptions,
+    PriceLineDefinition,
+    ChartMarkerOptions,
+    ChartMarkerDefinition,
     DrawingPoint,
     DrawingStyle,
     DrawingType,
@@ -36,6 +40,7 @@ import type {
 import { PerfTracker } from "./perf/PerfTracker";
 import { ChartEventBus } from "./events/ChartEventBus";
 import { DrawingManager, type DrawingHitTestApi } from "./drawings/DrawingManager";
+import { PriceAnnotationManager } from "./annotations/PriceAnnotationManager";
 import {
     distancePointToSegment,
     resolveDrawingPoint,
@@ -80,6 +85,7 @@ import {
     resolveSteppedSelectionIndex,
 } from "./ui/CandleSelection";
 import { renderTooltipOverlay as renderTooltipOverlayUi } from "./ui/TooltipOverlay";
+import { renderPriceAnnotations } from "./ui/PriceAnnotations";
 import { attachChartInteractionController } from "./ui/InteractionController";
 import { loadPersistedChartState, persistChartState } from "./ui/Persistence";
 import { NexusWasmBridge } from "./wasm/NexusWasmBridge";
@@ -142,6 +148,7 @@ export class NexusCharts {
         }
         | null = null;
     private readonly drawingManager = new DrawingManager();
+    private readonly annotationManager = new PriceAnnotationManager();
     private readonly drawingCoordinateApi: DrawingCoordinateApi = {
         timeToWorldX: (time, geometry) => this.timeToWorldXInternal(time, geometry),
         worldXToTime: (worldX, geometry) => this.worldXToTimeInternal(worldX, geometry),
@@ -604,6 +611,69 @@ export class NexusCharts {
         if (hadActiveDrawing) {
             this.emitDrawingSelected();
         }
+    }
+
+
+    public addPriceLine(options: PriceLineOptions): string {
+        const id = this.annotationManager.addPriceLine(options, () => this.nextId("priceLine"));
+        this.requestRedraw();
+        return id;
+    }
+
+    public updatePriceLine(id: string, patch: Partial<PriceLineOptions>): boolean {
+        const updated = this.annotationManager.updatePriceLine(id, patch);
+        if (updated) {
+            this.requestRedraw();
+        }
+        return updated;
+    }
+
+    public removePriceLine(id: string): boolean {
+        const removed = this.annotationManager.removePriceLine(id);
+        if (removed) {
+            this.requestRedraw();
+        }
+        return removed;
+    }
+
+    public clearPriceLines(): void {
+        this.annotationManager.clearPriceLines();
+        this.requestRedraw();
+    }
+
+    public getPriceLines(): PriceLineDefinition[] {
+        return this.annotationManager.getPriceLines();
+    }
+
+    public addMarker(options: ChartMarkerOptions): string {
+        const id = this.annotationManager.addMarker(options, () => this.nextId("marker"));
+        this.requestRedraw();
+        return id;
+    }
+
+    public updateMarker(id: string, patch: Partial<ChartMarkerOptions>): boolean {
+        const updated = this.annotationManager.updateMarker(id, patch);
+        if (updated) {
+            this.requestRedraw();
+        }
+        return updated;
+    }
+
+    public removeMarker(id: string): boolean {
+        const removed = this.annotationManager.removeMarker(id);
+        if (removed) {
+            this.requestRedraw();
+        }
+        return removed;
+    }
+
+    public clearMarkers(): void {
+        this.annotationManager.clearMarkers();
+        this.requestRedraw();
+    }
+
+    public getMarkers(): ChartMarkerDefinition[] {
+        return this.annotationManager.getMarkers();
     }
 
     public applyTheme(themeInput: ThemeInput): void {
@@ -1795,6 +1865,7 @@ export class NexusCharts {
         });
 
         this.renderSeriesOverlay(ctx, width, height, geometry);
+        this.renderPriceAnnotationsOverlay(ctx, width, height, geometry);
         this.renderAxesOverlay(ctx, width, height, geometry);
         renderIndicatorOverlay(ctx, width, height, geometry, this.indicatorPaneManager.values(), {
             getIndicatorPaneBounds: this.getIndicatorPaneBounds.bind(this),
@@ -1835,7 +1906,36 @@ export class NexusCharts {
         if (this.indicatorPaneManager.getLowerIndicators().length > 0) {
             return true;
         }
+        if (this.annotationManager.hasAnnotations()) {
+            return true;
+        }
         return this.hasOverlaySeriesData();
+    }
+
+    private renderPriceAnnotationsOverlay(
+        ctx: CanvasRenderingContext2D,
+        width: number,
+        height: number,
+        geometry: SeriesGeometry | null
+    ): void {
+        if (!geometry || geometry.candles.length === 0 || !this.annotationManager.hasAnnotations()) {
+            return;
+        }
+
+        renderPriceAnnotations(ctx, {
+            theme: this.theme,
+            geometry,
+            width,
+            height,
+            priceLines: this.annotationManager.getPriceLines(),
+            markers: this.annotationManager.getMarkers(),
+            priceToWorldY: (price, activeGeometry) => this.priceToWorldYValue(price, activeGeometry),
+            timeToWorldX: (time, activeGeometry) => this.timeToWorldXInternal(time, activeGeometry),
+            worldToCanvasPoint: (worldX, worldY, canvasWidth, canvasHeight) => (
+                this.worldToCanvasPoint(worldX, worldY, canvasWidth, canvasHeight)
+            ),
+            formatPrice: (price) => this.formatPrice(price),
+        });
     }
 
     private renderSeriesOverlay(
@@ -2397,7 +2497,7 @@ export class NexusCharts {
         return this.indicatorPaneManager.getPaneBounds(width, height);
     }
 
-    private nextId(prefix: "series" | "drawing" | "indicator"): string {
+    private nextId(prefix: "series" | "drawing" | "indicator" | "priceLine" | "marker"): string {
         this.idCounter += 1;
         return `${prefix}_${this.idCounter}`;
     }

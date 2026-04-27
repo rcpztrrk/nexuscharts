@@ -422,6 +422,50 @@ export interface SeriesApi {
     clear: () => void;
 }
 
+export interface PriceLineOptions {
+    id?: string;
+    price: number;
+    label?: string;
+    color?: string;
+    width?: number;
+    dash?: number[];
+    axisLabel?: boolean;
+}
+
+export interface PriceLineDefinition {
+    id: string;
+    price: number;
+    label?: string;
+    color?: string;
+    width: number;
+    dash?: number[];
+    axisLabel: boolean;
+}
+
+export type ChartMarkerShape = "circle" | "arrowUp" | "arrowDown";
+
+export interface ChartMarkerOptions {
+    id?: string;
+    time: number | string;
+    price: number;
+    label?: string;
+    color?: string;
+    textColor?: string;
+    shape?: ChartMarkerShape;
+    size?: number;
+}
+
+export interface ChartMarkerDefinition {
+    id: string;
+    time: number | string;
+    price: number;
+    label?: string;
+    color?: string;
+    textColor?: string;
+    shape: ChartMarkerShape;
+    size: number;
+}
+
 export interface DrawingPoint {
     x: number; // normalized screen space [-1, 1]
     y: number; // normalized screen space [-1, 1]
