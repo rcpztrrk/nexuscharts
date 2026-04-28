@@ -1115,6 +1115,65 @@
                 });
             };
 
+            const applyPriceAnnotations = (dataset, enableOverlays) => {
+                chart.clearPriceLines();
+                chart.clearMarkers();
+                if (!enableOverlays || dataset.length < 8) {
+                    return;
+                }
+
+                const clampIndex = (index) => Math.min(Math.max(0, index), dataset.length - 1);
+                const entryCandle = dataset[clampIndex(Math.floor(dataset.length * 0.62))];
+                const targetCandle = dataset[clampIndex(Math.floor(dataset.length * 0.78))];
+                const stopCandle = dataset[clampIndex(Math.floor(dataset.length * 0.48))];
+                const buyCandle = dataset[clampIndex(Math.floor(dataset.length * 0.56))];
+                const sellCandle = dataset[clampIndex(Math.floor(dataset.length * 0.72))];
+
+                const entryPrice = entryCandle.close;
+                const targetPrice = Math.max(targetCandle.high, entryPrice + 1.2);
+                const stopPrice = Math.min(stopCandle.low, entryPrice - 1.2);
+
+                chart.addPriceLine({
+                    price: entryPrice,
+                    label: "Entry",
+                    color: "#60a5fa",
+                    width: 1.4,
+                    dash: [5, 4],
+                });
+                chart.addPriceLine({
+                    price: targetPrice,
+                    label: "Target",
+                    color: "#22c55e",
+                    width: 1.4,
+                });
+                chart.addPriceLine({
+                    price: stopPrice,
+                    label: "Stop",
+                    color: "#fb7185",
+                    width: 1.4,
+                    dash: [3, 3],
+                });
+
+                chart.addMarker({
+                    time: buyCandle.time,
+                    price: buyCandle.low - 0.5,
+                    label: "Buy",
+                    color: "#22c55e",
+                    textColor: "#dfffea",
+                    shape: "arrowUp",
+                    size: 8,
+                });
+                chart.addMarker({
+                    time: sellCandle.time,
+                    price: sellCandle.high + 0.5,
+                    label: "Sell",
+                    color: "#fb7185",
+                    textColor: "#ffe4e6",
+                    shape: "arrowDown",
+                    size: 8,
+                });
+            };
+
             const applyOverlaySeriesData = (dataset, enableOverlays) => {
                 if (enableOverlays) {
                     lineSeries.setData(dataset);
@@ -1205,6 +1264,7 @@
                     } else {
                         chart.clearDrawings();
                     }
+                    applyPriceAnnotations(candles, overlaysEnabled);
                 });
 
                 await primarySeriesAdapterConnection.load({
