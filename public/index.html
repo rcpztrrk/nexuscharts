@@ -226,6 +226,7 @@
     <script type="module">
         import {
             NexusCharts,
+            createDataAdapter,
             connectSeriesDataAdapter,
         } from "./nexus-charts.esm.js";
 
@@ -866,25 +867,26 @@
             let currentVisibleBars = 140;
             const adapterSubscribers = new Set();
 
+            const selectCandlesForRequest = (request = {}) => {
+                let data = candles;
+                const hasTimeRange = request.from !== undefined || request.to !== undefined;
+                if (hasTimeRange) {
+                    data = candles.filter((candle) => {
+                        const afterFrom = request.from === undefined || candle.time >= request.from;
+                        const beforeTo = request.to === undefined || candle.time <= request.to;
+                        return afterFrom && beforeTo;
+                    });
+                }
+                if (Number.isFinite(request.limit) && request.limit > 0 && data.length > request.limit) {
+                    data = data.slice(data.length - request.limit);
+                }
+                return data;
+            };
+
             const demoSeriesAdapter = {
-                load: async (request = {}) => {
-                    let data = candles;
-                    const hasTimeRange = request.from !== undefined || request.to !== undefined;
-                    if (hasTimeRange) {
-                        data = candles.filter((candle) => {
-                            const afterFrom = request.from === undefined || candle.time >= request.from;
-                            const beforeTo = request.to === undefined || candle.time <= request.to;
-                            return afterFrom && beforeTo;
-                        });
-                    }
-                    if (Number.isFinite(request.limit) && request.limit > 0 && data.length > request.limit) {
-                        data = data.slice(data.length - request.limit);
-                    }
-                    return {
-                        data,
-                        mode: "replace",
-                    };
-                },
+                ...createDataAdapter({
+                    load: async (request = {}) => selectCandlesForRequest(request),
+                }),
                 subscribe: (handlers) => {
                     adapterSubscribers.add(handlers);
                     return () => {

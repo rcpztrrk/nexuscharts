@@ -1,10 +1,19 @@
 import type {
     CandleDataPoint,
     ChartDataAdapter,
+    DataAdapterApplyMode,
     DataAdapterLoadResult,
     DataAdapterRequest,
     SeriesApi,
 } from "../../types";
+
+export type DataAdapterRowMapper<TRow> = (row: TRow, index: number) => CandleDataPoint;
+
+export interface DataAdapterSourceOptions<TRow = CandleDataPoint> {
+    load: (request?: DataAdapterRequest) => readonly TRow[] | Promise<readonly TRow[]>;
+    map?: DataAdapterRowMapper<TRow>;
+    mode?: DataAdapterApplyMode | ((request?: DataAdapterRequest) => DataAdapterApplyMode);
+}
 
 export interface DataAdapterApplyOptions {
     batch?: <T>(callback: () => T) => T;
@@ -13,6 +22,24 @@ export interface DataAdapterApplyOptions {
 export interface SeriesDataAdapterConnection {
     load: (request?: DataAdapterRequest, applyOptions?: DataAdapterApplyOptions) => Promise<CandleDataPoint[]>;
     disconnect: () => void;
+}
+
+export function createDataAdapter<TRow = CandleDataPoint>(
+    options: DataAdapterSourceOptions<TRow>
+): ChartDataAdapter {
+    return {
+        load: async (request?: DataAdapterRequest) => {
+            const rows = await options.load(request);
+            const mapRow = options.map ?? ((row: TRow) => row as unknown as CandleDataPoint);
+            const mode = typeof options.mode === "function"
+                ? options.mode(request)
+                : options.mode ?? "replace";
+            return {
+                data: Array.from(rows, mapRow),
+                mode,
+            };
+        },
+    };
 }
 
 export async function loadSeriesData(

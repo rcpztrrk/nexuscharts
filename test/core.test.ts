@@ -6,7 +6,7 @@ import { IndicatorEngine } from "../ts-src/core/indicators/IndicatorEngine.ts";
 import { createChartTheme, mergeChartTheme, cloneTheme } from "../ts-src/core/theme/ChartTheme.ts";
 import { PerfTracker } from "../ts-src/core/perf/PerfTracker.ts";
 import { NexusWasmBridge } from "../ts-src/core/wasm/NexusWasmBridge.ts";
-import { connectSeriesDataAdapter, loadSeriesData } from "../ts-src/core/data/DataAdapter.ts";
+import { connectSeriesDataAdapter, createDataAdapter, loadSeriesData } from "../ts-src/core/data/DataAdapter.ts";
 import { PriceAnnotationManager } from "../ts-src/core/annotations/PriceAnnotationManager.ts";
 
 const baseTheme = createChartTheme();
@@ -233,6 +233,33 @@ test("DataAdapter helpers load and stream candles into a series", async () => {
 
   connection.disconnect();
   assert.equal(disconnected, true);
+});
+
+test("createDataAdapter maps external rows into candle data", async () => {
+  const adapter = createDataAdapter({
+    load: async (request) => [
+      { ts: request?.from ?? 1000, o: "10", h: "12", l: "9", c: "11", v: "1500" },
+      { ts: request?.to ?? 2000, o: "11", h: "13", l: "10", c: "12", v: "1750" },
+    ],
+    map: (row) => ({
+      time: row.ts,
+      open: Number(row.o),
+      high: Number(row.h),
+      low: Number(row.l),
+      close: Number(row.c),
+      volume: Number(row.v),
+    }),
+  });
+
+  const loaded = await adapter.load({ from: 1000, to: 2000 });
+
+  assert.deepEqual(loaded, {
+    mode: "replace",
+    data: [
+      { time: 1000, open: 10, high: 12, low: 9, close: 11, volume: 1500 },
+      { time: 2000, open: 11, high: 13, low: 10, close: 12, volume: 1750 },
+    ],
+  });
 });
 
 
