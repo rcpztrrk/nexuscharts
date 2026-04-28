@@ -839,6 +839,46 @@ export class NexusCharts {
         return this.eventBus.unsubscribe(eventName, handler);
     }
 
+    public subscribeCrosshairMove(handler: ChartEventHandler<"crosshairMove">): () => void {
+        return this.subscribe("crosshairMove", handler);
+    }
+
+    public unsubscribeCrosshairMove(handler: ChartEventHandler<"crosshairMove">): boolean {
+        return this.unsubscribe("crosshairMove", handler);
+    }
+
+    public subscribeVisibleRangeChange(handler: ChartEventHandler<"visibleRangeChange">): () => void {
+        return this.subscribe("visibleRangeChange", handler);
+    }
+
+    public unsubscribeVisibleRangeChange(handler: ChartEventHandler<"visibleRangeChange">): boolean {
+        return this.unsubscribe("visibleRangeChange", handler);
+    }
+
+    public subscribeTimeScaleChange(handler: ChartEventHandler<"timeScaleChange">): () => void {
+        return this.subscribe("timeScaleChange", handler);
+    }
+
+    public unsubscribeTimeScaleChange(handler: ChartEventHandler<"timeScaleChange">): boolean {
+        return this.unsubscribe("timeScaleChange", handler);
+    }
+
+    public subscribeClick(handler: ChartEventHandler<"click">): () => void {
+        return this.subscribe("click", handler);
+    }
+
+    public unsubscribeClick(handler: ChartEventHandler<"click">): boolean {
+        return this.unsubscribe("click", handler);
+    }
+
+    public subscribeSelectionChange(handler: ChartEventHandler<"selectionChange">): () => void {
+        return this.subscribe("selectionChange", handler);
+    }
+
+    public unsubscribeSelectionChange(handler: ChartEventHandler<"selectionChange">): boolean {
+        return this.unsubscribe("selectionChange", handler);
+    }
+
     private async initEngine(): Promise<void> {
         const initialized = await this.wasmBridge.initialize({
             canvasId: this.canvasId,
