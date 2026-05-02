@@ -30,7 +30,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Persistent UI preferences (`localStorage`) and tooltip mode switching (`follow` / `fixed`).
 - Indicator engine (SMA/EMA/RSI) with a secondary pane overlay.
 - Real-time updates via `append` and `updateLast` helpers for live candles.
-- Data adapter helpers (`createDataAdapter`, `loadSeriesData`, `connectSeriesDataAdapter`) for external REST/WebSocket style feeds.
+- Data adapter helpers (`createDataAdapter`, `createPollingDataAdapter`, `loadSeriesData`, `connectSeriesDataAdapter`) for external REST/WebSocket style feeds.
 - Price annotation helpers (`addPriceLine`, `addMarker`, update/remove/clear/get variants) for chart overlays.
 - Responsive canvas sizing with `ResizeObserver`, HiDPI pixel ratio support, and manual `resize()` fallback.
 - Performance metrics via `getPerfMetrics()` (avg/max/last redraw and heap telemetry where available).
@@ -59,6 +59,10 @@ const restAdapter = createDataAdapter({
     low: Number(row.l),
     close: Number(row.c)
   })
+});
+const pollingAdapter = createPollingDataAdapter({
+  intervalMs: 5000,
+  load: async () => [{ time: 2, open: 103, high: 108, low: 101, close: 106 }]
 });
 
 chart.addDrawing({

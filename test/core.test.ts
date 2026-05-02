@@ -6,7 +6,7 @@ import { IndicatorEngine } from "../ts-src/core/indicators/IndicatorEngine.ts";
 import { createChartTheme, mergeChartTheme, cloneTheme } from "../ts-src/core/theme/ChartTheme.ts";
 import { PerfTracker } from "../ts-src/core/perf/PerfTracker.ts";
 import { NexusWasmBridge } from "../ts-src/core/wasm/NexusWasmBridge.ts";
-import { connectSeriesDataAdapter, createDataAdapter, loadSeriesData } from "../ts-src/core/data/DataAdapter.ts";
+import { connectSeriesDataAdapter, createDataAdapter, createPollingDataAdapter, loadSeriesData } from "../ts-src/core/data/DataAdapter.ts";
 import { PriceAnnotationManager } from "../ts-src/core/annotations/PriceAnnotationManager.ts";
 
 const baseTheme = createChartTheme();
@@ -260,6 +260,39 @@ test("createDataAdapter maps external rows into candle data", async () => {
       { time: 2000, open: 11, high: 13, low: 10, close: 12, volume: 1750 },
     ],
   });
+});
+
+test("createPollingDataAdapter streams new rows and updates the latest candle", async () => {
+  let rows = [
+    { time: 1, open: 10, high: 12, low: 9, close: 11 },
+  ];
+  const emitted: Array<{ time: number | string; mode?: string; close: number }> = [];
+
+  const adapter = createPollingDataAdapter({
+    intervalMs: 1000,
+    emitInitial: true,
+    load: async () => rows,
+  });
+
+  await adapter.load();
+  rows = [
+    { time: 1, open: 10, high: 12, low: 9, close: 11.5 },
+    { time: 2, open: 11.5, high: 13, low: 11, close: 12.5 },
+  ];
+
+  const unsubscribe = adapter.subscribe?.({
+    onCandle: (point, mode) => {
+      emitted.push({ time: point.time, mode, close: point.close });
+    },
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  unsubscribe?.();
+
+  assert.deepEqual(emitted, [
+    { time: 1, mode: "updateLast", close: 11.5 },
+    { time: 2, mode: "append", close: 12.5 },
+  ]);
 });
 
 

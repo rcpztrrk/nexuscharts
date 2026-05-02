@@ -15,6 +15,12 @@ export interface DataAdapterSourceOptions<TRow = CandleDataPoint> {
     mode?: DataAdapterApplyMode | ((request?: DataAdapterRequest) => DataAdapterApplyMode);
 }
 
+export interface PollingDataAdapterOptions<TRow = CandleDataPoint> extends DataAdapterSourceOptions<TRow> {
+    intervalMs?: number;
+    emitInitial?: boolean;
+    getKey?: (point: CandleDataPoint) => number | string;
+}
+
 export interface DataAdapterApplyOptions {
     batch?: <T>(callback: () => T) => T;
 }
@@ -37,6 +43,68 @@ export function createDataAdapter<TRow = CandleDataPoint>(
             return {
                 data: Array.from(rows, mapRow),
                 mode,
+            };
+        },
+    };
+}
+
+export function createPollingDataAdapter<TRow = CandleDataPoint>(
+    options: PollingDataAdapterOptions<TRow>
+): ChartDataAdapter {
+    const baseAdapter = createDataAdapter(options);
+    const seenKeys = new Set<number | string>();
+    let lastKey: number | string | null = null;
+
+    const keyFor = (point: CandleDataPoint): number | string => options.getKey?.(point) ?? point.time;
+    const remember = (data: readonly CandleDataPoint[]): void => {
+        for (const point of data) {
+            const key = keyFor(point);
+            seenKeys.add(key);
+            lastKey = key;
+        }
+    };
+
+    return {
+        load: async (request?: DataAdapterRequest) => {
+            const result = normalizeDataAdapterResult(await baseAdapter.load(request));
+            remember(result.data);
+            return result;
+        },
+        subscribe: (handlers) => {
+            let disposed = false;
+
+            const poll = async (): Promise<void> => {
+                try {
+                    const result = normalizeDataAdapterResult(await baseAdapter.load());
+                    for (const point of result.data) {
+                        const key = keyFor(point);
+                        if (!seenKeys.has(key)) {
+                            seenKeys.add(key);
+                            lastKey = key;
+                            handlers.onCandle(point, "append");
+                        } else if (key === lastKey) {
+                            handlers.onCandle(point, "updateLast");
+                        }
+                    }
+                } catch (error) {
+                    handlers.onError?.(error);
+                }
+            };
+
+            const intervalMs = Math.max(100, Number(options.intervalMs ?? 5000));
+            const timer = setInterval(() => {
+                if (!disposed) {
+                    void poll();
+                }
+            }, intervalMs);
+
+            if (options.emitInitial) {
+                void poll();
+            }
+
+            return () => {
+                disposed = true;
+                clearInterval(timer);
             };
         },
     };
