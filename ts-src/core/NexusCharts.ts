@@ -879,6 +879,30 @@ export class NexusCharts {
         return this.unsubscribe("selectionChange", handler);
     }
 
+    public subscribeDrawingSelected(handler: ChartEventHandler<"drawingSelected">): () => void {
+        return this.subscribe("drawingSelected", handler);
+    }
+
+    public unsubscribeDrawingSelected(handler: ChartEventHandler<"drawingSelected">): boolean {
+        return this.unsubscribe("drawingSelected", handler);
+    }
+
+    public subscribeDrawingUpdated(handler: ChartEventHandler<"drawingUpdated">): () => void {
+        return this.subscribe("drawingUpdated", handler);
+    }
+
+    public unsubscribeDrawingUpdated(handler: ChartEventHandler<"drawingUpdated">): boolean {
+        return this.unsubscribe("drawingUpdated", handler);
+    }
+
+    public subscribeDrawingDeleted(handler: ChartEventHandler<"drawingDeleted">): () => void {
+        return this.subscribe("drawingDeleted", handler);
+    }
+
+    public unsubscribeDrawingDeleted(handler: ChartEventHandler<"drawingDeleted">): boolean {
+        return this.unsubscribe("drawingDeleted", handler);
+    }
+
     private async initEngine(): Promise<void> {
         const initialized = await this.wasmBridge.initialize({
             canvasId: this.canvasId,

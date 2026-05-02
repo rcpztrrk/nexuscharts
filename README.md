@@ -91,6 +91,9 @@ chart.addMarker({ time: 1, price: 103, label: "Buy", shape: "arrowUp" });
 const unsubscribeRange = chart.subscribeVisibleRangeChange((range) => {
   console.log(range.startIndex, range.endIndex);
 });
+const unsubscribeDrawing = chart.subscribeDrawingUpdated((event) => {
+  console.log(event.drawing.id, event.reason);
+});
 
 chart.applyTheme({
   candles: { up: "#22c55e", down: "#fb7185" },
@@ -102,6 +105,7 @@ chart.resize();
 const ui = chart.getUiState();
 console.log(ui.showCrosshair, ui.showHeatmap);
 unsubscribeRange();
+unsubscribeDrawing();
 ```
 
 ## Technology Stack
