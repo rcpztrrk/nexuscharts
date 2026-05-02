@@ -31,7 +31,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Indicator engine (SMA/EMA/RSI) with a secondary pane overlay.
 - Real-time updates via `append` and `updateLast` helpers for live candles.
 - Data adapter helpers (`createDataAdapter`, `createPollingDataAdapter`, `loadSeriesData`, `connectSeriesDataAdapter`) for external REST/WebSocket style feeds.
-- Price annotation helpers (`addPriceLine`, `addMarker`, update/remove/clear/get variants) for chart overlays.
+- Price annotation helpers (`addPriceLine`, `addMarker`, `setPriceLines`, `setMarkers`, update/remove/clear/get variants) for chart overlays.
 - Responsive canvas sizing with `ResizeObserver`, HiDPI pixel ratio support, and manual `resize()` fallback.
 - Performance metrics via `getPerfMetrics()` (avg/max/last redraw and heap telemetry where available).
 - Development demo page served from `public/`, including dataset benchmark mode and Midnight/Ocean/Ember/Light/Terminal theme presets.
@@ -91,6 +91,10 @@ chart.addIndicator({ type: "rsi", period: 14, pane: "lower", color: "#a78bfa" })
 
 chart.addPriceLine({ price: 101.25, label: "Entry" });
 chart.addMarker({ time: 1, price: 103, label: "Buy", shape: "arrowUp" });
+chart.setPriceLines([
+  { price: 101.25, label: "Entry" },
+  { price: 106.5, label: "Target" }
+]);
 
 const unsubscribeRange = chart.subscribeVisibleRangeChange((range) => {
   console.log(range.startIndex, range.endIndex);

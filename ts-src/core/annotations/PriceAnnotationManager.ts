@@ -15,6 +15,11 @@ export class PriceAnnotationManager {
         return id;
     }
 
+    public setPriceLines(lines: readonly PriceLineOptions[], createId: () => string): string[] {
+        this.priceLines.clear();
+        return lines.map((line) => this.addPriceLine(line, createId));
+    }
+
     public updatePriceLine(id: string, patch: Partial<PriceLineOptions>): boolean {
         const current = this.priceLines.get(id);
         if (!current) {
@@ -45,6 +50,11 @@ export class PriceAnnotationManager {
         return id;
     }
 
+    public setMarkers(markers: readonly ChartMarkerOptions[], createId: () => string): string[] {
+        this.markers.clear();
+        return markers.map((marker) => this.addMarker(marker, createId));
+    }
+
     public updateMarker(id: string, patch: Partial<ChartMarkerOptions>): boolean {
         const current = this.markers.get(id);
         if (!current) {
@@ -68,6 +78,11 @@ export class PriceAnnotationManager {
 
     public hasAnnotations(): boolean {
         return this.priceLines.size > 0 || this.markers.size > 0;
+    }
+
+    public clearAnnotations(): void {
+        this.priceLines.clear();
+        this.markers.clear();
     }
 
     private normalizePriceLine(id: string, options: PriceLineOptions): PriceLineDefinition {

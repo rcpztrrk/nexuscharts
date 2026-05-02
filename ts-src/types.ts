@@ -466,6 +466,11 @@ export interface ChartMarkerDefinition {
     size: number;
 }
 
+export interface ChartAnnotationsSnapshot {
+    priceLines: PriceLineDefinition[];
+    markers: ChartMarkerDefinition[];
+}
+
 export interface DrawingPoint {
     x: number; // normalized screen space [-1, 1]
     y: number; // normalized screen space [-1, 1]

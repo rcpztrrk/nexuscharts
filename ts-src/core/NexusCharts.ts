@@ -28,6 +28,7 @@ import type {
     PriceLineDefinition,
     ChartMarkerOptions,
     ChartMarkerDefinition,
+    ChartAnnotationsSnapshot,
     DrawingPoint,
     DrawingStyle,
     DrawingType,
@@ -625,6 +626,12 @@ export class NexusCharts {
         return id;
     }
 
+    public setPriceLines(lines: readonly PriceLineOptions[]): string[] {
+        const ids = this.annotationManager.setPriceLines(lines, () => this.nextId("priceLine"));
+        this.requestRedraw();
+        return ids;
+    }
+
     public updatePriceLine(id: string, patch: Partial<PriceLineOptions>): boolean {
         const updated = this.annotationManager.updatePriceLine(id, patch);
         if (updated) {
@@ -656,6 +663,12 @@ export class NexusCharts {
         return id;
     }
 
+    public setMarkers(markers: readonly ChartMarkerOptions[]): string[] {
+        const ids = this.annotationManager.setMarkers(markers, () => this.nextId("marker"));
+        this.requestRedraw();
+        return ids;
+    }
+
     public updateMarker(id: string, patch: Partial<ChartMarkerOptions>): boolean {
         const updated = this.annotationManager.updateMarker(id, patch);
         if (updated) {
@@ -679,6 +692,18 @@ export class NexusCharts {
 
     public getMarkers(): ChartMarkerDefinition[] {
         return this.annotationManager.getMarkers();
+    }
+
+    public clearAnnotations(): void {
+        this.annotationManager.clearAnnotations();
+        this.requestRedraw();
+    }
+
+    public getAnnotations(): ChartAnnotationsSnapshot {
+        return {
+            priceLines: this.getPriceLines(),
+            markers: this.getMarkers(),
+        };
     }
 
     public applyTheme(themeInput: ThemeInput): void {
