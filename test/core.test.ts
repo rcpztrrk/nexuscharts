@@ -7,6 +7,7 @@ import { createChartTheme, mergeChartTheme, cloneTheme } from "../ts-src/core/th
 import { PerfTracker } from "../ts-src/core/perf/PerfTracker.ts";
 import { NexusWasmBridge } from "../ts-src/core/wasm/NexusWasmBridge.ts";
 import { connectSeriesDataAdapter, createDataAdapter, createPollingDataAdapter, loadSeriesData } from "../ts-src/core/data/DataAdapter.ts";
+import { ChartEventBus } from "../ts-src/core/events/ChartEventBus.ts";
 import { PriceAnnotationManager } from "../ts-src/core/annotations/PriceAnnotationManager.ts";
 
 const baseTheme = createChartTheme();
@@ -183,6 +184,35 @@ test("NexusWasmBridge grows series sync buffers geometrically", () => {
   assert.equal(firstCapacity, 128);
   assert.equal(secondCapacity, firstCapacity);
   assert.equal(thirdCapacity, firstCapacity * 2);
+});
+
+test("ChartEventBus supports one-shot subscriptions", () => {
+  const bus = new ChartEventBus();
+  const ranges: Array<[number, number]> = [];
+
+  const unsubscribe = bus.subscribeOnce("visibleRangeChange", (range) => {
+    ranges.push([range.startIndex, range.endIndex]);
+  });
+
+  bus.emit("visibleRangeChange", {
+    startIndex: 1,
+    endIndex: 10,
+    fromTime: 1,
+    toTime: 10,
+    fromPrice: 100,
+    toPrice: 110,
+  });
+  bus.emit("visibleRangeChange", {
+    startIndex: 2,
+    endIndex: 12,
+    fromTime: 2,
+    toTime: 12,
+    fromPrice: 101,
+    toPrice: 111,
+  });
+  unsubscribe();
+
+  assert.deepEqual(ranges, [[1, 10]]);
 });
 
 test("DataAdapter helpers load and stream candles into a series", async () => {

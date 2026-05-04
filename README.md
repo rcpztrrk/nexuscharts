@@ -21,7 +21,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - TypeScript wrapper that bootstraps and controls the WASM module.
 - Public chart API for series and drawing management.
 - Observer analytics API (`setObserverFrames`, `pushObserverFrame`, `configureAnalytics`).
-- Event API via generic `subscribe()` plus focused helpers such as `subscribeCrosshairMove()` and `subscribeVisibleRangeChange()`.
+- Event API via generic `subscribe()` / `subscribeOnce()` plus focused helpers such as `subscribeCrosshairMove()` and `subscribeVisibleRangeChange()`.
 - UI control API (`configureUi`, `getUiState`) with in-chart control bar and keyboard shortcuts.
 - Theme API via constructor `theme` option and runtime `applyTheme()` / `getTheme()`.
 - Interactive chart UX: hover crosshair, OHLC tooltip, candle selection, fit-to-data, and pointer-anchored zoom.
@@ -98,6 +98,9 @@ chart.setPriceLines([
 
 const unsubscribeRange = chart.subscribeVisibleRangeChange((range) => {
   console.log(range.startIndex, range.endIndex);
+});
+chart.subscribeOnce("visibleRangeChange", (range) => {
+  console.log("first visible range", range.startIndex, range.endIndex);
 });
 const unsubscribeDrawing = chart.subscribeDrawingUpdated((event) => {
   console.log(event.drawing.id, event.reason);

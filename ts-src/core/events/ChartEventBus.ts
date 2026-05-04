@@ -12,6 +12,17 @@ export class ChartEventBus {
         };
     }
 
+    public subscribeOnce<K extends ChartEventName>(eventName: K, handler: ChartEventHandler<K>): () => void {
+        let unsubscribe = (): void => undefined;
+        const onceHandler: ChartEventHandler<K> = (payload) => {
+            unsubscribe();
+            handler(payload);
+        };
+
+        unsubscribe = this.subscribe(eventName, onceHandler);
+        return unsubscribe;
+    }
+
     public unsubscribe<K extends ChartEventName>(eventName: K, handler: ChartEventHandler<K>): boolean {
         const listeners = this.listeners[eventName];
         if (!listeners) {

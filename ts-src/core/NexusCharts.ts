@@ -860,6 +860,10 @@ export class NexusCharts {
         return this.eventBus.subscribe(eventName, handler);
     }
 
+    public subscribeOnce<K extends ChartEventName>(eventName: K, handler: ChartEventHandler<K>): () => void {
+        return this.eventBus.subscribeOnce(eventName, handler);
+    }
+
     public unsubscribe<K extends ChartEventName>(eventName: K, handler: ChartEventHandler<K>): boolean {
         return this.eventBus.unsubscribe(eventName, handler);
     }
