@@ -471,6 +471,16 @@ export interface ChartAnnotationsSnapshot {
     markers: ChartMarkerDefinition[];
 }
 
+export interface ChartAnnotationsInput {
+    priceLines?: readonly PriceLineOptions[];
+    markers?: readonly ChartMarkerOptions[];
+}
+
+export interface ChartAnnotationsApplyResult {
+    priceLineIds: string[];
+    markerIds: string[];
+}
+
 export interface DrawingPoint {
     x: number; // normalized screen space [-1, 1]
     y: number; // normalized screen space [-1, 1]

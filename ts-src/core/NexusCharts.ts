@@ -29,6 +29,8 @@ import type {
     ChartMarkerOptions,
     ChartMarkerDefinition,
     ChartAnnotationsSnapshot,
+    ChartAnnotationsInput,
+    ChartAnnotationsApplyResult,
     DrawingPoint,
     DrawingStyle,
     DrawingType,
@@ -697,6 +699,16 @@ export class NexusCharts {
     public clearAnnotations(): void {
         this.annotationManager.clearAnnotations();
         this.requestRedraw();
+    }
+
+    public setAnnotations(annotations: ChartAnnotationsInput): ChartAnnotationsApplyResult {
+        const result = this.annotationManager.setAnnotations(
+            annotations,
+            () => this.nextId("priceLine"),
+            () => this.nextId("marker")
+        );
+        this.requestRedraw();
+        return result;
     }
 
     public getAnnotations(): ChartAnnotationsSnapshot {

@@ -1,4 +1,6 @@
 import type {
+    ChartAnnotationsApplyResult,
+    ChartAnnotationsInput,
     ChartMarkerDefinition,
     ChartMarkerOptions,
     PriceLineDefinition,
@@ -53,6 +55,17 @@ export class PriceAnnotationManager {
     public setMarkers(markers: readonly ChartMarkerOptions[], createId: () => string): string[] {
         this.markers.clear();
         return markers.map((marker) => this.addMarker(marker, createId));
+    }
+
+    public setAnnotations(
+        annotations: ChartAnnotationsInput,
+        createPriceLineId: () => string,
+        createMarkerId: () => string
+    ): ChartAnnotationsApplyResult {
+        return {
+            priceLineIds: this.setPriceLines(annotations.priceLines ?? [], createPriceLineId),
+            markerIds: this.setMarkers(annotations.markers ?? [], createMarkerId),
+        };
     }
 
     public updateMarker(id: string, patch: Partial<ChartMarkerOptions>): boolean {

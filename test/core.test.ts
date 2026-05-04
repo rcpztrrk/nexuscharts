@@ -400,6 +400,18 @@ test("PriceAnnotationManager stores and updates price lines and markers", () => 
   assert.equal(manager.getPriceLines().length, 2);
   assert.equal(manager.getMarkers().length, 2);
 
+  const annotationIds = manager.setAnnotations({
+    priceLines: [{ id: "stop", price: 99, label: "Stop" }],
+    markers: [{ id: "exit", time: 5, price: 99, shape: "arrowDown" }],
+  }, createId, createId);
+
+  assert.deepEqual(annotationIds, {
+    priceLineIds: ["stop"],
+    markerIds: ["exit"],
+  });
+  assert.deepEqual(manager.getPriceLines().map((line) => line.id), ["stop"]);
+  assert.deepEqual(manager.getMarkers().map((marker) => marker.id), ["exit"]);
+
   manager.clearAnnotations();
   assert.equal(manager.hasAnnotations(), false);
 });
