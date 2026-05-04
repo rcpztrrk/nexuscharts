@@ -6,7 +6,14 @@ import { IndicatorEngine } from "../ts-src/core/indicators/IndicatorEngine.ts";
 import { createChartTheme, mergeChartTheme, cloneTheme } from "../ts-src/core/theme/ChartTheme.ts";
 import { PerfTracker } from "../ts-src/core/perf/PerfTracker.ts";
 import { NexusWasmBridge } from "../ts-src/core/wasm/NexusWasmBridge.ts";
-import { connectSeriesDataAdapter, createDataAdapter, createPollingDataAdapter, loadSeriesData } from "../ts-src/core/data/DataAdapter.ts";
+import {
+  connectSeriesDataAdapter,
+  createCsvDataAdapter,
+  createDataAdapter,
+  createPollingDataAdapter,
+  loadSeriesData,
+  parseCsvCandles,
+} from "../ts-src/core/data/DataAdapter.ts";
 import { ChartEventBus } from "../ts-src/core/events/ChartEventBus.ts";
 import { PriceAnnotationManager } from "../ts-src/core/annotations/PriceAnnotationManager.ts";
 
@@ -323,6 +330,34 @@ test("createPollingDataAdapter streams new rows and updates the latest candle", 
     { time: 1, mode: "updateLast", close: 11.5 },
     { time: 2, mode: "append", close: 12.5 },
   ]);
+});
+
+test("CSV data adapter parses header and index based candle rows", async () => {
+  const csv = [
+    "time,open,high,low,close,volume",
+    "1,10,12,9,11,1500",
+    "2,11,13,10,12,1750",
+  ].join("\n");
+
+  assert.deepEqual(parseCsvCandles(csv), [
+    { time: 1, open: 10, high: 12, low: 9, close: 11, volume: 1500 },
+    { time: 2, open: 11, high: 13, low: 10, close: 12, volume: 1750 },
+  ]);
+
+  const adapter = createCsvDataAdapter({
+    hasHeader: false,
+    mode: "append",
+    load: () => "3;12;14;11;13\n4;13;15;12;14",
+    delimiter: ";",
+  });
+
+  assert.deepEqual(await adapter.load(), {
+    mode: "append",
+    data: [
+      { time: 3, open: 12, high: 14, low: 11, close: 13 },
+      { time: 4, open: 13, high: 15, low: 12, close: 14 },
+    ],
+  });
 });
 
 
