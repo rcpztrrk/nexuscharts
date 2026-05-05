@@ -38,6 +38,31 @@ export interface CsvDataAdapterOptions extends CsvParseOptions {
     mode?: DataAdapterApplyMode | ((request?: DataAdapterRequest) => DataAdapterApplyMode);
 }
 
+export interface WebSocketLike {
+    addEventListener?: (type: "message" | "error", listener: (event: { data?: unknown }) => void) => void;
+    removeEventListener?: (type: "message" | "error", listener: (event: { data?: unknown }) => void) => void;
+    close: () => void;
+    onmessage?: ((event: { data?: unknown }) => void) | null;
+    onerror?: ((event: unknown) => void) | null;
+}
+
+export interface WebSocketDataAdapterOptions<TRow = CandleDataPoint> {
+    url: string;
+    protocols?: string | string[];
+    webSocketFactory?: (url: string, protocols?: string | string[]) => WebSocketLike;
+    load?: (request?: DataAdapterRequest) => readonly TRow[] | Promise<readonly TRow[]>;
+    map?: DataAdapterRowMapper<TRow>;
+    mode?: DataAdapterApplyMode | ((request?: DataAdapterRequest) => DataAdapterApplyMode);
+    parseMessage?: (event: { data?: unknown }) => TRow | readonly TRow[] | null | undefined;
+    getUpdateMode?: (point: CandleDataPoint) => "append" | "updateLast";
+}
+
+interface WebSocketFactoryOptions {
+    url: string;
+    protocols?: string | string[];
+    webSocketFactory?: (url: string, protocols?: string | string[]) => WebSocketLike;
+}
+
 export interface DataAdapterApplyOptions {
     batch?: <T>(callback: () => T) => T;
 }
@@ -137,6 +162,74 @@ export function createCsvDataAdapter(options: CsvDataAdapterOptions): ChartDataA
             return {
                 data: parseCsvCandles(csv, options),
                 mode,
+            };
+        },
+    };
+}
+
+export function createWebSocketDataAdapter<TRow = CandleDataPoint>(
+    options: WebSocketDataAdapterOptions<TRow>
+): ChartDataAdapter {
+    const mapRow = options.map ?? ((row: TRow) => row as unknown as CandleDataPoint);
+    const loadAdapter = options.load
+        ? createDataAdapter({
+            load: options.load,
+            map: mapRow,
+            mode: options.mode,
+        })
+        : null;
+
+    return {
+        load: async (request?: DataAdapterRequest) => {
+            if (!loadAdapter) {
+                return { data: [], mode: "replace" };
+            }
+            return loadAdapter.load(request);
+        },
+        subscribe: (handlers) => {
+            const socket = createSocket(options);
+            let disposed = false;
+            let messageIndex = 0;
+
+            const handleMessage = (event: { data?: unknown }): void => {
+                if (disposed) {
+                    return;
+                }
+                try {
+                    const parsed = options.parseMessage?.(event) ?? parseSocketMessage<TRow>(event);
+                    if (parsed === null || parsed === undefined) {
+                        return;
+                    }
+                    const rows = Array.isArray(parsed) ? parsed : [parsed];
+                    for (const row of rows) {
+                        const point = mapRow(row as TRow, messageIndex);
+                        messageIndex += 1;
+                        handlers.onCandle(point, options.getUpdateMode?.(point) ?? "append");
+                    }
+                } catch (error) {
+                    handlers.onError?.(error);
+                }
+            };
+
+            const handleError = (event: unknown): void => {
+                if (!disposed) {
+                    handlers.onError?.(event);
+                }
+            };
+
+            if (socket.addEventListener) {
+                socket.addEventListener("message", handleMessage);
+                socket.addEventListener("error", handleError as (event: { data?: unknown }) => void);
+            } else {
+                socket.onmessage = handleMessage;
+                socket.onerror = handleError;
+            }
+
+            return () => {
+                disposed = true;
+                socket.removeEventListener?.("message", handleMessage);
+                socket.removeEventListener?.("error", handleError as (event: { data?: unknown }) => void);
+                socket.close();
             };
         },
     };
@@ -354,4 +447,25 @@ function parseCsvNumber(value: string | undefined, name: string, lineNumber: num
         throw new Error(`[NexusCharts] CSV value '${name}' is invalid on line ${lineNumber}.`);
     }
     return parsed;
+}
+
+function createSocket(options: WebSocketFactoryOptions): WebSocketLike {
+    if (options.webSocketFactory) {
+        return options.webSocketFactory(options.url, options.protocols);
+    }
+    if (typeof WebSocket === "undefined") {
+        throw new Error("[NexusCharts] WebSocket is not available in this runtime.");
+    }
+    return new WebSocket(options.url, options.protocols) as unknown as WebSocketLike;
+}
+
+function parseSocketMessage<TRow>(event: { data?: unknown }): TRow | readonly TRow[] | null {
+    const data = event.data;
+    if (data === null || data === undefined) {
+        return null;
+    }
+    if (typeof data === "string") {
+        return JSON.parse(data) as TRow | readonly TRow[];
+    }
+    return data as TRow | readonly TRow[];
 }

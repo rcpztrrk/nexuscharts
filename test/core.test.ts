@@ -11,6 +11,7 @@ import {
   createCsvDataAdapter,
   createDataAdapter,
   createPollingDataAdapter,
+  createWebSocketDataAdapter,
   loadSeriesData,
   parseCsvCandles,
 } from "../ts-src/core/data/DataAdapter.ts";
@@ -358,6 +359,69 @@ test("CSV data adapter parses header and index based candle rows", async () => {
       { time: 4, open: 13, high: 15, low: 12, close: 14 },
     ],
   });
+});
+
+test("WebSocket data adapter streams mapped candle messages", async () => {
+  let socket: any = null;
+  const emitted: Array<{ time: number | string; close: number; mode?: string }> = [];
+  const adapter = createWebSocketDataAdapter({
+    url: "wss://example.test/feed",
+    webSocketFactory: () => {
+      const listeners = new Map<string, Function[]>();
+      socket = {
+        closed: false,
+        addEventListener: (type: string, listener: Function) => {
+          listeners.set(type, [...(listeners.get(type) ?? []), listener]);
+        },
+        removeEventListener: (type: string, listener: Function) => {
+          listeners.set(type, (listeners.get(type) ?? []).filter((item) => item !== listener));
+        },
+        emit: (type: string, event: unknown) => {
+          for (const listener of listeners.get(type) ?? []) {
+            listener(event);
+          }
+        },
+        close: () => {
+          socket.closed = true;
+        },
+      };
+      return socket;
+    },
+    map: (row: any) => ({
+      time: row.t,
+      open: Number(row.o),
+      high: Number(row.h),
+      low: Number(row.l),
+      close: Number(row.c),
+    }),
+    getUpdateMode: (point) => point.time === 1 ? "updateLast" : "append",
+  });
+
+  const loaded = await adapter.load();
+  assert.deepEqual(loaded, { data: [], mode: "replace" });
+
+  const unsubscribe = adapter.subscribe?.({
+    onCandle: (point, mode) => {
+      emitted.push({ time: point.time, close: point.close, mode });
+    },
+  });
+
+  socket.emit("message", { data: JSON.stringify({ t: 1, o: "10", h: "12", l: "9", c: "11" }) });
+  socket.emit("message", {
+    data: JSON.stringify([
+      { t: 1, o: "10", h: "12", l: "9", c: "11.5" },
+      { t: 2, o: "11.5", h: "13", l: "11", c: "12.5" },
+    ]),
+  });
+  unsubscribe?.();
+  socket.emit("message", { data: JSON.stringify({ t: 3, o: "12", h: "14", l: "11", c: "13" }) });
+
+  assert.equal(socket.closed, true);
+  assert.deepEqual(emitted, [
+    { time: 1, close: 11, mode: "updateLast" },
+    { time: 1, close: 11.5, mode: "updateLast" },
+    { time: 2, close: 12.5, mode: "append" },
+  ]);
 });
 
 

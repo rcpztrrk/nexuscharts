@@ -30,7 +30,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Persistent UI preferences (`localStorage`) and tooltip mode switching (`follow` / `fixed`).
 - Indicator engine (SMA/EMA/RSI) with a secondary pane overlay.
 - Real-time updates via `append` and `updateLast` helpers for live candles.
-- Data adapter helpers (`createDataAdapter`, `createCsvDataAdapter`, `createPollingDataAdapter`, `loadSeriesData`, `connectSeriesDataAdapter`) for external REST/WebSocket/CSV style feeds.
+- Data adapter helpers (`createDataAdapter`, `createCsvDataAdapter`, `createPollingDataAdapter`, `createWebSocketDataAdapter`, `loadSeriesData`, `connectSeriesDataAdapter`) for external REST/WebSocket/CSV style feeds.
 - Price annotation helpers (`addPriceLine`, `addMarker`, `setPriceLines`, `setMarkers`, `setAnnotations`, update/remove/clear/get variants) for chart overlays.
 - Responsive canvas sizing with `ResizeObserver`, HiDPI pixel ratio support, and manual `resize()` fallback.
 - Performance metrics via `getPerfMetrics()` (avg/max/last redraw and heap telemetry where available).
@@ -66,6 +66,17 @@ const pollingAdapter = createPollingDataAdapter({
 });
 const csvAdapter = createCsvDataAdapter({
   load: async () => "time,open,high,low,close\n1,100,105,98,103"
+});
+const socketAdapter = createWebSocketDataAdapter({
+  url: "wss://example.com/feed",
+  map: (row) => ({
+    time: row.t,
+    open: Number(row.o),
+    high: Number(row.h),
+    low: Number(row.l),
+    close: Number(row.c)
+  }),
+  getUpdateMode: (point) => point.time === series.getData().at(-1)?.time ? "updateLast" : "append"
 });
 
 chart.addDrawing({

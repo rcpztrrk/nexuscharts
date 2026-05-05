@@ -4,6 +4,7 @@ export {
     createDataAdapter,
     createCsvDataAdapter,
     createPollingDataAdapter,
+    createWebSocketDataAdapter,
     connectSeriesDataAdapter,
     loadSeriesData,
     parseCsvCandles,
@@ -15,4 +16,6 @@ export {
     type DataAdapterSourceOptions,
     type PollingDataAdapterOptions,
     type SeriesDataAdapterConnection,
+    type WebSocketDataAdapterOptions,
+    type WebSocketLike,
 } from "./core/data/DataAdapter";
