@@ -103,7 +103,11 @@
         }
 
         #dataset-size,
-        #theme-preset {
+        #theme-preset,
+        #timeframe-size,
+        #data-source,
+        #timezone-preset,
+        #gap-mode {
             padding: 4px 6px;
             border-radius: 4px;
             border: 1px solid var(--shell-border);
@@ -185,6 +189,11 @@
                 <option value="1h">1h</option>
                 <option value="1d">1D</option>
             </select>
+            <span>Source</span>
+            <select id="data-source">
+                <option value="generated">Generated</option>
+                <option value="csv">CSV adapter</option>
+            </select>
             <button id="dataset-load">Load</button>
             <button id="benchmark-run">Run Sweep</button>
             <span id="dataset-status">Size: 42</span>
@@ -227,6 +236,7 @@
         import {
             NexusCharts,
             createDataAdapter,
+            createCsvDataAdapter,
             connectSeriesDataAdapter,
         } from "./nexus-charts.esm.js";
 
@@ -313,6 +323,33 @@
             return candles;
         };
 
+        const candlesToCsv = (dataset) => {
+            const rows = ["time,open,high,low,close,volume"];
+            for (const candle of dataset) {
+                rows.push([
+                    candle.time,
+                    candle.open,
+                    candle.high,
+                    candle.low,
+                    candle.close,
+                    candle.volume ?? "",
+                ].join(","));
+            }
+            return rows.join("\n");
+        };
+
+        const loadCsvSampleCandles = async (count, timeframeKey) => {
+            const sourceCandles = generateCandles(count, timeframeKey);
+            const csvAdapter = createCsvDataAdapter({
+                load: async () => candlesToCsv(sourceCandles),
+            });
+            const result = await csvAdapter.load({
+                timeframe: timeframeKey,
+                limit: count,
+            });
+            return Array.isArray(result) ? result : result.data;
+        };
+
         const generateNextCandle = (index, lastClose, lastTime, timeframeKey = "5m") => {
             const wave = Math.sin(index * 0.32) * 1.4;
             const pull = Math.cos(index * 0.19) * 0.9;
@@ -379,6 +416,7 @@
             const streamToggle = document.getElementById("stream-toggle");
             const liveEdgeToggle = document.getElementById("live-edge-toggle");
             const datasetSelect = document.getElementById("dataset-size");
+            const dataSourceSelect = document.getElementById("data-source");
             const datasetLoad = document.getElementById("dataset-load");
             const benchmarkRun = document.getElementById("benchmark-run");
             const datasetStatus = document.getElementById("dataset-status");
@@ -394,6 +432,7 @@
             let analyticsEnabled = true;
             let benchmarkRunning = false;
             let currentTimeframeKey = "5m";
+            let currentDataSource = "generated";
             let currentTimezone = defaultTimezone;
             let currentGapMode = defaultGapMode;
             const pageParams = new URLSearchParams(window.location.search);
@@ -912,9 +951,17 @@
                 }
             });
 
+            const loadSourceCandles = async (count) => {
+                if (currentDataSource === "csv") {
+                    return loadCsvSampleCandles(count, currentTimeframeKey);
+                }
+                return generateCandles(count, currentTimeframeKey);
+            };
+
             const updateDatasetStatus = () => {
                 if (datasetStatus) {
                     const modeLabel = overlaysEnabled ? "Full" : "Benchmark";
+                    const sourceLabel = currentDataSource === "csv" ? "CSV adapter" : "Generated adapter";
                     const loadedLabel = candles.length === allCandles.length
                         ? `${candles.length.toLocaleString()}`
                         : `${candles.length.toLocaleString()}/${allCandles.length.toLocaleString()}`;
@@ -927,7 +974,7 @@
                         ? (liveEdgeFollow ? " | Follow: live" : " | Follow: away")
                         : " | Follow: off";
                     datasetStatus.textContent =
-                        `Size: ${loadedLabel} | TF: ${currentTimeframeKey.toUpperCase()} | TZ: ${currentTimezone} | Gaps: ${currentGapMode} | Mode: ${modeLabel} | Source: adapter${historyLabel}${followLabel}`;
+                        `Size: ${loadedLabel} | TF: ${currentTimeframeKey.toUpperCase()} | TZ: ${currentTimezone} | Gaps: ${currentGapMode} | Mode: ${modeLabel} | Source: ${sourceLabel}${historyLabel}${followLabel}`;
                 }
             };
 
@@ -979,7 +1026,7 @@
             };
 
             const collectBenchmarkSample = async (size) => {
-                applyDataset(size, true, true);
+                await applyDataset(size, true, true);
                 await wait(60);
                 chart.fitToData();
                 await wait(40);
@@ -1241,7 +1288,7 @@
             const applyDataset = async (count, pauseStream = true, forceFullLoad = false) => {
                 overlaysEnabled = count < datasetThreshold;
                 analyticsEnabled = overlaysEnabled;
-                allCandles = generateCandles(count, currentTimeframeKey);
+                allCandles = await loadSourceCandles(count);
                 const initialLoadBars = forceFullLoad
                     ? allCandles.length
                     : getInitialLoadBars(allCandles.length, currentTimeframeKey);
@@ -1345,6 +1392,14 @@
                     if (datasetSelect) {
                         datasetSelect.value = String(size);
                     }
+                    void applyDataset(size, true);
+                });
+            }
+            if (dataSourceSelect) {
+                dataSourceSelect.value = currentDataSource;
+                dataSourceSelect.addEventListener("change", () => {
+                    currentDataSource = dataSourceSelect.value === "csv" ? "csv" : "generated";
+                    const size = Number(datasetSelect?.value) || getTimeframeViewPreset(currentTimeframeKey).datasetSize;
                     void applyDataset(size, true);
                 });
             }
