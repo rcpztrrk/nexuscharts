@@ -64,6 +64,8 @@
 
         #stream-toggle,
         #live-edge-toggle,
+        #annotation-save,
+        #annotation-restore,
         .toolbar-card {
             margin-top: 0;
             padding: 6px 12px;
@@ -76,7 +78,9 @@
         }
 
         #stream-toggle,
-        #live-edge-toggle {
+        #live-edge-toggle,
+        #annotation-save,
+        #annotation-restore {
             cursor: pointer;
         }
 
@@ -222,6 +226,8 @@
         </div>
         <button id="stream-toggle">Stream: On</button>
         <button id="live-edge-toggle">Follow: Live</button>
+        <button id="annotation-save">Save Ann</button>
+        <button id="annotation-restore">Restore Ann</button>
     </div>
     <div id="chart-container">
         <canvas id="canvas" width="800" height="600"></canvas>
@@ -415,6 +421,8 @@
             const perfLabel = document.getElementById("perf-label");
             const streamToggle = document.getElementById("stream-toggle");
             const liveEdgeToggle = document.getElementById("live-edge-toggle");
+            const annotationSave = document.getElementById("annotation-save");
+            const annotationRestore = document.getElementById("annotation-restore");
             const datasetSelect = document.getElementById("dataset-size");
             const dataSourceSelect = document.getElementById("data-source");
             const datasetLoad = document.getElementById("dataset-load");
@@ -852,6 +860,32 @@
                 });
             }
 
+            if (annotationSave) {
+                annotationSave.addEventListener("click", () => {
+                    savedAnnotationSnapshot = chart.getAnnotations();
+                    setBenchmarkReport(
+                        `Annotation snapshot saved: ` +
+                        `${savedAnnotationSnapshot.priceLines.length} price lines, ` +
+                        `${savedAnnotationSnapshot.markers.length} markers.`
+                    );
+                });
+            }
+
+            if (annotationRestore) {
+                annotationRestore.addEventListener("click", () => {
+                    if (!savedAnnotationSnapshot) {
+                        setBenchmarkReport("Annotation snapshot restore skipped: save a snapshot first.");
+                        return;
+                    }
+                    chart.setAnnotations(savedAnnotationSnapshot);
+                    setBenchmarkReport(
+                        `Annotation snapshot restored: ` +
+                        `${savedAnnotationSnapshot.priceLines.length} price lines, ` +
+                        `${savedAnnotationSnapshot.markers.length} markers.`
+                    );
+                });
+            }
+
             const series = chart.createSeries({ type: "candlestick" });
             const lineSeries = chart.createSeries({ type: "line", lineWidth: 2 });
             const areaSeries = chart.createSeries({ type: "area", opacity: 0.12, lineWidth: 1.5 });
@@ -904,6 +938,7 @@
             let liveEdgeAutoEnabled = true;
             let liveEdgeFollow = true;
             let currentVisibleBars = 140;
+            let savedAnnotationSnapshot = null;
             const adapterSubscribers = new Set();
 
             const selectCandlesForRequest = (request = {}) => {
@@ -1165,9 +1200,8 @@
             };
 
             const applyPriceAnnotations = (dataset, enableOverlays) => {
-                chart.clearPriceLines();
-                chart.clearMarkers();
                 if (!enableOverlays || dataset.length < 8) {
+                    chart.clearAnnotations();
                     return;
                 }
 
@@ -1182,44 +1216,49 @@
                 const targetPrice = Math.max(targetCandle.high, entryPrice + 1.2);
                 const stopPrice = Math.min(stopCandle.low, entryPrice - 1.2);
 
-                chart.addPriceLine({
-                    price: entryPrice,
-                    label: "Entry",
-                    color: "#60a5fa",
-                    width: 1.4,
-                    dash: [5, 4],
-                });
-                chart.addPriceLine({
-                    price: targetPrice,
-                    label: "Target",
-                    color: "#22c55e",
-                    width: 1.4,
-                });
-                chart.addPriceLine({
-                    price: stopPrice,
-                    label: "Stop",
-                    color: "#fb7185",
-                    width: 1.4,
-                    dash: [3, 3],
-                });
-
-                chart.addMarker({
-                    time: buyCandle.time,
-                    price: buyCandle.low - 0.5,
-                    label: "Buy",
-                    color: "#22c55e",
-                    textColor: "#dfffea",
-                    shape: "arrowUp",
-                    size: 8,
-                });
-                chart.addMarker({
-                    time: sellCandle.time,
-                    price: sellCandle.high + 0.5,
-                    label: "Sell",
-                    color: "#fb7185",
-                    textColor: "#ffe4e6",
-                    shape: "arrowDown",
-                    size: 8,
+                chart.setAnnotations({
+                    priceLines: [
+                        {
+                            price: entryPrice,
+                            label: "Entry",
+                            color: "#60a5fa",
+                            width: 1.4,
+                            dash: [5, 4],
+                        },
+                        {
+                            price: targetPrice,
+                            label: "Target",
+                            color: "#22c55e",
+                            width: 1.4,
+                        },
+                        {
+                            price: stopPrice,
+                            label: "Stop",
+                            color: "#fb7185",
+                            width: 1.4,
+                            dash: [3, 3],
+                        },
+                    ],
+                    markers: [
+                        {
+                            time: buyCandle.time,
+                            price: buyCandle.low - 0.5,
+                            label: "Buy",
+                            color: "#22c55e",
+                            textColor: "#dfffea",
+                            shape: "arrowUp",
+                            size: 8,
+                        },
+                        {
+                            time: sellCandle.time,
+                            price: sellCandle.high + 0.5,
+                            label: "Sell",
+                            color: "#fb7185",
+                            textColor: "#ffe4e6",
+                            shape: "arrowDown",
+                            size: 8,
+                        },
+                    ],
                 });
             };
 
