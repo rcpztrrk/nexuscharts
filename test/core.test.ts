@@ -16,7 +16,7 @@ import {
   parseCsvCandles,
 } from "../ts-src/core/data/DataAdapter.ts";
 import { ChartEventBus } from "../ts-src/core/events/ChartEventBus.ts";
-import { PriceAnnotationManager } from "../ts-src/core/annotations/PriceAnnotationManager.ts";
+import { PriceAnnotationManager, resolveMarkerSnapPrice } from "../ts-src/core/annotations/PriceAnnotationManager.ts";
 
 const baseTheme = createChartTheme();
 
@@ -487,4 +487,24 @@ test("PriceAnnotationManager stores and updates price lines and markers", () => 
 
   manager.clearAnnotations();
   assert.equal(manager.hasAnnotations(), false);
+});
+
+test("Marker snap helper resolves marker price from nearest candle OHLC", () => {
+  const candles = [
+    { time: 10, open: 100, high: 105, low: 98, close: 103 },
+    { time: 20, open: 103, high: 108, low: 101, close: 107 },
+  ];
+
+  assert.deepEqual(
+    resolveMarkerSnapPrice({ time: 20, price: 0, snapTo: "high" }, candles),
+    { time: 20, price: 108, snapTo: "high" }
+  );
+  assert.deepEqual(
+    resolveMarkerSnapPrice({ time: 18, price: 0, snapTo: "low" }, candles),
+    { time: 20, price: 101, snapTo: "low" }
+  );
+  assert.deepEqual(
+    resolveMarkerSnapPrice({ time: "missing", price: 12, snapTo: "close" }, candles),
+    { time: "missing", price: 12, snapTo: "close" }
+  );
 });

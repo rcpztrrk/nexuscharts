@@ -43,7 +43,7 @@ import type {
 import { PerfTracker } from "./perf/PerfTracker";
 import { ChartEventBus } from "./events/ChartEventBus";
 import { DrawingManager, type DrawingHitTestApi } from "./drawings/DrawingManager";
-import { PriceAnnotationManager } from "./annotations/PriceAnnotationManager";
+import { PriceAnnotationManager, resolveMarkerSnapPrice } from "./annotations/PriceAnnotationManager";
 import {
     distancePointToSegment,
     resolveDrawingPoint,
@@ -660,13 +660,19 @@ export class NexusCharts {
     }
 
     public addMarker(options: ChartMarkerOptions): string {
-        const id = this.annotationManager.addMarker(options, () => this.nextId("marker"));
+        const id = this.annotationManager.addMarker(
+            this.resolveMarkerSnapOptions(options),
+            () => this.nextId("marker")
+        );
         this.requestRedraw();
         return id;
     }
 
     public setMarkers(markers: readonly ChartMarkerOptions[]): string[] {
-        const ids = this.annotationManager.setMarkers(markers, () => this.nextId("marker"));
+        const ids = this.annotationManager.setMarkers(
+            this.resolveMarkerSnapOptionsList(markers),
+            () => this.nextId("marker")
+        );
         this.requestRedraw();
         return ids;
     }
@@ -703,7 +709,12 @@ export class NexusCharts {
 
     public setAnnotations(annotations: ChartAnnotationsInput): ChartAnnotationsApplyResult {
         const result = this.annotationManager.setAnnotations(
-            annotations,
+            {
+                ...annotations,
+                markers: annotations.markers
+                    ? this.resolveMarkerSnapOptionsList(annotations.markers)
+                    : undefined,
+            },
             () => this.nextId("priceLine"),
             () => this.nextId("marker")
         );
@@ -716,6 +727,15 @@ export class NexusCharts {
             priceLines: this.getPriceLines(),
             markers: this.getMarkers(),
         };
+    }
+
+    private resolveMarkerSnapOptions(options: ChartMarkerOptions): ChartMarkerOptions {
+        return resolveMarkerSnapPrice(options, this.getPrimaryCandlestickSeries());
+    }
+
+    private resolveMarkerSnapOptionsList(markers: readonly ChartMarkerOptions[]): ChartMarkerOptions[] {
+        const candles = this.getPrimaryCandlestickSeries();
+        return markers.map((marker) => resolveMarkerSnapPrice(marker, candles));
     }
 
     public applyTheme(themeInput: ThemeInput): void {

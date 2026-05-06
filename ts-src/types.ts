@@ -443,6 +443,7 @@ export interface PriceLineDefinition {
 }
 
 export type ChartMarkerShape = "circle" | "arrowUp" | "arrowDown";
+export type ChartMarkerSnapTarget = "open" | "high" | "low" | "close";
 
 export interface ChartMarkerOptions {
     id?: string;
@@ -453,6 +454,7 @@ export interface ChartMarkerOptions {
     textColor?: string;
     shape?: ChartMarkerShape;
     size?: number;
+    snapTo?: ChartMarkerSnapTarget;
 }
 
 export interface ChartMarkerDefinition {
@@ -464,6 +466,7 @@ export interface ChartMarkerDefinition {
     textColor?: string;
     shape: ChartMarkerShape;
     size: number;
+    snapTo?: ChartMarkerSnapTarget;
 }
 
 export interface ChartAnnotationsSnapshot {

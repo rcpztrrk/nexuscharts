@@ -3,6 +3,7 @@ import type {
     ChartAnnotationsInput,
     ChartMarkerDefinition,
     ChartMarkerOptions,
+    CandleDataPoint,
     PriceLineDefinition,
     PriceLineOptions,
 } from "../../types";
@@ -120,6 +121,59 @@ export class PriceAnnotationManager {
             textColor: options.textColor,
             shape: options.shape ?? "circle",
             size: Number.isFinite(options.size) ? Math.max(4, Number(options.size)) : 7,
+            snapTo: options.snapTo,
         };
     }
+}
+
+export function resolveMarkerSnapPrice(
+    marker: ChartMarkerOptions,
+    candles: readonly CandleDataPoint[]
+): ChartMarkerOptions {
+    if (!marker.snapTo || candles.length === 0) {
+        return marker;
+    }
+
+    const exact = candles.find((candle) => String(candle.time) === String(marker.time));
+    const target = exact ?? findNearestNumericTimeCandle(marker.time, candles);
+    if (!target) {
+        return marker;
+    }
+
+    const snappedPrice = Number(target[marker.snapTo]);
+    if (!Number.isFinite(snappedPrice)) {
+        return marker;
+    }
+
+    return {
+        ...marker,
+        time: target.time,
+        price: snappedPrice,
+    };
+}
+
+function findNearestNumericTimeCandle(
+    time: number | string,
+    candles: readonly CandleDataPoint[]
+): CandleDataPoint | null {
+    const targetTime = Number(time);
+    if (!Number.isFinite(targetTime)) {
+        return null;
+    }
+
+    let nearest: CandleDataPoint | null = null;
+    let nearestDistance = Infinity;
+    for (const candle of candles) {
+        const candleTime = Number(candle.time);
+        if (!Number.isFinite(candleTime)) {
+            continue;
+        }
+        const distance = Math.abs(candleTime - targetTime);
+        if (distance < nearestDistance) {
+            nearest = candle;
+            nearestDistance = distance;
+        }
+    }
+
+    return nearest;
 }
