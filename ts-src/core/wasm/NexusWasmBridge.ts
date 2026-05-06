@@ -440,7 +440,11 @@ export class NexusWasmBridge {
 
         const rgbMatch = value.match(/^rgba?\(([^)]+)\)$/i);
         if (rgbMatch) {
-            const parts = rgbMatch[1].split(",").map((part) => Number.parseFloat(part.trim()));
+            const parts = rgbMatch[1]
+                .replace(/\//g, " ")
+                .split(/[\s,]+/)
+                .filter((part) => part.length > 0)
+                .map((part) => Number.parseFloat(part.trim()));
             if (parts.length >= 3 && parts.slice(0, 3).every((part) => Number.isFinite(part))) {
                 return [
                     this.normalizeColorChannel(parts[0]),
@@ -448,6 +452,11 @@ export class NexusWasmBridge {
                     this.normalizeColorChannel(parts[2]),
                 ];
             }
+        }
+
+        const resolvedColor = this.resolveCssColor(value);
+        if (resolvedColor && resolvedColor !== value) {
+            return this.parseColor(resolvedColor, fallback);
         }
 
         return [fallback[0], fallback[1], fallback[2]];
@@ -458,6 +467,25 @@ export class NexusWasmBridge {
             return Math.max(0, Math.min(1, channel));
         }
         return Math.max(0, Math.min(1, channel / 255));
+    }
+
+    private resolveCssColor(value: string): string | null {
+        if (typeof document === "undefined") {
+            return null;
+        }
+
+        const probe = document.createElement("span");
+        probe.style.color = value;
+        if (!probe.style.color) {
+            return null;
+        }
+
+        probe.style.position = "absolute";
+        probe.style.visibility = "hidden";
+        document.body?.appendChild(probe);
+        const resolved = getComputedStyle(probe).color;
+        probe.remove();
+        return resolved || null;
     }
 
     private actionToCode(action: AgentAction): number {

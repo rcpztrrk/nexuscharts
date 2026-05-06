@@ -194,6 +194,15 @@ test("NexusWasmBridge grows series sync buffers geometrically", () => {
   assert.equal(thirdCapacity, firstCapacity * 2);
 });
 
+test("NexusWasmBridge parses modern css color formats for theme sync", () => {
+  const bridge = new NexusWasmBridge() as any;
+
+  assert.deepEqual(bridge.parseColor("#0f8", [1, 1, 1]).map((v: number) => Number(v.toFixed(3))), [0, 1, 0.533]);
+  assert.deepEqual(bridge.parseColor("rgb(12 34 56)", [1, 1, 1]).map((v: number) => Number(v.toFixed(3))), [0.047, 0.133, 0.22]);
+  assert.deepEqual(bridge.parseColor("rgba(10, 20, 30, 0.5)", [1, 1, 1]).map((v: number) => Number(v.toFixed(3))), [0.039, 0.078, 0.118]);
+  assert.deepEqual(bridge.parseColor("not-a-color", [0.1, 0.2, 0.3]), [0.1, 0.2, 0.3]);
+});
+
 test("ChartEventBus supports one-shot subscriptions", () => {
   const bus = new ChartEventBus();
   const ranges: Array<[number, number]> = [];
