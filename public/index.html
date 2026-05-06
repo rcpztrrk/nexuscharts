@@ -197,6 +197,7 @@
             <select id="data-source">
                 <option value="generated">Generated</option>
                 <option value="csv">CSV adapter</option>
+                <option value="websocket">WebSocket mock</option>
             </select>
             <button id="dataset-load">Load</button>
             <button id="benchmark-run">Run Sweep</button>
@@ -243,6 +244,7 @@
             NexusCharts,
             createDataAdapter,
             createCsvDataAdapter,
+            createWebSocketDataAdapter,
             connectSeriesDataAdapter,
         } from "./nexus-charts.esm.js";
 
@@ -350,6 +352,22 @@
                 load: async () => candlesToCsv(sourceCandles),
             });
             const result = await csvAdapter.load({
+                timeframe: timeframeKey,
+                limit: count,
+            });
+            return Array.isArray(result) ? result : result.data;
+        };
+
+        const loadWebSocketSampleCandles = async (count, timeframeKey) => {
+            const sourceCandles = generateCandles(count, timeframeKey);
+            const socketAdapter = createWebSocketDataAdapter({
+                url: "wss://demo.nexuscharts.local/mock",
+                load: async () => sourceCandles,
+                webSocketFactory: () => ({
+                    close: () => undefined,
+                }),
+            });
+            const result = await socketAdapter.load({
                 timeframe: timeframeKey,
                 limit: count,
             });
@@ -990,13 +1008,20 @@
                 if (currentDataSource === "csv") {
                     return loadCsvSampleCandles(count, currentTimeframeKey);
                 }
+                if (currentDataSource === "websocket") {
+                    return loadWebSocketSampleCandles(count, currentTimeframeKey);
+                }
                 return generateCandles(count, currentTimeframeKey);
             };
 
             const updateDatasetStatus = () => {
                 if (datasetStatus) {
                     const modeLabel = overlaysEnabled ? "Full" : "Benchmark";
-                    const sourceLabel = currentDataSource === "csv" ? "CSV adapter" : "Generated adapter";
+                    const sourceLabel = currentDataSource === "csv"
+                        ? "CSV adapter"
+                        : currentDataSource === "websocket"
+                            ? "WebSocket adapter"
+                            : "Generated adapter";
                     const loadedLabel = candles.length === allCandles.length
                         ? `${candles.length.toLocaleString()}`
                         : `${candles.length.toLocaleString()}/${allCandles.length.toLocaleString()}`;
@@ -1437,7 +1462,9 @@
             if (dataSourceSelect) {
                 dataSourceSelect.value = currentDataSource;
                 dataSourceSelect.addEventListener("change", () => {
-                    currentDataSource = dataSourceSelect.value === "csv" ? "csv" : "generated";
+                    currentDataSource = dataSourceSelect.value === "csv" || dataSourceSelect.value === "websocket"
+                        ? dataSourceSelect.value
+                        : "generated";
                     const size = Number(datasetSelect?.value) || getTimeframeViewPreset(currentTimeframeKey).datasetSize;
                     void applyDataset(size, true);
                 });
