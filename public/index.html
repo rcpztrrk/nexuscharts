@@ -111,7 +111,8 @@
         #timeframe-size,
         #data-source,
         #timezone-preset,
-        #gap-mode {
+        #gap-mode,
+        #marker-snap {
             padding: 4px 6px;
             border-radius: 4px;
             border: 1px solid var(--shell-border);
@@ -227,6 +228,14 @@
         </div>
         <button id="stream-toggle">Stream: On</button>
         <button id="live-edge-toggle">Follow: Live</button>
+        <div class="toolbar-card" id="annotation-bar">
+            <span>Marker Snap</span>
+            <select id="marker-snap">
+                <option value="auto">Auto OHLC</option>
+                <option value="close">Close</option>
+                <option value="off">Off</option>
+            </select>
+        </div>
         <button id="annotation-save">Save Ann</button>
         <button id="annotation-restore">Restore Ann</button>
     </div>
@@ -441,6 +450,7 @@
             const liveEdgeToggle = document.getElementById("live-edge-toggle");
             const annotationSave = document.getElementById("annotation-save");
             const annotationRestore = document.getElementById("annotation-restore");
+            const markerSnapSelect = document.getElementById("marker-snap");
             const datasetSelect = document.getElementById("dataset-size");
             const dataSourceSelect = document.getElementById("data-source");
             const datasetLoad = document.getElementById("dataset-load");
@@ -461,6 +471,7 @@
             let currentDataSource = "generated";
             let currentTimezone = defaultTimezone;
             let currentGapMode = defaultGapMode;
+            let markerSnapMode = "auto";
             const pageParams = new URLSearchParams(window.location.search);
             const shouldAutorunBenchmark = pageParams.get("autorunBenchmark") === "1";
             const autorunBenchmarkSize = Number(pageParams.get("benchmarkSize") || "0");
@@ -903,6 +914,17 @@
                     );
                 });
             }
+            if (markerSnapSelect) {
+                markerSnapSelect.value = markerSnapMode;
+                markerSnapSelect.addEventListener("change", () => {
+                    markerSnapMode = markerSnapSelect.value === "close" || markerSnapSelect.value === "off"
+                        ? markerSnapSelect.value
+                        : "auto";
+                    applyPriceAnnotations(candles, overlaysEnabled);
+                    updateDatasetStatus();
+                    setBenchmarkReport(`Marker snap mode changed: ${markerSnapMode}.`);
+                });
+            }
 
             const series = chart.createSeries({ type: "candlestick" });
             const lineSeries = chart.createSeries({ type: "line", lineWidth: 2 });
@@ -1033,8 +1055,9 @@
                     const followLabel = liveEdgeAutoEnabled
                         ? (liveEdgeFollow ? " | Follow: live" : " | Follow: away")
                         : " | Follow: off";
+                    const snapLabel = ` | Snap: ${markerSnapMode}`;
                     datasetStatus.textContent =
-                        `Size: ${loadedLabel} | TF: ${currentTimeframeKey.toUpperCase()} | TZ: ${currentTimezone} | Gaps: ${currentGapMode} | Mode: ${modeLabel} | Source: ${sourceLabel}${historyLabel}${followLabel}`;
+                        `Size: ${loadedLabel} | TF: ${currentTimeframeKey.toUpperCase()} | TZ: ${currentTimezone} | Gaps: ${currentGapMode} | Mode: ${modeLabel} | Source: ${sourceLabel}${historyLabel}${followLabel}${snapLabel}`;
                 }
             };
 
@@ -1240,6 +1263,30 @@
                 const entryPrice = entryCandle.close;
                 const targetPrice = Math.max(targetCandle.high, entryPrice + 1.2);
                 const stopPrice = Math.min(stopCandle.low, entryPrice - 1.2);
+                const useCloseSnap = markerSnapMode === "close";
+                const useAutoSnap = markerSnapMode === "auto";
+                const buySnapTarget = useCloseSnap ? "close" : useAutoSnap ? "low" : null;
+                const sellSnapTarget = useCloseSnap ? "close" : useAutoSnap ? "high" : null;
+                const buyMarker = {
+                    time: buyCandle.time,
+                    price: buySnapTarget ? 0 : buyCandle.low - 0.5,
+                    label: "Buy",
+                    color: "#22c55e",
+                    textColor: "#dfffea",
+                    shape: "arrowUp",
+                    size: 8,
+                    ...(buySnapTarget ? { snapTo: buySnapTarget } : {}),
+                };
+                const sellMarker = {
+                    time: sellCandle.time,
+                    price: sellSnapTarget ? 0 : sellCandle.high + 0.5,
+                    label: "Sell",
+                    color: "#fb7185",
+                    textColor: "#ffe4e6",
+                    shape: "arrowDown",
+                    size: 8,
+                    ...(sellSnapTarget ? { snapTo: sellSnapTarget } : {}),
+                };
 
                 chart.setAnnotations({
                     priceLines: [
@@ -1264,26 +1311,7 @@
                             dash: [3, 3],
                         },
                     ],
-                    markers: [
-                        {
-                            time: buyCandle.time,
-                            price: buyCandle.low - 0.5,
-                            label: "Buy",
-                            color: "#22c55e",
-                            textColor: "#dfffea",
-                            shape: "arrowUp",
-                            size: 8,
-                        },
-                        {
-                            time: sellCandle.time,
-                            price: sellCandle.high + 0.5,
-                            label: "Sell",
-                            color: "#fb7185",
-                            textColor: "#ffe4e6",
-                            shape: "arrowDown",
-                            size: 8,
-                        },
-                    ],
+                    markers: [buyMarker, sellMarker],
                 });
             };
 
