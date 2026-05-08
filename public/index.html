@@ -980,6 +980,8 @@
             let currentVisibleBars = 140;
             let savedAnnotationSnapshot = null;
             const adapterSubscribers = new Set();
+            let websocketStreamDispatch = null;
+            let websocketStreamDisconnect = null;
 
             const selectCandlesForRequest = (request = {}) => {
                 let data = candles;
@@ -1009,7 +1011,7 @@
                 },
             };
 
-            const emitAdapterCandle = (point, mode) => {
+            const emitDemoAdapterCandle = (point, mode) => {
                 for (const handlers of adapterSubscribers) {
                     try {
                         handlers.onCandle(point, mode);
@@ -1017,6 +1019,87 @@
                         handlers.onError?.(error);
                     }
                 }
+            };
+
+            const websocketStreamAdapter = createWebSocketDataAdapter({
+                url: "wss://demo.nexuscharts.local/mock-stream",
+                webSocketFactory: () => {
+                    let messageListener = null;
+                    let errorListener = null;
+                    websocketStreamDispatch = (point, mode) => {
+                        if (!messageListener) {
+                            return false;
+                        }
+                        messageListener({
+                            data: JSON.stringify({
+                                ...point,
+                                __updateMode: mode,
+                            }),
+                        });
+                        return true;
+                    };
+                    return {
+                        addEventListener: (type, listener) => {
+                            if (type === "message") {
+                                messageListener = listener;
+                            }
+                            if (type === "error") {
+                                errorListener = listener;
+                            }
+                        },
+                        removeEventListener: (type, listener) => {
+                            if (type === "message" && messageListener === listener) {
+                                messageListener = null;
+                            }
+                            if (type === "error" && errorListener === listener) {
+                                errorListener = null;
+                            }
+                        },
+                        close: () => {
+                            messageListener = null;
+                            errorListener = null;
+                            websocketStreamDispatch = null;
+                        },
+                    };
+                },
+                map: (row) => ({
+                    time: row.time,
+                    open: row.open,
+                    high: row.high,
+                    low: row.low,
+                    close: row.close,
+                    volume: row.volume,
+                    __updateMode: row.__updateMode,
+                }),
+                getUpdateMode: (point) => point.__updateMode === "updateLast" ? "updateLast" : "append",
+            });
+
+            const ensureWebSocketStreamAdapter = () => {
+                if (websocketStreamDisconnect) {
+                    return;
+                }
+                websocketStreamDisconnect = websocketStreamAdapter.subscribe?.({
+                    onCandle: (point, mode) => emitDemoAdapterCandle(point, mode),
+                    onError: (error) => {
+                        console.warn("[NexusCharts Demo] WebSocket mock stream failed.", error);
+                    },
+                }) ?? null;
+            };
+
+            const teardownWebSocketStreamAdapter = () => {
+                websocketStreamDisconnect?.();
+                websocketStreamDisconnect = null;
+                websocketStreamDispatch = null;
+            };
+
+            const emitAdapterCandle = (point, mode) => {
+                if (currentDataSource === "websocket") {
+                    ensureWebSocketStreamAdapter();
+                    if (websocketStreamDispatch?.(point, mode)) {
+                        return;
+                    }
+                }
+                emitDemoAdapterCandle(point, mode);
             };
 
 
@@ -1028,11 +1111,14 @@
 
             const loadSourceCandles = async (count) => {
                 if (currentDataSource === "csv") {
+                    teardownWebSocketStreamAdapter();
                     return loadCsvSampleCandles(count, currentTimeframeKey);
                 }
                 if (currentDataSource === "websocket") {
+                    ensureWebSocketStreamAdapter();
                     return loadWebSocketSampleCandles(count, currentTimeframeKey);
                 }
+                teardownWebSocketStreamAdapter();
                 return generateCandles(count, currentTimeframeKey);
             };
 
@@ -1042,7 +1128,7 @@
                     const sourceLabel = currentDataSource === "csv"
                         ? "CSV adapter"
                         : currentDataSource === "websocket"
-                            ? "WebSocket adapter"
+                            ? "WebSocket stream adapter"
                             : "Generated adapter";
                     const loadedLabel = candles.length === allCandles.length
                         ? `${candles.length.toLocaleString()}`

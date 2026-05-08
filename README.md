@@ -12,7 +12,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Phase 12 in progress: performance tuning is now benchmarked after TS/WASM allocation and renderer cache optimizations; recent primary-series caching work significantly reduced 1M redraw spikes, with heap/streaming tuning remaining active.
 - Phase 14 started: responsive layout and HiDPI-aware canvas sizing are now available.
 - Price annotation API started: price lines and time/price markers can now be added, updated, removed, and rendered over the chart.
-- Demo now supports benchmark mode for large datasets (50k+), selectable generated/CSV/WebSocket adapter data sources, marker snap controls, and annotation snapshot save/restore controls.
+- Demo now supports benchmark mode for large datasets (50k+), selectable generated/CSV/WebSocket adapter data sources, WebSocket mock streaming through the adapter subscribe path, marker snap controls, and annotation snapshot save/restore controls.
 
 ## Core Capabilities
 
@@ -35,7 +35,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Price annotation helpers (`addPriceLine`, `addMarker`, `setPriceLines`, `setMarkers`, `setAnnotations`, update/remove/clear/get variants) for chart overlays, including marker `snapTo` support for OHLC anchoring.
 - Responsive canvas sizing with `ResizeObserver`, HiDPI pixel ratio support, and manual `resize()` fallback.
 - Performance metrics via `getPerfMetrics()` (avg/max/last redraw and heap telemetry where available).
-- Development demo page served from `public/`, including dataset benchmark mode, CSV/WebSocket adapter source selection, marker snap controls, annotation snapshot controls, and Midnight/Ocean/Ember/Light/Terminal theme presets.
+- Development demo page served from `public/`, including dataset benchmark mode, CSV/WebSocket adapter source selection, mock WebSocket subscribe streaming, marker snap controls, annotation snapshot controls, and Midnight/Ocean/Ember/Light/Terminal theme presets.
 
 ## API Snapshot
 
