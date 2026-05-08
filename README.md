@@ -190,6 +190,11 @@ cmd /c npm run build
 cmd /c npm run dev
 ```
 
+## Documentation
+
+- [API Reference](docs/api-reference.md)
+- The `public/` demo is the fastest way to exercise benchmark mode, data sources, marker snap controls, annotations, themes, and navigation behavior locally.
+
 ## Benchmark Snapshot
 
 Post-optimization headless benchmark mode snapshot (Edge headless, autorun benchmark demo, 2026-04-11):
