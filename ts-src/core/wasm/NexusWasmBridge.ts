@@ -443,14 +443,24 @@ export class NexusWasmBridge {
             const parts = rgbMatch[1]
                 .replace(/\//g, " ")
                 .split(/[\s,]+/)
-                .filter((part) => part.length > 0)
-                .map((part) => Number.parseFloat(part.trim()));
-            if (parts.length >= 3 && parts.slice(0, 3).every((part) => Number.isFinite(part))) {
-                return [
-                    this.normalizeColorChannel(parts[0]),
-                    this.normalizeColorChannel(parts[1]),
-                    this.normalizeColorChannel(parts[2]),
-                ];
+                .filter((part) => part.length > 0);
+            const channels = parts.slice(0, 3).map((part) => this.normalizeRgbChannel(part));
+            if (channels.length === 3 && channels.every((part) => Number.isFinite(part))) {
+                return [channels[0], channels[1], channels[2]];
+            }
+        }
+
+        const hslMatch = value.match(/^hsla?\(([^)]+)\)$/i);
+        if (hslMatch) {
+            const parts = hslMatch[1]
+                .replace(/\//g, " ")
+                .split(/[\s,]+/)
+                .filter((part) => part.length > 0);
+            const hue = this.normalizeHue(parts[0]);
+            const saturation = this.normalizePercentage(parts[1]);
+            const lightness = this.normalizePercentage(parts[2]);
+            if ([hue, saturation, lightness].every((part) => Number.isFinite(part))) {
+                return this.hslToRgb(hue, saturation, lightness);
             }
         }
 
@@ -462,11 +472,78 @@ export class NexusWasmBridge {
         return [fallback[0], fallback[1], fallback[2]];
     }
 
+    private normalizeRgbChannel(channel: string): number {
+        const trimmed = channel.trim();
+        const parsed = Number.parseFloat(trimmed);
+        if (!Number.isFinite(parsed)) {
+            return Number.NaN;
+        }
+        if (trimmed.endsWith("%")) {
+            return Math.max(0, Math.min(1, parsed / 100));
+        }
+        return this.normalizeColorChannel(parsed);
+    }
+
     private normalizeColorChannel(channel: number): number {
         if (channel <= 1) {
             return Math.max(0, Math.min(1, channel));
         }
         return Math.max(0, Math.min(1, channel / 255));
+    }
+
+    private normalizeHue(input: string | undefined): number {
+        const value = input?.trim() ?? "";
+        const parsed = Number.parseFloat(value);
+        if (!Number.isFinite(parsed)) {
+            return Number.NaN;
+        }
+        const degrees = value.endsWith("turn")
+            ? parsed * 360
+            : value.endsWith("rad")
+                ? parsed * (180 / Math.PI)
+                : parsed;
+        return ((degrees % 360) + 360) % 360;
+    }
+
+    private normalizePercentage(input: string | undefined): number {
+        const value = input?.trim() ?? "";
+        const parsed = Number.parseFloat(value);
+        if (!Number.isFinite(parsed)) {
+            return Number.NaN;
+        }
+        return Math.max(0, Math.min(1, parsed / (value.endsWith("%") ? 100 : 1)));
+    }
+
+    private hslToRgb(hue: number, saturation: number, lightness: number): [number, number, number] {
+        const chroma = (1 - Math.abs((2 * lightness) - 1)) * saturation;
+        const huePrime = hue / 60;
+        const x = chroma * (1 - Math.abs((huePrime % 2) - 1));
+        let r = 0;
+        let g = 0;
+        let b = 0;
+
+        if (huePrime < 1) {
+            r = chroma;
+            g = x;
+        } else if (huePrime < 2) {
+            r = x;
+            g = chroma;
+        } else if (huePrime < 3) {
+            g = chroma;
+            b = x;
+        } else if (huePrime < 4) {
+            g = x;
+            b = chroma;
+        } else if (huePrime < 5) {
+            r = x;
+            b = chroma;
+        } else {
+            r = chroma;
+            b = x;
+        }
+
+        const match = lightness - (chroma / 2);
+        return [r + match, g + match, b + match];
     }
 
     private resolveCssColor(value: string): string | null {
