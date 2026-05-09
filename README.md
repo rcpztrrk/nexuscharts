@@ -192,6 +192,7 @@ cmd /c npm run dev
 
 ## Documentation
 
+- [Getting Started](docs/getting-started.md)
 - [API Reference](docs/api-reference.md)
 - The `public/` demo is the fastest way to exercise benchmark mode, data sources, marker snap controls, annotations, themes, and navigation behavior locally.
 
