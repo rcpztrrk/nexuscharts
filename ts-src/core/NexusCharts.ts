@@ -546,10 +546,21 @@ export class NexusCharts {
         return this.seriesManager.createSeries(options, {
             createId: () => this.nextId("series"),
             isCompleteCandle: (point): point is CandleDataPoint => this.isCompleteCandle(point),
-            onSeriesMutated: (seriesId) => {
+            onSeriesMutated: (seriesId, reason) => {
                 const series = this.seriesManager.get(seriesId);
                 const primary = this.getPrimaryCandlestickSeriesEntry();
                 const touchesPrimaryCandles = !!series && series.type === "candlestick" && primary?.id === seriesId;
+
+                if (series) {
+                    this.eventBus.emit("seriesDataChange", {
+                        seriesId,
+                        seriesType: series.type,
+                        reason,
+                        length: series.data.length,
+                        revision: series.revision,
+                        isPrimary: touchesPrimaryCandles,
+                    });
+                }
 
                 if (touchesPrimaryCandles) {
                     this.queuePrimarySeriesMutation();
@@ -962,6 +973,14 @@ export class NexusCharts {
 
     public unsubscribeDrawingDeleted(handler: ChartEventHandler<"drawingDeleted">): boolean {
         return this.unsubscribe("drawingDeleted", handler);
+    }
+
+    public subscribeSeriesDataChange(handler: ChartEventHandler<"seriesDataChange">): () => void {
+        return this.subscribe("seriesDataChange", handler);
+    }
+
+    public unsubscribeSeriesDataChange(handler: ChartEventHandler<"seriesDataChange">): boolean {
+        return this.unsubscribe("seriesDataChange", handler);
     }
 
     private async initEngine(): Promise<void> {

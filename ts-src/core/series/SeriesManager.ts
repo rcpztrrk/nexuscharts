@@ -5,6 +5,7 @@ import type {
     SeriesApi,
     SeriesOptions,
     SeriesStyle,
+    SeriesMutationReason,
     SeriesType,
     SeriesValueKey,
 } from "../../types";
@@ -23,7 +24,7 @@ export interface StoredSeries {
 interface SeriesManagerHooks {
     createId: () => string;
     isCompleteCandle: (point: Partial<CandleDataPoint>) => point is CandleDataPoint;
-    onSeriesMutated: (seriesId: string) => void;
+    onSeriesMutated: (seriesId: string, reason: SeriesMutationReason) => void;
 }
 
 export class SeriesManager {
@@ -75,7 +76,7 @@ export class SeriesManager {
             series.data = data.length ? data : SeriesManager.EMPTY_DATA;
             series.ownsData = false;
             series.revision += 1;
-            hooks.onSeriesMutated(id);
+            hooks.onSeriesMutated(id, "setData");
         };
 
         const append = (point: CandleDataPoint) => {
@@ -86,7 +87,7 @@ export class SeriesManager {
             this.ensureOwnedData(series);
             series.data.push(point);
             series.revision += 1;
-            hooks.onSeriesMutated(id);
+            hooks.onSeriesMutated(id, "append");
         };
 
         const updateLast = (point: Partial<CandleDataPoint>) => {
@@ -114,7 +115,7 @@ export class SeriesManager {
             }
 
             series.revision += 1;
-            hooks.onSeriesMutated(id);
+            hooks.onSeriesMutated(id, "updateLast");
         };
 
         const update = (point: CandleDataPoint) => {
@@ -134,7 +135,7 @@ export class SeriesManager {
             series.data = SeriesManager.EMPTY_DATA;
             series.ownsData = true;
             series.revision += 1;
-            hooks.onSeriesMutated(id);
+            hooks.onSeriesMutated(id, "clear");
         };
 
         return { id, type, setData, append, update, updateLast, getData, clear };

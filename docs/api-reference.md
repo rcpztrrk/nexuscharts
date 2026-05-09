@@ -150,6 +150,16 @@ unsubscribe();
 
 Common events include `crosshairMove`, `click`, `selectionChange`, `visibleRangeChange`, `timeScaleChange`, `drawingSelected`, `drawingUpdated`, and `drawingDeleted`.
 
+Series data changes can also be observed without wrapping every series method:
+
+```ts
+chart.subscribeSeriesDataChange((event) => {
+  console.log(event.seriesId, event.reason, event.length, event.isPrimary);
+});
+```
+
+The `reason` field is one of `setData`, `append`, `updateLast`, or `clear`.
+
 ## UI And Theme
 
 ```ts

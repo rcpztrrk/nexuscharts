@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import type {
   CandleDataPoint,
+  ChartSeriesDataChangeEvent,
   ChartDrawingUpdateEvent,
   ChartTimeScaleChangeEvent,
   DrawingDefinition,
@@ -181,9 +182,19 @@ test("Event and time-scale payload contract remains stable", () => {
       toPrice: 111,
     },
   };
+  const seriesEvent: ChartSeriesDataChangeEvent = {
+    seriesId: "series_1",
+    seriesType: "candlestick",
+    reason: "updateLast",
+    length: 120,
+    revision: 4,
+    isPrimary: true,
+  };
 
   assert.equal(drawingEvent.mode, "poly_point");
   assert.equal(drawingEvent.pointIndex, 1);
   assert.equal(timeScaleEvent.timeAxis.timezone, "UTC");
   assert.equal(timeScaleEvent.visibleRange.startIndex, 10);
+  assert.equal(seriesEvent.reason, "updateLast");
+  assert.equal(seriesEvent.isPrimary, true);
 });

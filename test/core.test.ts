@@ -194,6 +194,30 @@ test("NexusWasmBridge grows series sync buffers geometrically", () => {
   assert.equal(thirdCapacity, firstCapacity * 2);
 });
 
+test("SeriesManager reports data mutation reasons", () => {
+  const manager = new SeriesManager();
+  const mutations: string[] = [];
+  const series = manager.createSeries({ type: "line" }, {
+    createId: () => "series_1",
+    isCompleteCandle: (point) => (
+      point.time !== undefined && point.open !== undefined && point.high !== undefined && point.low !== undefined && point.close !== undefined
+    ),
+    onSeriesMutated: (id, reason) => mutations.push(`${id}:${reason}`),
+  }, baseTheme);
+
+  series.setData([{ time: 1, open: 10, high: 12, low: 9, close: 11 }]);
+  series.append({ time: 2, open: 11, high: 13, low: 10, close: 12 });
+  series.updateLast({ close: 12.5 });
+  series.clear();
+
+  assert.deepEqual(mutations, [
+    "series_1:setData",
+    "series_1:append",
+    "series_1:updateLast",
+    "series_1:clear",
+  ]);
+});
+
 test("NexusWasmBridge parses modern css color formats for theme sync", () => {
   const bridge = new NexusWasmBridge() as any;
 

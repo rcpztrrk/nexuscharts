@@ -127,9 +127,14 @@ const unsubscribeClick = chart.subscribeClick((event) => {
   console.log("clicked candle", event.candle);
 });
 
+const unsubscribeData = chart.subscribeSeriesDataChange((event) => {
+  console.log("series changed", event.seriesId, event.reason, event.length);
+});
+
 // Later:
 unsubscribeRange();
 unsubscribeClick();
+unsubscribeData();
 ```
 
 ## 9. Apply A Theme

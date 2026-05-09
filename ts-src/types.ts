@@ -120,6 +120,17 @@ export interface ChartDrawingDeleteEvent {
     reason: "api" | "contextMenu" | "clearAll";
 }
 
+export type SeriesMutationReason = "setData" | "append" | "updateLast" | "clear";
+
+export interface ChartSeriesDataChangeEvent {
+    seriesId: string;
+    seriesType: SeriesType;
+    reason: SeriesMutationReason;
+    length: number;
+    revision: number;
+    isPrimary: boolean;
+}
+
 export interface ChartEventMap {
     crosshairMove: ChartCrosshairMoveEvent;
     selectionChange: ChartSelectionChangeEvent;
@@ -129,6 +140,7 @@ export interface ChartEventMap {
     drawingSelected: ChartDrawingSelectionEvent;
     drawingUpdated: ChartDrawingUpdateEvent;
     drawingDeleted: ChartDrawingDeleteEvent;
+    seriesDataChange: ChartSeriesDataChangeEvent;
 }
 
 export type ChartEventName = keyof ChartEventMap;
