@@ -127,6 +127,8 @@ const unsubscribeRange = chart.subscribeVisibleRangeChange((range) => {
   console.log("visible bars", range.startIndex, range.endIndex);
 });
 
+console.log("current range", chart.getVisibleRange());
+
 const unsubscribeClick = chart.subscribeClick((event) => {
   console.log("clicked candle", event.candle);
 });

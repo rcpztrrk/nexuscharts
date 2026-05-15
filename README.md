@@ -22,6 +22,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Public chart API for series and drawing management.
 - Observer analytics API (`setObserverFrames`, `pushObserverFrame`, `configureAnalytics`).
 - Event API via generic `subscribe()` / `subscribeOnce()` plus focused helpers such as `subscribeCrosshairMove()` and `subscribeVisibleRangeChange()`.
+- Visible-range query API via `getVisibleRange()` for sync/debug panels without waiting for an event.
 - Series mutation events via `subscribeSeriesDataChange()` for `setData`, `append`, `updateLast`, and `clear` flows.
 - UI control API (`configureUi`, `getUiState`) with in-chart control bar and keyboard shortcuts.
 - Accessibility options for canvas role, label, tab index, and descriptive text binding.

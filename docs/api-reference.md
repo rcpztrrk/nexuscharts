@@ -141,6 +141,9 @@ const unsubscribe = chart.subscribeVisibleRangeChange((range) => {
   console.log(range.startIndex, range.endIndex);
 });
 
+const currentRange = chart.getVisibleRange();
+console.log(currentRange.fromTime, currentRange.toTime);
+
 chart.subscribeOnce("selectionChange", (event) => {
   console.log(event.candle);
 });

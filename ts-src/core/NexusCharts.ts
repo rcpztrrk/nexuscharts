@@ -7,6 +7,7 @@ import type {
     CandleDataPoint,
     ChartEventHandler,
     ChartEventName,
+    ChartVisibleRange,
     ChartTheme,
     ChartDrawingUpdateMode,
     SeriesType,
@@ -288,6 +289,10 @@ export class NexusCharts {
 
     public resize(): void {
         this.syncCanvasSize();
+    }
+
+    public getVisibleRange(): ChartVisibleRange {
+        return this.resolveCurrentVisibleRange();
     }
 
     public configureAccessibility(options: AccessibilityOptions): void {
@@ -2583,20 +2588,59 @@ export class NexusCharts {
         });
     }
 
+    private resolveCurrentVisibleRange(): ChartVisibleRange {
+        const geometry = this.buildSeriesGeometry();
+        const surface = this.overlayCanvas ?? this.canvas;
+        if (!geometry || !surface || geometry.candles.length === 0) {
+            return this.emptyVisibleRange();
+        }
+
+        const range = this.getVisibleCandleIndexRange(geometry, surface.width, surface.height, 0);
+        if (range.end < range.start) {
+            return this.emptyVisibleRange();
+        }
+
+        return this.buildVisibleRange(geometry, surface, range);
+    }
+
+    private emptyVisibleRange(): ChartVisibleRange {
+        return {
+            startIndex: 0,
+            endIndex: -1,
+            fromTime: null,
+            toTime: null,
+            fromPrice: null,
+            toPrice: null,
+        };
+    }
+
+    private buildVisibleRange(
+        geometry: SeriesGeometry,
+        surface: HTMLCanvasElement,
+        range: { start: number; end: number }
+    ): ChartVisibleRange {
+        const fromCandle = geometry.candles[range.start];
+        const toCandle = geometry.candles[range.end];
+        const topWorldY = this.canvasToWorldPoint(0, 0, surface.width, surface.height).y;
+        const bottomWorldY = this.canvasToWorldPoint(0, surface.height, surface.width, surface.height).y;
+
+        return {
+            startIndex: range.start,
+            endIndex: range.end,
+            fromTime: fromCandle.source.time,
+            toTime: toCandle.source.time,
+            fromPrice: this.worldYToPriceValueInternal(bottomWorldY, geometry),
+            toPrice: this.worldYToPriceValueInternal(topWorldY, geometry),
+        };
+    }
+
     private emitVisibleRangeChange(): void {
         const geometry = this.buildSeriesGeometry();
         const surface = this.overlayCanvas ?? this.canvas;
         if (!geometry || !surface || geometry.candles.length === 0) {
             if (this.lastVisibleRangeKey !== "empty") {
                 this.lastVisibleRangeKey = "empty";
-                const visibleRange = {
-                    startIndex: 0,
-                    endIndex: -1,
-                    fromTime: null,
-                    toTime: null,
-                    fromPrice: null,
-                    toPrice: null,
-                };
+                const visibleRange = this.emptyVisibleRange();
                 this.eventBus.emit("visibleRangeChange", visibleRange);
                 this.emitTimeScaleChange(visibleRange);
             }
@@ -2625,43 +2669,22 @@ export class NexusCharts {
         if (range.end < range.start) {
             if (this.lastVisibleRangeKey !== "empty") {
                 this.lastVisibleRangeKey = "empty";
-                const visibleRange = {
-                    startIndex: 0,
-                    endIndex: -1,
-                    fromTime: null,
-                    toTime: null,
-                    fromPrice: null,
-                    toPrice: null,
-                };
+                const visibleRange = this.emptyVisibleRange();
                 this.eventBus.emit("visibleRangeChange", visibleRange);
                 this.emitTimeScaleChange(visibleRange);
             }
             return;
         }
 
-        const fromCandle = geometry.candles[range.start];
-        const toCandle = geometry.candles[range.end];
-        const topWorldY = this.canvasToWorldPoint(0, 0, surface.width, surface.height).y;
-        const bottomWorldY = this.canvasToWorldPoint(0, surface.height, surface.width, surface.height).y;
-        const fromPrice = this.worldYToPriceValueInternal(bottomWorldY, geometry);
-        const toPrice = this.worldYToPriceValueInternal(topWorldY, geometry);
+        const visibleRange = this.buildVisibleRange(geometry, surface, range);
         const nextKey = [
-            range.start,
-            range.end,
-            String(fromCandle.source.time),
-            String(toCandle.source.time),
-            fromPrice.toFixed(4),
-            toPrice.toFixed(4),
+            visibleRange.startIndex,
+            visibleRange.endIndex,
+            String(visibleRange.fromTime),
+            String(visibleRange.toTime),
+            visibleRange.fromPrice?.toFixed(4) ?? "null",
+            visibleRange.toPrice?.toFixed(4) ?? "null",
         ].join("|");
-
-        const visibleRange = {
-            startIndex: range.start,
-            endIndex: range.end,
-            fromTime: fromCandle.source.time,
-            toTime: toCandle.source.time,
-            fromPrice,
-            toPrice,
-        };
 
         if (nextKey !== this.lastVisibleRangeKey) {
             this.lastVisibleRangeKey = nextKey;

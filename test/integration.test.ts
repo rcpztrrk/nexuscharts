@@ -6,6 +6,7 @@ import type {
   AccessibilityOptions,
   ChartImageExportOptions,
   ChartSeriesDataChangeEvent,
+  ChartVisibleRange,
   ChartDrawingUpdateEvent,
   ChartTimeScaleChangeEvent,
   DrawingDefinition,
@@ -225,4 +226,19 @@ test("Accessibility option contract remains stable", () => {
   assert.equal(options.role, "application");
   assert.equal(options.label, "BTCUSD interactive chart");
   assert.equal(options.tabIndex, 0);
+});
+
+test("Visible range query contract remains stable", () => {
+  const range: ChartVisibleRange = {
+    startIndex: 4,
+    endIndex: 18,
+    fromTime: 1000,
+    toTime: 5000,
+    fromPrice: 98.2,
+    toPrice: 112.4,
+  };
+
+  assert.equal(range.startIndex, 4);
+  assert.equal(range.endIndex, 18);
+  assert.equal(range.fromPrice, 98.2);
 });
