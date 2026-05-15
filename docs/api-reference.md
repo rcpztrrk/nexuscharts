@@ -185,3 +185,20 @@ console.log(metrics.redrawMs.avg, metrics.redrawMs.max);
 ```
 
 Use the demo benchmark controls or `npm run benchmark` for repeatable local performance checks.
+
+## Image Export
+
+```ts
+const png = chart.toDataURL({
+  type: "image/png",
+  includeOverlay: true,
+  backgroundColor: "#0b1220"
+});
+
+chart.downloadImage("nexuscharts.png", {
+  type: "image/png",
+  includeOverlay: true
+});
+```
+
+`includeOverlay` captures annotations, drawings, crosshair, labels, and other canvas overlay elements together with the WebGL chart.

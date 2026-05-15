@@ -35,6 +35,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Data adapter helpers (`createDataAdapter`, `createCsvDataAdapter`, `createPollingDataAdapter`, `createWebSocketDataAdapter`, `loadSeriesData`, `connectSeriesDataAdapter`) for external REST/WebSocket/CSV style feeds.
 - Price annotation helpers (`addPriceLine`, `addMarker`, `setPriceLines`, `setMarkers`, `setAnnotations`, update/remove/clear/get variants) for chart overlays, including marker `snapTo` support for OHLC anchoring.
 - Responsive canvas sizing with `ResizeObserver`, HiDPI pixel ratio support, and manual `resize()` fallback.
+- Image export helpers (`toDataURL`, `downloadImage`) for PNG/JPEG/WebP snapshots.
 - Performance metrics via `getPerfMetrics()` (avg/max/last redraw and heap telemetry where available).
 - Development demo page served from `public/`, including dataset benchmark mode, CSV/WebSocket adapter source selection, mock WebSocket subscribe streaming, marker snap controls, annotation snapshot controls, and Midnight/Ocean/Ember/Light/Terminal theme presets.
 

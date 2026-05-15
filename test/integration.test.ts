@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import type {
   CandleDataPoint,
+  ChartImageExportOptions,
   ChartSeriesDataChangeEvent,
   ChartDrawingUpdateEvent,
   ChartTimeScaleChangeEvent,
@@ -197,4 +198,17 @@ test("Event and time-scale payload contract remains stable", () => {
   assert.equal(timeScaleEvent.visibleRange.startIndex, 10);
   assert.equal(seriesEvent.reason, "updateLast");
   assert.equal(seriesEvent.isPrimary, true);
+});
+
+test("Image export option contract remains stable", () => {
+  const options: ChartImageExportOptions = {
+    type: "image/png",
+    includeOverlay: true,
+    backgroundColor: "#0b1220",
+    quality: 0.92,
+  };
+
+  assert.equal(options.type, "image/png");
+  assert.equal(options.includeOverlay, true);
+  assert.equal(options.quality, 0.92);
 });

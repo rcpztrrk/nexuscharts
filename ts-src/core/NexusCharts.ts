@@ -12,6 +12,7 @@ import type {
     ObserverFrame,
     ObserverMetrics,
     PerfMetrics,
+    ChartImageExportOptions,
     WorldPoint,
     ScreenPoint,
     HoveredCandle,
@@ -281,6 +282,53 @@ export class NexusCharts {
 
     public resize(): void {
         this.syncCanvasSize();
+    }
+
+    public toDataURL(options: ChartImageExportOptions = {}): string | null {
+        if (!this.canvas) {
+            return null;
+        }
+
+        const type = options.type ?? "image/png";
+        const quality = Number.isFinite(options.quality)
+            ? Math.max(0, Math.min(1, Number(options.quality)))
+            : undefined;
+
+        if (!options.includeOverlay || !this.overlayCanvas) {
+            return this.canvas.toDataURL(type, quality);
+        }
+
+        const output = document.createElement("canvas");
+        output.width = this.canvas.width;
+        output.height = this.canvas.height;
+        const ctx = output.getContext("2d");
+        if (!ctx) {
+            return this.canvas.toDataURL(type, quality);
+        }
+
+        if (options.backgroundColor) {
+            ctx.fillStyle = options.backgroundColor;
+            ctx.fillRect(0, 0, output.width, output.height);
+        }
+        ctx.drawImage(this.canvas, 0, 0);
+        ctx.drawImage(this.overlayCanvas, 0, 0);
+        return output.toDataURL(type, quality);
+    }
+
+    public downloadImage(filename: string = "nexuscharts.png", options: ChartImageExportOptions = {}): boolean {
+        const dataUrl = this.toDataURL(options);
+        if (!dataUrl) {
+            return false;
+        }
+
+        const link = document.createElement("a");
+        link.href = dataUrl;
+        link.download = filename;
+        link.rel = "noopener";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        return true;
     }
 
     public batchUpdates<T>(callback: () => T): T {

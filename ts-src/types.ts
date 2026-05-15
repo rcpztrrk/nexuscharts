@@ -222,6 +222,15 @@ export interface PerfMetrics {
     sampleCount: number;
 }
 
+export type ChartImageExportType = "image/png" | "image/jpeg" | "image/webp";
+
+export interface ChartImageExportOptions {
+    type?: ChartImageExportType;
+    quality?: number;
+    includeOverlay?: boolean;
+    backgroundColor?: string;
+}
+
 export interface ChartTheme {
     typography: {
         fontFamily: string;

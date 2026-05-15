@@ -157,7 +157,17 @@ chart.applyTheme({
 });
 ```
 
-## 10. Next Steps
+## 10. Export An Image
+
+```ts
+chart.downloadImage("chart.png", {
+  type: "image/png",
+  includeOverlay: true,
+  backgroundColor: "#0b1220"
+});
+```
+
+## 11. Next Steps
 
 - Use `docs/api-reference.md` for the full public API surface.
 - Use the local demo to test large datasets and interaction behavior.
