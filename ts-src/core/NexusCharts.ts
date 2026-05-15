@@ -3,6 +3,7 @@ import type {
     UiOptions,
     UiState,
     AnalyticsOptions,
+    AccessibilityOptions,
     CandleDataPoint,
     ChartEventHandler,
     ChartEventName,
@@ -194,6 +195,7 @@ export class NexusCharts {
         pricePrecision: 2,
     };
     private timeAxisOptions: Required<TimeAxisOptions> = this.normalizeTimeAxisOptions();
+    private accessibilityOptions: Required<AccessibilityOptions> = this.normalizeAccessibilityOptions();
     private readonly perfTracker = new PerfTracker(360);
     private readonly updateBatch: NexusChartUpdateBatch;
     private idCounter: number = 0;
@@ -235,6 +237,9 @@ export class NexusCharts {
         if (options.timeAxis) {
             this.timeAxisOptions = this.normalizeTimeAxisOptions(options.timeAxis);
         }
+        if (options.accessibility) {
+            this.accessibilityOptions = this.normalizeAccessibilityOptions(options.accessibility);
+        }
         this.readyPromise = new Promise<void>((resolve) => {
             this.resolveReady = resolve;
         });
@@ -254,6 +259,7 @@ export class NexusCharts {
             return;
         }
         this.canvas.style.touchAction = "none";
+        this.applyAccessibilityOptions();
 
         this.initializeOverlayCanvas(this.canvas);
         this.attachResizeHandling();
@@ -282,6 +288,14 @@ export class NexusCharts {
 
     public resize(): void {
         this.syncCanvasSize();
+    }
+
+    public configureAccessibility(options: AccessibilityOptions): void {
+        this.accessibilityOptions = this.normalizeAccessibilityOptions({
+            ...this.accessibilityOptions,
+            ...options,
+        });
+        this.applyAccessibilityOptions();
     }
 
     public toDataURL(options: ChartImageExportOptions = {}): string | null {
@@ -2070,6 +2084,8 @@ export class NexusCharts {
         overlay.style.width = "100%";
         overlay.style.height = "100%";
         overlay.style.pointerEvents = "none";
+        overlay.setAttribute("aria-hidden", "true");
+        overlay.tabIndex = -1;
 
         if (getComputedStyle(parent).position === "static") {
             parent.style.position = "relative";
@@ -2733,6 +2749,36 @@ export class NexusCharts {
             timezone: options.timezone ?? this.timeAxisOptions?.timezone ?? resolvedTimezone,
             gapMode: options.gapMode ?? this.timeAxisOptions?.gapMode ?? "compress",
         };
+    }
+
+    private normalizeAccessibilityOptions(options: AccessibilityOptions = {}): Required<AccessibilityOptions> {
+        return {
+            label: options.label ?? this.accessibilityOptions?.label ?? "NexusCharts interactive financial chart",
+            role: options.role ?? this.accessibilityOptions?.role ?? "application",
+            tabIndex: options.tabIndex === undefined ? (this.accessibilityOptions?.tabIndex ?? 0) : options.tabIndex,
+            describedBy: options.describedBy ?? this.accessibilityOptions?.describedBy ?? "",
+        };
+    }
+
+    private applyAccessibilityOptions(): void {
+        if (!this.canvas) {
+            return;
+        }
+
+        this.canvas.setAttribute("role", this.accessibilityOptions.role);
+        this.canvas.setAttribute("aria-label", this.accessibilityOptions.label);
+
+        if (this.accessibilityOptions.describedBy) {
+            this.canvas.setAttribute("aria-describedby", this.accessibilityOptions.describedBy);
+        } else {
+            this.canvas.removeAttribute("aria-describedby");
+        }
+
+        if (this.accessibilityOptions.tabIndex === null) {
+            this.canvas.removeAttribute("tabindex");
+        } else {
+            this.canvas.tabIndex = this.accessibilityOptions.tabIndex;
+        }
     }
 
     private normalizeAnalyticsOptions(options: AnalyticsOptions): Required<AnalyticsOptions> {

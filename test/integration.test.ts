@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import type {
   CandleDataPoint,
+  AccessibilityOptions,
   ChartImageExportOptions,
   ChartSeriesDataChangeEvent,
   ChartDrawingUpdateEvent,
@@ -211,4 +212,17 @@ test("Image export option contract remains stable", () => {
   assert.equal(options.type, "image/png");
   assert.equal(options.includeOverlay, true);
   assert.equal(options.quality, 0.92);
+});
+
+test("Accessibility option contract remains stable", () => {
+  const options: AccessibilityOptions = {
+    role: "application",
+    label: "BTCUSD interactive chart",
+    tabIndex: 0,
+    describedBy: "chart-help",
+  };
+
+  assert.equal(options.role, "application");
+  assert.equal(options.label, "BTCUSD interactive chart");
+  assert.equal(options.tabIndex, 0);
 });

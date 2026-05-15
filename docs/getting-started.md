@@ -36,6 +36,10 @@ import {
 const chart = new NexusCharts({
   canvasId: "chart",
   autoResize: true,
+  accessibility: {
+    label: "Demo interactive financial chart",
+    tabIndex: 0
+  },
   ui: {
     showAxes: true,
     showCrosshair: true,

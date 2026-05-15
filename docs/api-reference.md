@@ -177,6 +177,26 @@ chart.applyTheme({
 });
 ```
 
+## Accessibility
+
+```ts
+const chart = new NexusCharts({
+  canvasId: "canvas",
+  accessibility: {
+    role: "application",
+    label: "BTCUSD interactive candlestick chart",
+    tabIndex: 0,
+    describedBy: "chart-help"
+  }
+});
+
+chart.configureAccessibility({
+  label: "ETHUSD interactive candlestick chart"
+});
+```
+
+The overlay canvas is marked `aria-hidden`, while the main canvas receives the focus and screen-reader metadata.
+
 ## Performance Helpers
 
 ```ts

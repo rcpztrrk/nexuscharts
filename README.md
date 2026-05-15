@@ -24,6 +24,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Event API via generic `subscribe()` / `subscribeOnce()` plus focused helpers such as `subscribeCrosshairMove()` and `subscribeVisibleRangeChange()`.
 - Series mutation events via `subscribeSeriesDataChange()` for `setData`, `append`, `updateLast`, and `clear` flows.
 - UI control API (`configureUi`, `getUiState`) with in-chart control bar and keyboard shortcuts.
+- Accessibility options for canvas role, label, tab index, and descriptive text binding.
 - Theme API via constructor `theme` option and runtime `applyTheme()` / `getTheme()`.
 - WASM theme sync accepts hex, RGB/RGBA, percentage RGB, HSL/HSLA, modern CSS RGB syntax, and browser-resolved CSS colors.
 - Interactive chart UX: hover crosshair, OHLC tooltip, candle selection, fit-to-data, and pointer-anchored zoom.

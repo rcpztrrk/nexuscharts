@@ -12,6 +12,7 @@ export interface InitOptions {
     analytics?: AnalyticsOptions;
     ui?: UiOptions;
     timeAxis?: TimeAxisOptions;
+    accessibility?: AccessibilityOptions;
     theme?: ThemeInput;
     onReady?: (chart: NexusCharts) => void;
 }
@@ -56,6 +57,13 @@ export interface TimeAxisOptions {
 export interface TimeAxisState {
     timezone: string;
     gapMode: "compress" | "preserve";
+}
+
+export interface AccessibilityOptions {
+    label?: string;
+    role?: "application" | "img";
+    tabIndex?: number | null;
+    describedBy?: string;
 }
 
 export interface ChartVisibleRange {
