@@ -474,6 +474,14 @@ test("PriceAnnotationManager stores and updates price lines and markers", () => 
   assert.equal(manager.getMarkers().length, 1);
   assert.equal(manager.hasAnnotations(), true);
 
+  const alertId = manager.addAlert({ id: "breakout", price: 108.5, label: "Breakout", condition: "above" }, createId);
+  assert.equal(alertId, "breakout");
+  assert.equal(manager.getAlerts().length, 1);
+  assert.equal(manager.getAlerts()[0].condition, "above");
+  assert.equal(manager.updateAlert(alertId, { enabled: false, price: 109 }), true);
+  assert.equal(manager.getAlerts()[0].enabled, false);
+  assert.equal(manager.getAlerts()[0].price, 109);
+
   assert.equal(manager.updatePriceLine(priceLineId, { price: 103.75 }), true);
   assert.equal(manager.updateMarker(markerId, { label: "Take Profit", shape: "circle" }), true);
 
@@ -482,6 +490,7 @@ test("PriceAnnotationManager stores and updates price lines and markers", () => 
   assert.equal(manager.getMarkers()[0].shape, "circle");
 
   assert.equal(manager.removePriceLine(priceLineId), true);
+  assert.equal(manager.removeAlert(alertId), true);
   manager.clearMarkers();
   assert.equal(manager.hasAnnotations(), false);
 
@@ -510,6 +519,11 @@ test("PriceAnnotationManager stores and updates price lines and markers", () => 
   });
   assert.deepEqual(manager.getPriceLines().map((line) => line.id), ["stop"]);
   assert.deepEqual(manager.getMarkers().map((marker) => marker.id), ["exit"]);
+
+  manager.addAlert({ id: "target-alert", price: 110, label: "Target" }, createId);
+  assert.equal(manager.getAlerts()[0].condition, "crossing");
+  manager.clearAlerts();
+  assert.equal(manager.getAlerts().length, 0);
 
   manager.clearAnnotations();
   assert.equal(manager.hasAnnotations(), false);

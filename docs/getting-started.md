@@ -116,6 +116,8 @@ chart.setAnnotations({
     { time: 2, price: 0, snapTo: "low", label: "Buy", shape: "arrowUp" }
   ]
 });
+
+chart.addAlert({ price: 108, label: "Breakout", condition: "above" });
 ```
 
 `snapTo` can be `open`, `high`, `low`, or `close`. It anchors the marker to the nearest primary candlestick value.

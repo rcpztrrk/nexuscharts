@@ -29,6 +29,8 @@ import type {
     SeriesApi,
     PriceLineOptions,
     PriceLineDefinition,
+    ChartAlertOptions,
+    ChartAlertDefinition,
     ChartMarkerOptions,
     ChartMarkerDefinition,
     ChartAnnotationsSnapshot,
@@ -859,6 +861,37 @@ export class NexusCharts {
             priceLines: this.getPriceLines(),
             markers: this.getMarkers(),
         };
+    }
+
+    public addAlert(options: ChartAlertOptions): string {
+        const id = this.annotationManager.addAlert(options, () => this.nextId("alert"));
+        this.requestRedraw();
+        return id;
+    }
+
+    public updateAlert(id: string, patch: Partial<ChartAlertOptions>): boolean {
+        const updated = this.annotationManager.updateAlert(id, patch);
+        if (updated) {
+            this.requestRedraw();
+        }
+        return updated;
+    }
+
+    public removeAlert(id: string): boolean {
+        const removed = this.annotationManager.removeAlert(id);
+        if (removed) {
+            this.requestRedraw();
+        }
+        return removed;
+    }
+
+    public clearAlerts(): void {
+        this.annotationManager.clearAlerts();
+        this.requestRedraw();
+    }
+
+    public getAlerts(): ChartAlertDefinition[] {
+        return this.annotationManager.getAlerts();
     }
 
     private resolveMarkerSnapOptions(options: ChartMarkerOptions): ChartMarkerOptions {
@@ -2258,7 +2291,7 @@ export class NexusCharts {
             geometry,
             width,
             height,
-            priceLines: this.annotationManager.getPriceLines(),
+            priceLines: this.getRenderablePriceLines(),
             markers: this.annotationManager.getMarkers(),
             priceToWorldY: (price, activeGeometry) => this.priceToWorldYValue(price, activeGeometry),
             timeToWorldX: (time, activeGeometry) => this.timeToWorldXInternal(time, activeGeometry),
@@ -2267,6 +2300,25 @@ export class NexusCharts {
             ),
             formatPrice: (price) => this.formatPrice(price),
         });
+    }
+
+    private getRenderablePriceLines(): PriceLineDefinition[] {
+        const alertLines = this.annotationManager.getAlerts()
+            .filter((alert) => alert.enabled)
+            .map((alert): PriceLineDefinition => ({
+                id: alert.id,
+                price: alert.price,
+                label: alert.label ?? `Alert ${alert.condition}`,
+                color: alert.color ?? this.theme.selection.labelText,
+                width: alert.width,
+                dash: alert.dash ? [...alert.dash] : [6, 4],
+                axisLabel: true,
+            }));
+
+        return [
+            ...this.annotationManager.getPriceLines(),
+            ...alertLines,
+        ];
     }
 
     private renderSeriesOverlay(
@@ -2894,7 +2946,7 @@ export class NexusCharts {
         return this.indicatorPaneManager.getPaneBounds(width, height);
     }
 
-    private nextId(prefix: "series" | "drawing" | "indicator" | "priceLine" | "marker"): string {
+    private nextId(prefix: "series" | "drawing" | "indicator" | "priceLine" | "marker" | "alert"): string {
         this.idCounter += 1;
         return `${prefix}_${this.idCounter}`;
     }

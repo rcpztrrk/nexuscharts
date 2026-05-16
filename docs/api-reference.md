@@ -98,13 +98,18 @@ connectSeriesDataAdapter(candles, socketAdapter);
 ```ts
 chart.addPriceLine({ price: 101.25, label: "Entry" });
 chart.addMarker({ time: 1, price: 0, snapTo: "low", label: "Buy", shape: "arrowUp" });
+const alertId = chart.addAlert({ price: 108, label: "Breakout", condition: "above" });
+chart.updateAlert(alertId, { enabled: false });
+chart.removeAlert(alertId);
 
 const snapshot = chart.getAnnotations();
 chart.setAnnotations(snapshot);
 chart.clearAnnotations();
+chart.clearAlerts();
 ```
 
 Marker `snapTo` accepts `open`, `high`, `low`, or `close`. When enabled, the marker price is resolved from the nearest primary candlestick.
+Alerts render as horizontal price levels and support `above`, `below`, or `crossing` condition metadata for host applications.
 
 ## Drawings
 

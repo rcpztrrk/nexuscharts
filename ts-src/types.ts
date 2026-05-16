@@ -471,6 +471,30 @@ export interface PriceLineDefinition {
     axisLabel: boolean;
 }
 
+export type ChartAlertCondition = "above" | "below" | "crossing";
+
+export interface ChartAlertOptions {
+    id?: string;
+    price: number;
+    label?: string;
+    condition?: ChartAlertCondition;
+    color?: string;
+    width?: number;
+    dash?: number[];
+    enabled?: boolean;
+}
+
+export interface ChartAlertDefinition {
+    id: string;
+    price: number;
+    label?: string;
+    condition: ChartAlertCondition;
+    color?: string;
+    width: number;
+    dash?: number[];
+    enabled: boolean;
+}
+
 export type ChartMarkerShape = "circle" | "arrowUp" | "arrowDown";
 export type ChartMarkerSnapTarget = "open" | "high" | "low" | "close";
 

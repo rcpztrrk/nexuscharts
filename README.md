@@ -36,6 +36,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Real-time updates via `append` and `updateLast` helpers for live candles.
 - Data adapter helpers (`createDataAdapter`, `createCsvDataAdapter`, `createPollingDataAdapter`, `createWebSocketDataAdapter`, `loadSeriesData`, `connectSeriesDataAdapter`) for external REST/WebSocket/CSV style feeds.
 - Price annotation helpers (`addPriceLine`, `addMarker`, `setPriceLines`, `setMarkers`, `setAnnotations`, update/remove/clear/get variants) for chart overlays, including marker `snapTo` support for OHLC anchoring.
+- Price alert helpers (`addAlert`, `updateAlert`, `removeAlert`, `clearAlerts`, `getAlerts`) for horizontal alert levels.
 - Responsive canvas sizing with `ResizeObserver`, HiDPI pixel ratio support, and manual `resize()` fallback.
 - Image export helpers (`toDataURL`, `downloadImage`, `copyImageToClipboard`) for PNG/JPEG/WebP snapshots.
 - Performance metrics via `getPerfMetrics()` (avg/max/last redraw and heap telemetry where available).
@@ -109,6 +110,7 @@ chart.addIndicator({ type: "ema", period: 21, color: "#7dd3fc" });
 chart.addIndicator({ type: "rsi", period: 14, pane: "lower", color: "#a78bfa" });
 
 chart.addPriceLine({ price: 101.25, label: "Entry" });
+chart.addAlert({ price: 108, label: "Breakout", condition: "above" });
 chart.addMarker({ time: 1, price: 103, label: "Buy", shape: "arrowUp" });
 chart.setPriceLines([
   { price: 101.25, label: "Entry" },
