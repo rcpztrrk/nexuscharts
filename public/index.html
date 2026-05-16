@@ -228,6 +228,10 @@
         </div>
         <button id="stream-toggle">Stream: On</button>
         <button id="live-edge-toggle">Follow: Live</button>
+        <div class="toolbar-card" id="export-bar">
+            <button id="export-download">Export PNG</button>
+            <button id="export-copy">Copy PNG</button>
+        </div>
         <div class="toolbar-card" id="annotation-bar">
             <span>Marker Snap</span>
             <select id="marker-snap">
@@ -450,6 +454,8 @@
             const liveEdgeToggle = document.getElementById("live-edge-toggle");
             const annotationSave = document.getElementById("annotation-save");
             const annotationRestore = document.getElementById("annotation-restore");
+            const exportDownload = document.getElementById("export-download");
+            const exportCopy = document.getElementById("export-copy");
             const markerSnapSelect = document.getElementById("marker-snap");
             const datasetSelect = document.getElementById("dataset-size");
             const dataSourceSelect = document.getElementById("data-source");
@@ -914,6 +920,37 @@
                     );
                 });
             }
+            if (exportDownload) {
+                exportDownload.addEventListener("click", () => {
+                    const ok = chart.downloadImage("nexuscharts-demo.png", {
+                        type: "image/png",
+                        includeOverlay: true,
+                        backgroundColor: "#0b1220",
+                    });
+                    setBenchmarkReport(ok
+                        ? "PNG export started with overlays included."
+                        : "PNG export failed: chart canvas is not available.");
+                });
+            }
+            if (exportCopy) {
+                exportCopy.addEventListener("click", async () => {
+                    const copied = await chart.copyImageToClipboard({
+                        type: "image/png",
+                        includeOverlay: true,
+                        backgroundColor: "#0b1220",
+                    });
+                    if (copied) {
+                        setBenchmarkReport("PNG copied to clipboard with overlays included.");
+                        return;
+                    }
+                    chart.downloadImage("nexuscharts-demo.png", {
+                        type: "image/png",
+                        includeOverlay: true,
+                        backgroundColor: "#0b1220",
+                    });
+                    setBenchmarkReport("Clipboard copy is unavailable; downloaded PNG instead.");
+                });
+            }
             if (markerSnapSelect) {
                 markerSnapSelect.value = markerSnapMode;
                 markerSnapSelect.addEventListener("change", () => {
@@ -1336,6 +1373,7 @@
             const applyPriceAnnotations = (dataset, enableOverlays) => {
                 if (!enableOverlays || dataset.length < 8) {
                     chart.clearAnnotations();
+                    chart.clearAlerts();
                     return;
                 }
 
@@ -1349,6 +1387,7 @@
                 const entryPrice = entryCandle.close;
                 const targetPrice = Math.max(targetCandle.high, entryPrice + 1.2);
                 const stopPrice = Math.min(stopCandle.low, entryPrice - 1.2);
+                const alertPrice = targetPrice + Math.max(0.5, Math.abs(targetPrice - stopPrice) * 0.08);
                 const useCloseSnap = markerSnapMode === "close";
                 const useAutoSnap = markerSnapMode === "auto";
                 const buySnapTarget = useCloseSnap ? "close" : useAutoSnap ? "low" : null;
@@ -1398,6 +1437,16 @@
                         },
                     ],
                     markers: [buyMarker, sellMarker],
+                });
+                chart.clearAlerts();
+                chart.addAlert({
+                    id: "demo-breakout-alert",
+                    price: alertPrice,
+                    label: "Alert",
+                    condition: "above",
+                    color: "#f59e0b",
+                    width: 1.2,
+                    dash: [7, 4],
                 });
             };
 
