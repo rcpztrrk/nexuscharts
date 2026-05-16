@@ -350,6 +350,60 @@ export class NexusCharts {
         return true;
     }
 
+    public async copyImageToClipboard(options: ChartImageExportOptions = {}): Promise<boolean> {
+        if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+            console.warn("[NexusCharts] Clipboard image export is not supported in this browser.");
+            return false;
+        }
+
+        const dataUrl = this.toDataURL({
+            ...options,
+            type: options.type ?? "image/png",
+        });
+        if (!dataUrl) {
+            return false;
+        }
+
+        const blob = this.dataUrlToBlob(dataUrl);
+        if (!blob) {
+            return false;
+        }
+
+        try {
+            await navigator.clipboard.write([
+                new ClipboardItem({
+                    [blob.type]: blob,
+                }),
+            ]);
+            return true;
+        } catch (error) {
+            console.warn("[NexusCharts] Failed to copy chart image to clipboard.", error);
+            return false;
+        }
+    }
+
+    private dataUrlToBlob(dataUrl: string): Blob | null {
+        const commaIndex = dataUrl.indexOf(",");
+        if (commaIndex < 0) {
+            return null;
+        }
+
+        const metadata = dataUrl.slice(0, commaIndex);
+        const payload = dataUrl.slice(commaIndex + 1);
+        const mimeType = metadata.match(/^data:([^;]+);base64$/)?.[1] ?? "image/png";
+
+        try {
+            const binary = atob(payload);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i += 1) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return new Blob([bytes], { type: mimeType });
+        } catch {
+            return null;
+        }
+    }
+
     public batchUpdates<T>(callback: () => T): T {
         return this.updateBatch.run(callback);
     }

@@ -222,6 +222,13 @@ chart.downloadImage("nexuscharts.png", {
   type: "image/png",
   includeOverlay: true
 });
+
+const copied = await chart.copyImageToClipboard({
+  type: "image/png",
+  includeOverlay: true,
+  backgroundColor: "#0b1220"
+});
 ```
 
 `includeOverlay` captures annotations, drawings, crosshair, labels, and other canvas overlay elements together with the WebGL chart.
+Clipboard export returns `false` when the browser does not support image clipboard writes or the page is not in a compatible secure context.

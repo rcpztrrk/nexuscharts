@@ -171,6 +171,12 @@ chart.downloadImage("chart.png", {
   includeOverlay: true,
   backgroundColor: "#0b1220"
 });
+
+await chart.copyImageToClipboard({
+  type: "image/png",
+  includeOverlay: true,
+  backgroundColor: "#0b1220"
+});
 ```
 
 ## 11. Next Steps

@@ -213,6 +213,7 @@ test("Image export option contract remains stable", () => {
   assert.equal(options.type, "image/png");
   assert.equal(options.includeOverlay, true);
   assert.equal(options.quality, 0.92);
+  assert.equal(typeof options.backgroundColor, "string");
 });
 
 test("Accessibility option contract remains stable", () => {
