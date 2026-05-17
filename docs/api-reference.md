@@ -231,6 +231,15 @@ chart.downloadImage("nexuscharts.png", {
   includeOverlay: true
 });
 
+const svg = chart.toSVG({
+  includeOverlay: true,
+  backgroundColor: "#0b1220"
+});
+chart.downloadSVG("nexuscharts.svg", {
+  includeOverlay: true,
+  backgroundColor: "#0b1220"
+});
+
 const copied = await chart.copyImageToClipboard({
   type: "image/png",
   includeOverlay: true,
@@ -240,3 +249,4 @@ const copied = await chart.copyImageToClipboard({
 
 `includeOverlay` captures annotations, drawings, crosshair, labels, and other canvas overlay elements together with the WebGL chart.
 Clipboard export returns `false` when the browser does not support image clipboard writes or the page is not in a compatible secure context.
+SVG export embeds the rendered canvas snapshot inside an SVG container; it is intended for shareable reports, not editable vector candles.

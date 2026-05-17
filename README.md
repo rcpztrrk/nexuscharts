@@ -39,7 +39,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Price annotation helpers (`addPriceLine`, `addMarker`, `setPriceLines`, `setMarkers`, `setAnnotations`, update/remove/clear/get variants) for chart overlays, including marker `snapTo` support for OHLC anchoring.
 - Price alert helpers (`addAlert`, `updateAlert`, `removeAlert`, `clearAlerts`, `getAlerts`) for horizontal alert levels.
 - Responsive canvas sizing with `ResizeObserver`, HiDPI pixel ratio support, and manual `resize()` fallback.
-- Image export helpers (`toDataURL`, `downloadImage`, `copyImageToClipboard`) for PNG/JPEG/WebP snapshots.
+- Image export helpers (`toDataURL`, `downloadImage`, `toSVG`, `downloadSVG`, `copyImageToClipboard`) for PNG/JPEG/WebP/SVG snapshots.
 - Performance metrics via `getPerfMetrics()` (avg/max/last redraw and heap telemetry where available).
 - Development demo page served from `public/`, including dataset benchmark mode, CSV/WebSocket adapter source selection, mock WebSocket subscribe streaming, marker snap controls, alert overlays, annotation snapshot controls, PNG export/copy actions, and Midnight/Ocean/Ember/Light/Terminal theme presets.
 

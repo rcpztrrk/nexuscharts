@@ -177,6 +177,11 @@ chart.downloadImage("chart.png", {
   backgroundColor: "#0b1220"
 });
 
+chart.downloadSVG("chart.svg", {
+  includeOverlay: true,
+  backgroundColor: "#0b1220"
+});
+
 await chart.copyImageToClipboard({
   type: "image/png",
   includeOverlay: true,

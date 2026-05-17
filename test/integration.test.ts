@@ -233,6 +233,13 @@ test("Image export option contract remains stable", () => {
   assert.equal(options.includeOverlay, true);
   assert.equal(options.quality, 0.92);
   assert.equal(typeof options.backgroundColor, "string");
+
+  const svgOptions: ChartImageExportOptions = {
+    includeOverlay: true,
+    backgroundColor: "#111827",
+  };
+  assert.equal(svgOptions.type, undefined);
+  assert.equal(svgOptions.includeOverlay, true);
 });
 
 test("Accessibility option contract remains stable", () => {
