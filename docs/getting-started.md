@@ -118,6 +118,9 @@ chart.setAnnotations({
 });
 
 chart.addAlert({ price: 108, label: "Breakout", condition: "above" });
+chart.subscribeAlertTriggered((event) => {
+  console.log("alert triggered", event.alert.label, event.price);
+});
 ```
 
 `snapTo` can be `open`, `high`, `low`, or `close`. It anchors the marker to the nearest primary candlestick value.

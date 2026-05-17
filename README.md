@@ -22,6 +22,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Public chart API for series and drawing management.
 - Observer analytics API (`setObserverFrames`, `pushObserverFrame`, `configureAnalytics`).
 - Event API via generic `subscribe()` / `subscribeOnce()` plus focused helpers such as `subscribeCrosshairMove()` and `subscribeVisibleRangeChange()`.
+- Alert trigger events via `subscribeAlertTriggered()` when the primary series crosses an enabled alert level.
 - Visible-range query API via `getVisibleRange()` for sync/debug panels without waiting for an event.
 - Series mutation events via `subscribeSeriesDataChange()` for `setData`, `append`, `updateLast`, and `clear` flows.
 - UI control API (`configureUi`, `getUiState`) with in-chart control bar and keyboard shortcuts.
@@ -111,6 +112,9 @@ chart.addIndicator({ type: "rsi", period: 14, pane: "lower", color: "#a78bfa" })
 
 chart.addPriceLine({ price: 101.25, label: "Entry" });
 chart.addAlert({ price: 108, label: "Breakout", condition: "above" });
+chart.subscribeAlertTriggered((event) => {
+  console.log(event.alert.label, event.price, event.direction);
+});
 chart.addMarker({ time: 1, price: 103, label: "Buy", shape: "arrowUp" });
 chart.setPriceLines([
   { price: 101.25, label: "Entry" },

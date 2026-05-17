@@ -5,6 +5,7 @@ import type {
   CandleDataPoint,
   AccessibilityOptions,
   ChartImageExportOptions,
+  ChartAlertTriggeredEvent,
   ChartSeriesDataChangeEvent,
   ChartVisibleRange,
   ChartDrawingUpdateEvent,
@@ -193,6 +194,22 @@ test("Event and time-scale payload contract remains stable", () => {
     revision: 4,
     isPrimary: true,
   };
+  const alertEvent: ChartAlertTriggeredEvent = {
+    alert: {
+      id: "alert_1",
+      price: 105,
+      condition: "above",
+      width: 1,
+      enabled: true,
+    },
+    seriesId: "series_1",
+    reason: "append",
+    index: 12,
+    time: 1700000000,
+    price: 106,
+    previousPrice: 104,
+    direction: "up",
+  };
 
   assert.equal(drawingEvent.mode, "poly_point");
   assert.equal(drawingEvent.pointIndex, 1);
@@ -200,6 +217,8 @@ test("Event and time-scale payload contract remains stable", () => {
   assert.equal(timeScaleEvent.visibleRange.startIndex, 10);
   assert.equal(seriesEvent.reason, "updateLast");
   assert.equal(seriesEvent.isPrimary, true);
+  assert.equal(alertEvent.alert.condition, "above");
+  assert.equal(alertEvent.direction, "up");
 });
 
 test("Image export option contract remains stable", () => {

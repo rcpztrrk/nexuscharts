@@ -139,6 +139,17 @@ export interface ChartSeriesDataChangeEvent {
     isPrimary: boolean;
 }
 
+export interface ChartAlertTriggeredEvent {
+    alert: ChartAlertDefinition;
+    seriesId: string;
+    reason: SeriesMutationReason;
+    index: number;
+    time: number | string;
+    price: number;
+    previousPrice: number;
+    direction: "up" | "down";
+}
+
 export interface ChartEventMap {
     crosshairMove: ChartCrosshairMoveEvent;
     selectionChange: ChartSelectionChangeEvent;
@@ -149,6 +160,7 @@ export interface ChartEventMap {
     drawingUpdated: ChartDrawingUpdateEvent;
     drawingDeleted: ChartDrawingDeleteEvent;
     seriesDataChange: ChartSeriesDataChangeEvent;
+    alertTriggered: ChartAlertTriggeredEvent;
 }
 
 export type ChartEventName = keyof ChartEventMap;

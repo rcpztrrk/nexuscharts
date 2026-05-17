@@ -10,6 +10,7 @@ import type {
     ChartVisibleRange,
     ChartTheme,
     ChartDrawingUpdateMode,
+    SeriesMutationReason,
     SeriesType,
     ObserverFrame,
     ObserverMetrics,
@@ -162,6 +163,7 @@ export class NexusCharts {
     private readonly wasmViewportSyncPadding: number = 240;
     private readonly drawingManager = new DrawingManager();
     private readonly annotationManager = new PriceAnnotationManager();
+    private readonly alertTriggerKeys = new Map<string, string>();
     private readonly drawingCoordinateApi: DrawingCoordinateApi = {
         timeToWorldX: (time, geometry) => this.timeToWorldXInternal(time, geometry),
         worldXToTime: (worldX, geometry) => this.worldXToTimeInternal(worldX, geometry),
@@ -686,6 +688,7 @@ export class NexusCharts {
                 }
 
                 if (touchesPrimaryCandles) {
+                    this.evaluateAlertTriggers(seriesId, reason, series.data);
                     this.queuePrimarySeriesMutation();
                 } else {
                     this.requestRedraw();
@@ -872,6 +875,7 @@ export class NexusCharts {
     public updateAlert(id: string, patch: Partial<ChartAlertOptions>): boolean {
         const updated = this.annotationManager.updateAlert(id, patch);
         if (updated) {
+            this.alertTriggerKeys.delete(id);
             this.requestRedraw();
         }
         return updated;
@@ -880,6 +884,7 @@ export class NexusCharts {
     public removeAlert(id: string): boolean {
         const removed = this.annotationManager.removeAlert(id);
         if (removed) {
+            this.alertTriggerKeys.delete(id);
             this.requestRedraw();
         }
         return removed;
@@ -887,6 +892,7 @@ export class NexusCharts {
 
     public clearAlerts(): void {
         this.annotationManager.clearAlerts();
+        this.alertTriggerKeys.clear();
         this.requestRedraw();
     }
 
@@ -1135,6 +1141,14 @@ export class NexusCharts {
 
     public unsubscribeSeriesDataChange(handler: ChartEventHandler<"seriesDataChange">): boolean {
         return this.unsubscribe("seriesDataChange", handler);
+    }
+
+    public subscribeAlertTriggered(handler: ChartEventHandler<"alertTriggered">): () => void {
+        return this.subscribe("alertTriggered", handler);
+    }
+
+    public unsubscribeAlertTriggered(handler: ChartEventHandler<"alertTriggered">): boolean {
+        return this.unsubscribe("alertTriggered", handler);
     }
 
     private async initEngine(): Promise<void> {
@@ -2319,6 +2333,61 @@ export class NexusCharts {
             ...this.annotationManager.getPriceLines(),
             ...alertLines,
         ];
+    }
+
+    private evaluateAlertTriggers(
+        seriesId: string,
+        reason: SeriesMutationReason,
+        candles: readonly CandleDataPoint[]
+    ): void {
+        if (candles.length < 2) {
+            return;
+        }
+
+        const index = candles.length - 1;
+        const previous = candles[index - 1];
+        const current = candles[index];
+        const previousPrice = Number(previous.close);
+        const price = Number(current.close);
+        if (!Number.isFinite(previousPrice) || !Number.isFinite(price)) {
+            return;
+        }
+
+        for (const alert of this.annotationManager.getAlerts()) {
+            if (!alert.enabled || !Number.isFinite(alert.price)) {
+                continue;
+            }
+
+            const direction = price >= previousPrice ? "up" : "down";
+            const crossedUp = previousPrice <= alert.price && price > alert.price;
+            const crossedDown = previousPrice >= alert.price && price < alert.price;
+            const triggered = alert.condition === "above"
+                ? crossedUp
+                : alert.condition === "below"
+                    ? crossedDown
+                    : crossedUp || crossedDown;
+
+            if (!triggered) {
+                continue;
+            }
+
+            const triggerKey = `${seriesId}:${index}:${String(current.time)}:${alert.price}:${direction}`;
+            if (this.alertTriggerKeys.get(alert.id) === triggerKey) {
+                continue;
+            }
+            this.alertTriggerKeys.set(alert.id, triggerKey);
+
+            this.eventBus.emit("alertTriggered", {
+                alert,
+                seriesId,
+                reason,
+                index,
+                time: current.time,
+                price,
+                previousPrice,
+                direction,
+            });
+        }
     }
 
     private renderSeriesOverlay(

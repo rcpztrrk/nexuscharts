@@ -99,6 +99,9 @@ connectSeriesDataAdapter(candles, socketAdapter);
 chart.addPriceLine({ price: 101.25, label: "Entry" });
 chart.addMarker({ time: 1, price: 0, snapTo: "low", label: "Buy", shape: "arrowUp" });
 const alertId = chart.addAlert({ price: 108, label: "Breakout", condition: "above" });
+const unsubscribeAlert = chart.subscribeAlertTriggered((event) => {
+  console.log(event.alert.id, event.price, event.direction);
+});
 chart.updateAlert(alertId, { enabled: false });
 chart.removeAlert(alertId);
 
@@ -109,7 +112,7 @@ chart.clearAlerts();
 ```
 
 Marker `snapTo` accepts `open`, `high`, `low`, or `close`. When enabled, the marker price is resolved from the nearest primary candlestick.
-Alerts render as horizontal price levels and support `above`, `below`, or `crossing` condition metadata for host applications.
+Alerts render as horizontal price levels and support `above`, `below`, or `crossing` condition metadata. Enabled alerts emit `alertTriggered` when the primary candlestick close crosses the configured level.
 
 ## Drawings
 
