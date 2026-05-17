@@ -230,6 +230,7 @@
         <button id="live-edge-toggle">Follow: Live</button>
         <div class="toolbar-card" id="export-bar">
             <button id="export-download">Export PNG</button>
+            <button id="export-svg">Export SVG</button>
             <button id="export-copy">Copy PNG</button>
         </div>
         <div class="toolbar-card" id="annotation-bar">
@@ -455,6 +456,7 @@
             const annotationSave = document.getElementById("annotation-save");
             const annotationRestore = document.getElementById("annotation-restore");
             const exportDownload = document.getElementById("export-download");
+            const exportSvg = document.getElementById("export-svg");
             const exportCopy = document.getElementById("export-copy");
             const markerSnapSelect = document.getElementById("marker-snap");
             const datasetSelect = document.getElementById("dataset-size");
@@ -932,6 +934,17 @@
                         : "PNG export failed: chart canvas is not available.");
                 });
             }
+            if (exportSvg) {
+                exportSvg.addEventListener("click", () => {
+                    const ok = chart.downloadSVG("nexuscharts-demo.svg", {
+                        includeOverlay: true,
+                        backgroundColor: "#0b1220",
+                    });
+                    setBenchmarkReport(ok
+                        ? "SVG export started with overlays included."
+                        : "SVG export failed: chart canvas is not available.");
+                });
+            }
             if (exportCopy) {
                 exportCopy.addEventListener("click", async () => {
                     const copied = await chart.copyImageToClipboard({
@@ -1208,7 +1221,8 @@
                 selection: "waiting...",
                 range: "waiting...",
                 scale: "waiting...",
-                drawing: "waiting..."
+                drawing: "waiting...",
+                alert: "waiting..."
             };
 
             const renderEventState = () => {
@@ -1221,7 +1235,8 @@
                     `selection: ${eventState.selection}\n` +
                     `range: ${eventState.range}\n` +
                     `scale: ${eventState.scale}\n` +
-                    `drawing: ${eventState.drawing}`;
+                    `drawing: ${eventState.drawing}\n` +
+                    `alert: ${eventState.alert}`;
             };
 
             const formatHeap = (perf) => {
@@ -1716,6 +1731,13 @@
 
             chart.subscribe("drawingDeleted", (event) => {
                 eventState.drawing = `deleted ${event.drawing.type} (${event.reason})`;
+                renderEventState();
+            });
+
+            chart.subscribeAlertTriggered((event) => {
+                eventState.alert =
+                    `${event.alert.label ?? event.alert.id} ${event.direction} | ` +
+                    `${event.previousPrice.toFixed(2)} -> ${event.price.toFixed(2)} @ ${formatEventTime(event.time)}`;
                 renderEventState();
             });
 

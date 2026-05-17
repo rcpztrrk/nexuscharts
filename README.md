@@ -12,7 +12,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Phase 12 in progress: performance tuning is now benchmarked after TS/WASM allocation and renderer cache optimizations; recent primary-series caching work significantly reduced 1M redraw spikes, with heap/streaming tuning remaining active.
 - Phase 14 started: responsive layout and HiDPI-aware canvas sizing are now available.
 - Price annotation API started: price lines and time/price markers can now be added, updated, removed, and rendered over the chart.
-- Demo now supports benchmark mode for large datasets (50k+), selectable generated/CSV/WebSocket adapter data sources, WebSocket mock streaming through the adapter subscribe path, marker snap controls, alert overlays, annotation snapshot save/restore controls, and PNG export/copy actions.
+- Demo now supports benchmark mode for large datasets (50k+), selectable generated/CSV/WebSocket adapter data sources, WebSocket mock streaming through the adapter subscribe path, marker snap controls, alert overlays/events, annotation snapshot save/restore controls, and PNG/SVG export/copy actions.
 
 ## Core Capabilities
 
@@ -41,7 +41,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Responsive canvas sizing with `ResizeObserver`, HiDPI pixel ratio support, and manual `resize()` fallback.
 - Image export helpers (`toDataURL`, `downloadImage`, `toSVG`, `downloadSVG`, `copyImageToClipboard`) for PNG/JPEG/WebP/SVG snapshots.
 - Performance metrics via `getPerfMetrics()` (avg/max/last redraw and heap telemetry where available).
-- Development demo page served from `public/`, including dataset benchmark mode, CSV/WebSocket adapter source selection, mock WebSocket subscribe streaming, marker snap controls, alert overlays, annotation snapshot controls, PNG export/copy actions, and Midnight/Ocean/Ember/Light/Terminal theme presets.
+- Development demo page served from `public/`, including dataset benchmark mode, CSV/WebSocket adapter source selection, mock WebSocket subscribe streaming, marker snap controls, alert overlays/events, annotation snapshot controls, PNG/SVG export/copy actions, and Midnight/Ocean/Ember/Light/Terminal theme presets.
 
 ## API Snapshot
 
