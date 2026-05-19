@@ -225,6 +225,18 @@ const watermark = chart.getWatermark();
 
 Watermarks render behind drawings, indicators, axes, tooltips, and annotations on the overlay canvas.
 
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `F` | Fit chart to visible data |
+| `A`, `C`, `T`, `Y`, `M`, `H`, `G` | Toggle axes, crosshair, tooltip, Y autoscale, tooltip mode, heatmap, analytics panel |
+| `ArrowLeft` / `ArrowRight` | Move candle selection |
+| `Shift + Arrow` | Pan chart with keyboard |
+| `+`, `-`, `ArrowUp`, `ArrowDown` | Zoom time axis |
+| `Alt + +`, `Alt + -`, `Alt + ArrowUp`, `Alt + ArrowDown` | Zoom price axis |
+| `Home`, `End`, `Esc` | Jump selection or clear selection/context menu |
+
 ## Performance Helpers
 
 ```ts

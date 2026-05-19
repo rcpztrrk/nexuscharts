@@ -281,6 +281,22 @@ export function attachChartInteractionController(config: ChartInteractionControl
         config.fitToData();
     };
 
+    const keyboardPan = (direction: "left" | "right" | "up" | "down"): void => {
+        const stepX = config.getCurrentZoomX() * 0.18;
+        const stepY = config.getCurrentZoomY() * 0.18;
+        if (direction === "left") {
+            config.pan(-stepX, 0);
+        } else if (direction === "right") {
+            config.pan(stepX, 0);
+        } else if (!config.getAutoScaleY()) {
+            config.pan(0, direction === "up" ? stepY : -stepY);
+        }
+    };
+
+    const keyboardZoom = (zoomIn: boolean, axis: "x" | "y" | "both" = "x"): void => {
+        config.zoom(zoomIn ? 0.92 : 1.08, axis);
+    };
+
     const onKeyDown = (event: KeyboardEvent) => {
         if (event.repeat) {
             return;
@@ -326,11 +342,45 @@ export function attachChartInteractionController(config: ChartInteractionControl
                 event.preventDefault();
                 break;
             case "arrowleft":
-                config.moveSelection(-1);
+                if (event.shiftKey) {
+                    keyboardPan("left");
+                } else {
+                    config.moveSelection(-1);
+                }
                 event.preventDefault();
                 break;
             case "arrowright":
-                config.moveSelection(1);
+                if (event.shiftKey) {
+                    keyboardPan("right");
+                } else {
+                    config.moveSelection(1);
+                }
+                event.preventDefault();
+                break;
+            case "arrowup":
+                if (event.shiftKey) {
+                    keyboardPan("up");
+                } else {
+                    keyboardZoom(true, event.altKey ? "y" : "x");
+                }
+                event.preventDefault();
+                break;
+            case "arrowdown":
+                if (event.shiftKey) {
+                    keyboardPan("down");
+                } else {
+                    keyboardZoom(false, event.altKey ? "y" : "x");
+                }
+                event.preventDefault();
+                break;
+            case "+":
+            case "=":
+                keyboardZoom(true, event.altKey ? "y" : "x");
+                event.preventDefault();
+                break;
+            case "-":
+            case "_":
+                keyboardZoom(false, event.altKey ? "y" : "x");
                 event.preventDefault();
                 break;
             case "home":

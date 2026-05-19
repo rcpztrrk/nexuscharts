@@ -26,6 +26,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Visible-range query API via `getVisibleRange()` for sync/debug panels without waiting for an event.
 - Series mutation events via `subscribeSeriesDataChange()` for `setData`, `append`, `updateLast`, and `clear` flows.
 - UI control API (`configureUi`, `getUiState`) with in-chart control bar and keyboard shortcuts.
+- Keyboard navigation supports selection, fit/reset, overlay toggles, Shift+arrow panning, and +/- or arrow zoom controls.
 - Accessibility options for canvas role, label, tab index, and descriptive text binding.
 - Watermark API (`configureWatermark`, `getWatermark`) for symbol, brand, or environment labels.
 - Theme API via constructor `theme` option and runtime `applyTheme()` / `getTheme()`.

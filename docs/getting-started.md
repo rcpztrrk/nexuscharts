@@ -159,6 +159,8 @@ unsubscribeClick();
 unsubscribeData();
 ```
 
+Keyboard navigation is available by default: arrows move selection, Shift+arrows pan, +/- zooms the time axis, and Alt+zoom controls the price axis.
+
 ## 9. Apply A Theme
 
 ```ts
