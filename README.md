@@ -27,6 +27,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Series mutation events via `subscribeSeriesDataChange()` for `setData`, `append`, `updateLast`, and `clear` flows.
 - UI control API (`configureUi`, `getUiState`) with in-chart control bar and keyboard shortcuts.
 - Accessibility options for canvas role, label, tab index, and descriptive text binding.
+- Watermark API (`configureWatermark`, `getWatermark`) for symbol, brand, or environment labels.
 - Theme API via constructor `theme` option and runtime `applyTheme()` / `getTheme()`.
 - WASM theme sync accepts hex, RGB/RGBA, percentage RGB, HSL/HSLA, modern CSS RGB syntax, and browser-resolved CSS colors.
 - Interactive chart UX: hover crosshair, OHLC tooltip, candle selection, fit-to-data, and pointer-anchored zoom.
@@ -109,6 +110,12 @@ chart.configureUi({
 chart.addIndicator({ type: "sma", period: 10, color: "#fbbf24" });
 chart.addIndicator({ type: "ema", period: 21, color: "#7dd3fc" });
 chart.addIndicator({ type: "rsi", period: 14, pane: "lower", color: "#a78bfa" });
+
+chart.configureWatermark({
+  text: "BTCUSD",
+  visible: true,
+  position: "center"
+});
 
 chart.addPriceLine({ price: 101.25, label: "Entry" });
 chart.addAlert({ price: 108, label: "Breakout", condition: "above" });

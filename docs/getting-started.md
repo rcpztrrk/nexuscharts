@@ -106,6 +106,17 @@ series.append({
 
 ## 7. Add Annotations
 
+Optionally add a centered symbol or brand label behind the overlays.
+
+```ts
+chart.configureWatermark({
+  text: "BTCUSD",
+  visible: true,
+  position: "center",
+  opacity: 0.12
+});
+```
+
 ```ts
 chart.setAnnotations({
   priceLines: [

@@ -13,6 +13,7 @@ export interface InitOptions {
     ui?: UiOptions;
     timeAxis?: TimeAxisOptions;
     accessibility?: AccessibilityOptions;
+    watermark?: ChartWatermarkOptions;
     theme?: ThemeInput;
     onReady?: (chart: NexusCharts) => void;
 }
@@ -64,6 +65,17 @@ export interface AccessibilityOptions {
     role?: "application" | "img";
     tabIndex?: number | null;
     describedBy?: string;
+}
+
+export type ChartWatermarkPosition = "center" | "topLeft" | "topRight" | "bottomLeft" | "bottomRight";
+
+export interface ChartWatermarkOptions {
+    text?: string;
+    visible?: boolean;
+    color?: string;
+    fontSize?: number;
+    opacity?: number;
+    position?: ChartWatermarkPosition;
 }
 
 export interface ChartVisibleRange {

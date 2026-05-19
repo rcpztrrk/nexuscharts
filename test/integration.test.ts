@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import type {
   CandleDataPoint,
   AccessibilityOptions,
+  ChartWatermarkOptions,
   ChartImageExportOptions,
   ChartAlertTriggeredEvent,
   ChartSeriesDataChangeEvent,
@@ -253,6 +254,20 @@ test("Accessibility option contract remains stable", () => {
   assert.equal(options.role, "application");
   assert.equal(options.label, "BTCUSD interactive chart");
   assert.equal(options.tabIndex, 0);
+});
+
+test("Watermark option contract remains stable", () => {
+  const options: ChartWatermarkOptions = {
+    text: "BTCUSD",
+    visible: true,
+    position: "center",
+    opacity: 0.12,
+    fontSize: 52,
+  };
+
+  assert.equal(options.text, "BTCUSD");
+  assert.equal(options.visible, true);
+  assert.equal(options.position, "center");
 });
 
 test("Visible range query contract remains stable", () => {

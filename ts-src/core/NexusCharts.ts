@@ -4,6 +4,7 @@ import type {
     UiState,
     AnalyticsOptions,
     AccessibilityOptions,
+    ChartWatermarkOptions,
     CandleDataPoint,
     ChartEventHandler,
     ChartEventName,
@@ -201,6 +202,7 @@ export class NexusCharts {
     };
     private timeAxisOptions: Required<TimeAxisOptions> = this.normalizeTimeAxisOptions();
     private accessibilityOptions: Required<AccessibilityOptions> = this.normalizeAccessibilityOptions();
+    private watermarkOptions: Required<ChartWatermarkOptions> = this.normalizeWatermarkOptions();
     private readonly perfTracker = new PerfTracker(360);
     private readonly updateBatch: NexusChartUpdateBatch;
     private idCounter: number = 0;
@@ -244,6 +246,9 @@ export class NexusCharts {
         }
         if (options.accessibility) {
             this.accessibilityOptions = this.normalizeAccessibilityOptions(options.accessibility);
+        }
+        if (options.watermark) {
+            this.watermarkOptions = this.normalizeWatermarkOptions(options.watermark);
         }
         this.readyPromise = new Promise<void>((resolve) => {
             this.resolveReady = resolve;
@@ -305,6 +310,18 @@ export class NexusCharts {
             ...options,
         });
         this.applyAccessibilityOptions();
+    }
+
+    public configureWatermark(options: ChartWatermarkOptions): void {
+        this.watermarkOptions = this.normalizeWatermarkOptions({
+            ...this.watermarkOptions,
+            ...options,
+        });
+        this.requestRedraw();
+    }
+
+    public getWatermark(): Required<ChartWatermarkOptions> {
+        return { ...this.watermarkOptions };
     }
 
     public toDataURL(options: ChartImageExportOptions = {}): string | null {
@@ -2280,6 +2297,8 @@ export class NexusCharts {
         ctx.clearRect(0, 0, width, height);
         const geometry = this.shouldBuildOverlayGeometry() ? this.buildSeriesGeometry() : null;
 
+        this.renderWatermarkOverlay(ctx, width, height);
+
         const hoveredDrawingId = this.drawingManager.getHoveredDrawingId();
         const activeDrawingId = this.drawingManager.getActiveDrawingId();
 
@@ -2311,6 +2330,42 @@ export class NexusCharts {
         this.renderTooltipOverlay(ctx, width, height, geometry);
         this.renderControlBarOverlay(ctx, width, height);
         this.perfTracker.recordSample(this.perfTracker.nowMs() - startMs);
+    }
+
+    private renderWatermarkOverlay(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+        if (!this.watermarkOptions.visible || !this.watermarkOptions.text.trim()) {
+            return;
+        }
+
+        const padding = 24;
+        const fontSize = this.watermarkOptions.fontSize;
+        const position = this.watermarkOptions.position;
+
+        ctx.save();
+        ctx.globalAlpha = this.watermarkOptions.opacity;
+        ctx.fillStyle = this.watermarkOptions.color;
+        ctx.font = `700 ${fontSize}px ${this.theme.typography.fontFamily}`;
+        ctx.textBaseline = position === "bottomLeft" || position === "bottomRight" ? "bottom" : "top";
+        ctx.textAlign = position === "topRight" || position === "bottomRight" ? "right" : "left";
+
+        let x = padding;
+        let y = padding;
+        if (position === "center") {
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            x = width * 0.5;
+            y = height * 0.5;
+        } else if (position === "topRight") {
+            x = width - padding;
+        } else if (position === "bottomLeft") {
+            y = height - padding;
+        } else if (position === "bottomRight") {
+            x = width - padding;
+            y = height - padding;
+        }
+
+        ctx.fillText(this.watermarkOptions.text, x, y);
+        ctx.restore();
     }
 
     private hasOverlaySeriesData(): boolean {
@@ -3010,6 +3065,32 @@ export class NexusCharts {
             tabIndex: options.tabIndex === undefined ? (this.accessibilityOptions?.tabIndex ?? 0) : options.tabIndex,
             describedBy: options.describedBy ?? this.accessibilityOptions?.describedBy ?? "",
         };
+    }
+
+    private normalizeWatermarkOptions(options: ChartWatermarkOptions = {}): Required<ChartWatermarkOptions> {
+        const fontSize = Number(options.fontSize ?? this.watermarkOptions?.fontSize ?? 52);
+        const opacity = Number(options.opacity ?? this.watermarkOptions?.opacity ?? 0.12);
+        const position = options.position ?? this.watermarkOptions?.position ?? "center";
+        return {
+            text: options.text ?? this.watermarkOptions?.text ?? "",
+            visible: options.visible ?? this.watermarkOptions?.visible ?? false,
+            color: options.color ?? this.watermarkOptions?.color ?? this.theme.axes.labelText,
+            fontSize: Number.isFinite(fontSize) ? Math.max(10, Math.min(220, fontSize)) : 52,
+            opacity: Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 0.12,
+            position: this.normalizeWatermarkPosition(position),
+        };
+    }
+
+    private normalizeWatermarkPosition(position: ChartWatermarkOptions["position"]): Required<ChartWatermarkOptions>["position"] {
+        if (
+            position === "topLeft"
+            || position === "topRight"
+            || position === "bottomLeft"
+            || position === "bottomRight"
+        ) {
+            return position;
+        }
+        return "center";
     }
 
     private applyAccessibilityOptions(): void {

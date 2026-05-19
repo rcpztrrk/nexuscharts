@@ -208,6 +208,22 @@ chart.configureAccessibility({
 
 The overlay canvas is marked `aria-hidden`, while the main canvas receives the focus and screen-reader metadata.
 
+## Watermark
+
+```ts
+chart.configureWatermark({
+  text: "BTCUSD",
+  visible: true,
+  position: "center",
+  opacity: 0.12,
+  fontSize: 52
+});
+
+const watermark = chart.getWatermark();
+```
+
+Watermarks render behind drawings, indicators, axes, tooltips, and annotations on the overlay canvas.
+
 ## Performance Helpers
 
 ```ts
