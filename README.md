@@ -34,7 +34,7 @@ The project focuses on high-throughput candlestick rendering and a TypeScript-fi
 - Dynamic axis labeling with visible-window time labels and nice-stepped price ticks.
 - Optional Y-axis auto-scale for the visible window (autoScaleY).
 - Persistent UI preferences (`localStorage`) and tooltip mode switching (`follow` / `fixed`).
-- Indicator engine (SMA/EMA/RSI) with a secondary pane overlay.
+- Indicator engine (SMA/EMA/RSI/MACD) with a secondary pane overlay.
 - Real-time updates via `append` and `updateLast` helpers for live candles.
 - Data adapter helpers (`createDataAdapter`, `createCsvDataAdapter`, `createPollingDataAdapter`, `createWebSocketDataAdapter`, `loadSeriesData`, `connectSeriesDataAdapter`) for external REST/WebSocket/CSV style feeds.
 - Price annotation helpers (`addPriceLine`, `addMarker`, `setPriceLines`, `setMarkers`, `setAnnotations`, update/remove/clear/get variants) for chart overlays, including marker `snapTo` support for OHLC anchoring.
@@ -110,6 +110,7 @@ chart.configureUi({
 chart.addIndicator({ type: "sma", period: 10, color: "#fbbf24" });
 chart.addIndicator({ type: "ema", period: 21, color: "#7dd3fc" });
 chart.addIndicator({ type: "rsi", period: 14, pane: "lower", color: "#a78bfa" });
+chart.addIndicator({ type: "macd", period: 26, fastPeriod: 12, pane: "lower" });
 
 chart.configureWatermark({
   text: "BTCUSD",

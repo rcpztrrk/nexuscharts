@@ -1491,6 +1491,7 @@
                 chart.addIndicator({ type: "sma", period: 8 });
                 chart.addIndicator({ type: "ema", period: 13 });
                 chart.addIndicator({ type: "rsi", period: 14, pane: "lower" });
+                chart.addIndicator({ type: "macd", period: 26, fastPeriod: 12, pane: "lower" });
             };
 
             const applyUiMode = (enableOverlays) => {

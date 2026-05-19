@@ -348,6 +348,7 @@ export interface ChartTheme {
         sma: string;
         ema: string;
         rsi: string;
+        macd: string;
     };
     series: {
         line: string;
@@ -445,12 +446,14 @@ export type CustomSeriesRenderer = (
     context: CustomSeriesContext
 ) => void;
 
-export type IndicatorType = "sma" | "ema" | "rsi";
+export type IndicatorType = "sma" | "ema" | "rsi" | "macd";
 
 export interface IndicatorDefinition {
     id?: string;
     type: IndicatorType;
     period: number;
+    fastPeriod?: number;
+    slowPeriod?: number;
     pane?: "main" | "lower";
     color?: string;
 }
@@ -459,6 +462,8 @@ export interface IndicatorSeries {
     id: string;
     type: IndicatorType;
     period: number;
+    fastPeriod?: number;
+    slowPeriod?: number;
     pane: "main" | "lower";
     color: string;
     values: Array<number | null>;

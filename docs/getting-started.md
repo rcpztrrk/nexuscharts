@@ -174,7 +174,8 @@ chart.applyTheme({
   indicators: {
     sma: "#fbbf24",
     ema: "#7dd3fc",
-    rsi: "#a78bfa"
+    rsi: "#a78bfa",
+    macd: "#38bdf8"
   }
 });
 ```

@@ -20,14 +20,19 @@ export class IndicatorEngine {
         if (this.store.has(id)) {
             throw new Error(`[NexusCharts] Indicator id '${id}' already exists.`);
         }
-        const period = Math.max(2, Math.floor(definition.period));
-        const pane = definition.pane ?? (definition.type === "rsi" ? "lower" : "main");
+        const period = Math.max(2, Math.floor(definition.slowPeriod ?? definition.period));
+        const fastPeriod = definition.fastPeriod !== undefined
+            ? Math.max(2, Math.floor(definition.fastPeriod))
+            : undefined;
+        const pane = definition.pane ?? (definition.type === "rsi" || definition.type === "macd" ? "lower" : "main");
         const color = definition.color ?? this.defaultColor(definition.type, theme);
 
         this.store.set(id, {
             id,
             type: definition.type,
             period,
+            fastPeriod,
+            slowPeriod: definition.slowPeriod,
             pane,
             color,
             usesDefaultColor: !definition.color,
@@ -91,6 +96,9 @@ export class IndicatorEngine {
                 case "rsi":
                     indicator.values = IndicatorEngine.computeRsi(valid, indicator.period);
                     break;
+                case "macd":
+                    indicator.values = IndicatorEngine.computeMacd(valid, indicator.fastPeriod ?? 12, indicator.period);
+                    break;
                 default:
                     indicator.values = [];
                     break;
@@ -104,6 +112,9 @@ export class IndicatorEngine {
         }
         if (type === "rsi") {
             return theme.indicators.rsi;
+        }
+        if (type === "macd") {
+            return theme.indicators.macd;
         }
         return theme.indicators.sma;
     }
@@ -203,6 +214,25 @@ export class IndicatorEngine {
             if (initialized) {
                 const rs = avgLoss === 0 ? Number.POSITIVE_INFINITY : (avgGain / avgLoss);
                 result[i] = 100 - (100 / (1 + rs));
+            }
+        }
+
+        return result;
+    }
+
+    private static computeMacd(values: number[], fastPeriod: number, slowPeriod: number): Array<number | null> {
+        const result: Array<number | null> = new Array(values.length).fill(null);
+        if (values.length === 0) {
+            return result;
+        }
+
+        const fast = IndicatorEngine.computeEma(values, Math.max(2, Math.min(fastPeriod, slowPeriod - 1)));
+        const slow = IndicatorEngine.computeEma(values, Math.max(3, slowPeriod));
+        for (let i = 0; i < values.length; i += 1) {
+            const fastValue = fast[i];
+            const slowValue = slow[i];
+            if (Number.isFinite(fastValue ?? NaN) && Number.isFinite(slowValue ?? NaN)) {
+                result[i] = (fastValue as number) - (slowValue as number);
             }
         }
 
