@@ -51,6 +51,8 @@ const chart = new NexusCharts({
 await chart.waitUntilReady();
 ```
 
+Runtime note: NexusCharts currently owns one active WASM/WebGL canvas at a time. If your app remounts or switches charts, call `chart.destroy()` before creating the next chart instance.
+
 ## 4. Create A Candlestick Series
 
 ```ts

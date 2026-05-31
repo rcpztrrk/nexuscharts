@@ -18,6 +18,8 @@ const chart = new NexusCharts({
 await chart.waitUntilReady();
 ```
 
+Runtime note: the current WASM/WebGL engine supports one active `NexusCharts` instance at a time. Call `chart.destroy()` before initializing another chart on a different canvas.
+
 Key options:
 
 | Option | Purpose |

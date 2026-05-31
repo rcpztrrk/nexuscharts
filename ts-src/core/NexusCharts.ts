@@ -100,6 +100,13 @@ import { attachChartInteractionController } from "./ui/InteractionController";
 import { loadPersistedChartState, persistChartState } from "./ui/Persistence";
 import { NexusWasmBridge } from "./wasm/NexusWasmBridge";
 import {
+    chartToDataURL,
+    chartToSVG,
+    copyDataURLToClipboard,
+    downloadDataURL,
+    downloadTextFile,
+} from "./export/ImageExport";
+import {
     getAnalyticsPanelBounds as getAnalyticsPanelBoundsUi,
     normalizeObserverFrame as normalizeObserverFrameUi,
     renderAnalyticsOverlay as renderAnalyticsOverlayUi,
@@ -325,158 +332,31 @@ export class NexusCharts {
     }
 
     public toDataURL(options: ChartImageExportOptions = {}): string | null {
-        if (!this.canvas) {
-            return null;
-        }
-
-        const type = options.type ?? "image/png";
-        const quality = Number.isFinite(options.quality)
-            ? Math.max(0, Math.min(1, Number(options.quality)))
-            : undefined;
-
-        if (!options.includeOverlay || !this.overlayCanvas) {
-            return this.canvas.toDataURL(type, quality);
-        }
-
-        const output = document.createElement("canvas");
-        output.width = this.canvas.width;
-        output.height = this.canvas.height;
-        const ctx = output.getContext("2d");
-        if (!ctx) {
-            return this.canvas.toDataURL(type, quality);
-        }
-
-        if (options.backgroundColor) {
-            ctx.fillStyle = options.backgroundColor;
-            ctx.fillRect(0, 0, output.width, output.height);
-        }
-        ctx.drawImage(this.canvas, 0, 0);
-        ctx.drawImage(this.overlayCanvas, 0, 0);
-        return output.toDataURL(type, quality);
+        return chartToDataURL(this.canvas, this.overlayCanvas, options);
     }
 
     public downloadImage(filename: string = "nexuscharts.png", options: ChartImageExportOptions = {}): boolean {
-        const dataUrl = this.toDataURL(options);
-        if (!dataUrl) {
-            return false;
-        }
-
-        const link = document.createElement("a");
-        link.href = dataUrl;
-        link.download = filename;
-        link.rel = "noopener";
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        return true;
+        return downloadDataURL(this.toDataURL(options), filename);
     }
 
     public toSVG(options: ChartImageExportOptions = {}): string | null {
-        if (!this.canvas) {
-            return null;
-        }
-
         const dataUrl = this.toDataURL({
             ...options,
             type: options.type ?? "image/png",
         });
-        if (!dataUrl) {
-            return null;
-        }
-
-        const width = this.canvas.width;
-        const height = this.canvas.height;
-        const background = options.backgroundColor
-            ? `<rect width="100%" height="100%" fill="${this.escapeXmlAttribute(options.backgroundColor)}"/>`
-            : "";
-
-        return [
-            `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
-            background,
-            `<image href="${this.escapeXmlAttribute(dataUrl)}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none"/>`,
-            "</svg>",
-        ].join("");
+        return chartToSVG(this.canvas, dataUrl, options);
     }
 
     public downloadSVG(filename: string = "nexuscharts.svg", options: ChartImageExportOptions = {}): boolean {
-        const svg = this.toSVG(options);
-        if (!svg) {
-            return false;
-        }
-
-        const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = filename;
-        link.rel = "noopener";
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
-        return true;
+        return downloadTextFile(this.toSVG(options), filename, "image/svg+xml;charset=utf-8");
     }
 
     public async copyImageToClipboard(options: ChartImageExportOptions = {}): Promise<boolean> {
-        if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
-            console.warn("[NexusCharts] Clipboard image export is not supported in this browser.");
-            return false;
-        }
-
         const dataUrl = this.toDataURL({
             ...options,
             type: options.type ?? "image/png",
         });
-        if (!dataUrl) {
-            return false;
-        }
-
-        const blob = this.dataUrlToBlob(dataUrl);
-        if (!blob) {
-            return false;
-        }
-
-        try {
-            await navigator.clipboard.write([
-                new ClipboardItem({
-                    [blob.type]: blob,
-                }),
-            ]);
-            return true;
-        } catch (error) {
-            console.warn("[NexusCharts] Failed to copy chart image to clipboard.", error);
-            return false;
-        }
-    }
-
-    private escapeXmlAttribute(value: string): string {
-        return value
-            .replace(/&/g, "&amp;")
-            .replace(/"/g, "&quot;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
-    }
-
-    private dataUrlToBlob(dataUrl: string): Blob | null {
-        const commaIndex = dataUrl.indexOf(",");
-        if (commaIndex < 0) {
-            return null;
-        }
-
-        const metadata = dataUrl.slice(0, commaIndex);
-        const payload = dataUrl.slice(commaIndex + 1);
-        const mimeType = metadata.match(/^data:([^;]+);base64$/)?.[1] ?? "image/png";
-
-        try {
-            const binary = atob(payload);
-            const bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i += 1) {
-                bytes[i] = binary.charCodeAt(i);
-            }
-            return new Blob([bytes], { type: mimeType });
-        } catch {
-            return null;
-        }
+        return copyDataURLToClipboard(dataUrl);
     }
 
     public batchUpdates<T>(callback: () => T): T {

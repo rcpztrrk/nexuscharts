@@ -209,6 +209,10 @@ cmd /c npm run build
 cmd /c npm run dev
 ```
 
+## Runtime Notes
+
+The current WASM/WebGL engine owns one active canvas at a time. Create one `NexusCharts` instance, call `destroy()` before creating another instance on a different canvas, and avoid mounting multiple active charts in the same page until multi-instance WASM ownership is introduced.
+
 ## Documentation
 
 - [Getting Started](docs/getting-started.md)

@@ -201,6 +201,63 @@ test("NexusWasmBridge grows series sync buffers geometrically", () => {
   assert.equal(thirdCapacity, firstCapacity * 2);
 });
 
+test("NexusWasmBridge prevents concurrent WASM engine ownership", async () => {
+  const destroyCalls: string[] = [];
+  const createFakeModule = (name: string) => ({
+    initEngine: () => true,
+    destroyEngine: () => {
+      destroyCalls.push(name);
+    },
+    panCamera: () => undefined,
+    zoomCamera: () => undefined,
+  });
+  const bridgeA = new NexusWasmBridge() as any;
+  const bridgeB = new NexusWasmBridge() as any;
+  const originalConsoleError = console.error;
+  const originalConsoleLog = console.log;
+
+  bridgeA.loadWasmModule = async () => createFakeModule("a");
+  bridgeB.loadWasmModule = async () => createFakeModule("b");
+  console.error = () => undefined;
+  console.log = () => undefined;
+
+  try {
+    assert.equal(await bridgeA.initialize({
+      canvasId: "chart-a",
+      width: 800,
+      height: 600,
+      canvas: null,
+      wasmScriptPath: "wasm/nexuscharts.js",
+      wasmBinaryPath: "wasm/nexuscharts.wasm",
+    }), true);
+    assert.equal(await bridgeB.initialize({
+      canvasId: "chart-b",
+      width: 800,
+      height: 600,
+      canvas: null,
+      wasmScriptPath: "wasm/nexuscharts.js",
+      wasmBinaryPath: "wasm/nexuscharts.wasm",
+    }), false);
+
+    bridgeA.destroy();
+    assert.equal(await bridgeB.initialize({
+      canvasId: "chart-b",
+      width: 800,
+      height: 600,
+      canvas: null,
+      wasmScriptPath: "wasm/nexuscharts.js",
+      wasmBinaryPath: "wasm/nexuscharts.wasm",
+    }), true);
+  } finally {
+    console.error = originalConsoleError;
+    console.log = originalConsoleLog;
+    bridgeA.destroy();
+    bridgeB.destroy();
+  }
+
+  assert.deepEqual(destroyCalls, ["a", "b"]);
+});
+
 test("SeriesManager reports data mutation reasons", () => {
   const manager = new SeriesManager();
   const mutations: string[] = [];

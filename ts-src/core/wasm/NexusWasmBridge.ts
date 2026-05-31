@@ -87,6 +87,9 @@ export class NexusWasmBridge {
         viewLength: -1,
     };
     private static wasmLoadPromise: Promise<NexusWasmModule> | null = null;
+    private static activeCanvasId: string | null = null;
+    private static activeBridge: NexusWasmBridge | null = null;
+    private initializedCanvasId: string | null = null;
 
     public isReady(): boolean {
         return this.moduleLoaded;
@@ -95,6 +98,15 @@ export class NexusWasmBridge {
     public async initialize(options: NexusWasmBridgeInitOptions): Promise<boolean> {
         console.log("[NexusCharts:JS] Initializing WASM module...");
 
+        if (!NexusWasmBridge.claimActiveCanvas(this, options.canvasId)) {
+            console.error(
+                `[NexusCharts:JS] WASM engine already owns canvas '${NexusWasmBridge.activeCanvasId}'. ` +
+                `Destroy it before initializing '${options.canvasId}'.`
+            );
+            return false;
+        }
+        this.initializedCanvasId = options.canvasId;
+
         try {
             const module = await this.loadWasmModule(options);
             this.module = module;
@@ -102,6 +114,7 @@ export class NexusWasmBridge {
             const initialized = module.initEngine(`#${options.canvasId}`, options.width, options.height);
             if (!initialized) {
                 console.error("[NexusCharts:JS] Failed to initialize WASM engine.");
+                this.releaseActiveCanvas();
                 return false;
             }
 
@@ -110,6 +123,7 @@ export class NexusWasmBridge {
             return true;
         } catch (error) {
             console.error("[NexusCharts:JS] WASM bootstrap failed.", error);
+            this.releaseActiveCanvas();
             return false;
         }
     }
@@ -120,6 +134,25 @@ export class NexusWasmBridge {
         }
         this.module = null;
         this.moduleLoaded = false;
+        this.releaseActiveCanvas();
+    }
+
+    private static claimActiveCanvas(owner: NexusWasmBridge, canvasId: string): boolean {
+        if (NexusWasmBridge.activeBridge && NexusWasmBridge.activeBridge !== owner) {
+            return false;
+        }
+
+        NexusWasmBridge.activeCanvasId = canvasId;
+        NexusWasmBridge.activeBridge = owner;
+        return true;
+    }
+
+    private releaseActiveCanvas(): void {
+        if (NexusWasmBridge.activeBridge === this) {
+            NexusWasmBridge.activeCanvasId = null;
+            NexusWasmBridge.activeBridge = null;
+        }
+        this.initializedCanvasId = null;
     }
 
     public panCamera(deltaX: number, deltaY: number): boolean {
