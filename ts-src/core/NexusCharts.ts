@@ -49,6 +49,11 @@ import type {
 
 import { PerfTracker } from "./perf/PerfTracker";
 import { ChartEventBus } from "./events/ChartEventBus";
+import {
+    subscribeChartEvent,
+    subscribeChartEventOnce,
+    unsubscribeChartEvent,
+} from "./events/ChartEventSubscriptions";
 import { DrawingManager, type DrawingHitTestApi } from "./drawings/DrawingManager";
 import { PriceAnnotationManager, resolveMarkerSnapPrice } from "./annotations/PriceAnnotationManager";
 import {
@@ -1011,15 +1016,15 @@ export class NexusCharts {
     }
 
     public subscribe<K extends ChartEventName>(eventName: K, handler: ChartEventHandler<K>): () => void {
-        return this.eventBus.subscribe(eventName, handler);
+        return subscribeChartEvent(this.eventBus, eventName, handler);
     }
 
     public subscribeOnce<K extends ChartEventName>(eventName: K, handler: ChartEventHandler<K>): () => void {
-        return this.eventBus.subscribeOnce(eventName, handler);
+        return subscribeChartEventOnce(this.eventBus, eventName, handler);
     }
 
     public unsubscribe<K extends ChartEventName>(eventName: K, handler: ChartEventHandler<K>): boolean {
-        return this.eventBus.unsubscribe(eventName, handler);
+        return unsubscribeChartEvent(this.eventBus, eventName, handler);
     }
 
     public subscribeCrosshairMove(handler: ChartEventHandler<"crosshairMove">): () => void {

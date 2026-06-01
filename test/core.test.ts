@@ -16,6 +16,11 @@ import {
   parseCsvCandles,
 } from "../ts-src/core/data/DataAdapter.ts";
 import { ChartEventBus } from "../ts-src/core/events/ChartEventBus.ts";
+import {
+  subscribeChartEvent,
+  subscribeChartEventOnce,
+  unsubscribeChartEvent,
+} from "../ts-src/core/events/ChartEventSubscriptions.ts";
 import { PriceAnnotationManager, resolveMarkerSnapPrice } from "../ts-src/core/annotations/PriceAnnotationManager.ts";
 
 const baseTheme = createChartTheme();
@@ -341,6 +346,26 @@ test("ChartEventBus supports one-shot subscriptions", () => {
   unsubscribe();
 
   assert.deepEqual(ranges, [[1, 10]]);
+});
+
+test("Chart event subscription helpers proxy typed bus subscriptions", () => {
+  const bus = new ChartEventBus();
+  const seen: Array<string | null> = [];
+  const handler = (event: { candle: { time: number | string } | null }) => {
+    seen.push(event.candle?.time ?? null);
+  };
+
+  const unsubscribe = subscribeChartEvent(bus, "crosshairMove", handler);
+  bus.emit("crosshairMove", { candle: null });
+  assert.equal(unsubscribeChartEvent(bus, "crosshairMove", handler), true);
+  bus.emit("crosshairMove", { candle: null });
+
+  subscribeChartEventOnce(bus, "crosshairMove", handler);
+  bus.emit("crosshairMove", { candle: { time: 2 } as any });
+  bus.emit("crosshairMove", { candle: { time: 3 } as any });
+  unsubscribe();
+
+  assert.deepEqual(seen, [null, 2]);
 });
 
 test("DataAdapter helpers load and stream candles into a series", async () => {
