@@ -98,6 +98,17 @@ export class NexusWasmBridge {
     public async initialize(options: NexusWasmBridgeInitOptions): Promise<boolean> {
         console.log("[NexusCharts:JS] Initializing WASM module...");
 
+        if (this.moduleLoaded) {
+            if (this.initializedCanvasId === options.canvasId) {
+                return true;
+            }
+            console.error(
+                `[NexusCharts:JS] WASM engine already initialized for canvas '${this.initializedCanvasId}'. ` +
+                `Destroy it before initializing '${options.canvasId}'.`
+            );
+            return false;
+        }
+
         if (!NexusWasmBridge.claimActiveCanvas(this, options.canvasId)) {
             console.error(
                 `[NexusCharts:JS] WASM engine already owns canvas '${NexusWasmBridge.activeCanvasId}'. ` +

@@ -203,8 +203,12 @@ test("NexusWasmBridge grows series sync buffers geometrically", () => {
 
 test("NexusWasmBridge prevents concurrent WASM engine ownership", async () => {
   const destroyCalls: string[] = [];
+  const initCalls: string[] = [];
   const createFakeModule = (name: string) => ({
-    initEngine: () => true,
+    initEngine: (canvasSelector: string) => {
+      initCalls.push(`${name}:${canvasSelector}`);
+      return true;
+    },
     destroyEngine: () => {
       destroyCalls.push(name);
     },
@@ -230,6 +234,22 @@ test("NexusWasmBridge prevents concurrent WASM engine ownership", async () => {
       wasmScriptPath: "wasm/nexuscharts.js",
       wasmBinaryPath: "wasm/nexuscharts.wasm",
     }), true);
+    assert.equal(await bridgeA.initialize({
+      canvasId: "chart-a",
+      width: 1024,
+      height: 768,
+      canvas: null,
+      wasmScriptPath: "wasm/nexuscharts.js",
+      wasmBinaryPath: "wasm/nexuscharts.wasm",
+    }), true);
+    assert.equal(await bridgeA.initialize({
+      canvasId: "chart-c",
+      width: 800,
+      height: 600,
+      canvas: null,
+      wasmScriptPath: "wasm/nexuscharts.js",
+      wasmBinaryPath: "wasm/nexuscharts.wasm",
+    }), false);
     assert.equal(await bridgeB.initialize({
       canvasId: "chart-b",
       width: 800,
@@ -255,6 +275,7 @@ test("NexusWasmBridge prevents concurrent WASM engine ownership", async () => {
     bridgeB.destroy();
   }
 
+  assert.deepEqual(initCalls, ["a:#chart-a", "b:#chart-b"]);
   assert.deepEqual(destroyCalls, ["a", "b"]);
 });
 
