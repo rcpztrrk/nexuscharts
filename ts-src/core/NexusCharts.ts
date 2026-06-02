@@ -55,7 +55,8 @@ import {
     unsubscribeChartEvent,
 } from "./events/ChartEventSubscriptions";
 import { DrawingManager, type DrawingHitTestApi } from "./drawings/DrawingManager";
-import { PriceAnnotationManager, resolveMarkerSnapPrice } from "./annotations/PriceAnnotationManager";
+import { PriceAnnotationManager } from "./annotations/PriceAnnotationManager";
+import { PriceAnnotationApi } from "./annotations/PriceAnnotationApi";
 import {
     distancePointToSegment,
     resolveDrawingPoint,
@@ -177,6 +178,14 @@ export class NexusCharts {
     private readonly drawingManager = new DrawingManager();
     private readonly annotationManager = new PriceAnnotationManager();
     private readonly alertTriggerKeys = new Map<string, string>();
+    private readonly annotationApi = new PriceAnnotationApi({
+        manager: this.annotationManager,
+        createId: (prefix) => this.nextId(prefix),
+        getPrimaryCandles: () => this.getPrimaryCandlestickSeries(),
+        clearAlertTriggerKey: (id) => this.alertTriggerKeys.delete(id),
+        clearAlertTriggerKeys: () => this.alertTriggerKeys.clear(),
+        requestRedraw: () => this.requestRedraw(),
+    });
     private readonly drawingCoordinateApi: DrawingCoordinateApi = {
         timeToWorldX: (time, geometry) => this.timeToWorldXInternal(time, geometry),
         worldXToTime: (worldX, geometry) => this.worldXToTimeInternal(worldX, geometry),
@@ -716,153 +725,83 @@ export class NexusCharts {
 
 
     public addPriceLine(options: PriceLineOptions): string {
-        const id = this.annotationManager.addPriceLine(options, () => this.nextId("priceLine"));
-        this.requestRedraw();
-        return id;
+        return this.annotationApi.addPriceLine(options);
     }
 
     public setPriceLines(lines: readonly PriceLineOptions[]): string[] {
-        const ids = this.annotationManager.setPriceLines(lines, () => this.nextId("priceLine"));
-        this.requestRedraw();
-        return ids;
+        return this.annotationApi.setPriceLines(lines);
     }
 
     public updatePriceLine(id: string, patch: Partial<PriceLineOptions>): boolean {
-        const updated = this.annotationManager.updatePriceLine(id, patch);
-        if (updated) {
-            this.requestRedraw();
-        }
-        return updated;
+        return this.annotationApi.updatePriceLine(id, patch);
     }
 
     public removePriceLine(id: string): boolean {
-        const removed = this.annotationManager.removePriceLine(id);
-        if (removed) {
-            this.requestRedraw();
-        }
-        return removed;
+        return this.annotationApi.removePriceLine(id);
     }
 
     public clearPriceLines(): void {
-        this.annotationManager.clearPriceLines();
-        this.requestRedraw();
+        this.annotationApi.clearPriceLines();
     }
 
     public getPriceLines(): PriceLineDefinition[] {
-        return this.annotationManager.getPriceLines();
+        return this.annotationApi.getPriceLines();
     }
 
     public addMarker(options: ChartMarkerOptions): string {
-        const id = this.annotationManager.addMarker(
-            this.resolveMarkerSnapOptions(options),
-            () => this.nextId("marker")
-        );
-        this.requestRedraw();
-        return id;
+        return this.annotationApi.addMarker(options);
     }
 
     public setMarkers(markers: readonly ChartMarkerOptions[]): string[] {
-        const ids = this.annotationManager.setMarkers(
-            this.resolveMarkerSnapOptionsList(markers),
-            () => this.nextId("marker")
-        );
-        this.requestRedraw();
-        return ids;
+        return this.annotationApi.setMarkers(markers);
     }
 
     public updateMarker(id: string, patch: Partial<ChartMarkerOptions>): boolean {
-        const updated = this.annotationManager.updateMarker(id, patch);
-        if (updated) {
-            this.requestRedraw();
-        }
-        return updated;
+        return this.annotationApi.updateMarker(id, patch);
     }
 
     public removeMarker(id: string): boolean {
-        const removed = this.annotationManager.removeMarker(id);
-        if (removed) {
-            this.requestRedraw();
-        }
-        return removed;
+        return this.annotationApi.removeMarker(id);
     }
 
     public clearMarkers(): void {
-        this.annotationManager.clearMarkers();
-        this.requestRedraw();
+        this.annotationApi.clearMarkers();
     }
 
     public getMarkers(): ChartMarkerDefinition[] {
-        return this.annotationManager.getMarkers();
+        return this.annotationApi.getMarkers();
     }
 
     public clearAnnotations(): void {
-        this.annotationManager.clearAnnotations();
-        this.requestRedraw();
+        this.annotationApi.clearAnnotations();
     }
 
     public setAnnotations(annotations: ChartAnnotationsInput): ChartAnnotationsApplyResult {
-        const result = this.annotationManager.setAnnotations(
-            {
-                ...annotations,
-                markers: annotations.markers
-                    ? this.resolveMarkerSnapOptionsList(annotations.markers)
-                    : undefined,
-            },
-            () => this.nextId("priceLine"),
-            () => this.nextId("marker")
-        );
-        this.requestRedraw();
-        return result;
+        return this.annotationApi.setAnnotations(annotations);
     }
 
     public getAnnotations(): ChartAnnotationsSnapshot {
-        return {
-            priceLines: this.getPriceLines(),
-            markers: this.getMarkers(),
-        };
+        return this.annotationApi.getAnnotations();
     }
 
     public addAlert(options: ChartAlertOptions): string {
-        const id = this.annotationManager.addAlert(options, () => this.nextId("alert"));
-        this.requestRedraw();
-        return id;
+        return this.annotationApi.addAlert(options);
     }
 
     public updateAlert(id: string, patch: Partial<ChartAlertOptions>): boolean {
-        const updated = this.annotationManager.updateAlert(id, patch);
-        if (updated) {
-            this.alertTriggerKeys.delete(id);
-            this.requestRedraw();
-        }
-        return updated;
+        return this.annotationApi.updateAlert(id, patch);
     }
 
     public removeAlert(id: string): boolean {
-        const removed = this.annotationManager.removeAlert(id);
-        if (removed) {
-            this.alertTriggerKeys.delete(id);
-            this.requestRedraw();
-        }
-        return removed;
+        return this.annotationApi.removeAlert(id);
     }
 
     public clearAlerts(): void {
-        this.annotationManager.clearAlerts();
-        this.alertTriggerKeys.clear();
-        this.requestRedraw();
+        this.annotationApi.clearAlerts();
     }
 
     public getAlerts(): ChartAlertDefinition[] {
-        return this.annotationManager.getAlerts();
-    }
-
-    private resolveMarkerSnapOptions(options: ChartMarkerOptions): ChartMarkerOptions {
-        return resolveMarkerSnapPrice(options, this.getPrimaryCandlestickSeries());
-    }
-
-    private resolveMarkerSnapOptionsList(markers: readonly ChartMarkerOptions[]): ChartMarkerOptions[] {
-        const candles = this.getPrimaryCandlestickSeries();
-        return markers.map((marker) => resolveMarkerSnapPrice(marker, candles));
+        return this.annotationApi.getAlerts();
     }
 
     public applyTheme(themeInput: ThemeInput): void {
