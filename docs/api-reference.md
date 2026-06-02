@@ -18,7 +18,7 @@ const chart = new NexusCharts({
 await chart.waitUntilReady();
 ```
 
-Runtime note: the current WASM/WebGL engine supports one active `NexusCharts` instance at a time. Call `chart.destroy()` before initializing another chart on a different canvas.
+Runtime note: the current WASM/WebGL engine supports one active `NexusCharts` instance at a time. Call `chart.destroy()` before initializing another chart on a different canvas. See [ADR 0001](adr/0001-wasm-single-instance-ownership.md) for details.
 
 Key options:
 

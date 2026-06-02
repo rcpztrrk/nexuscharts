@@ -211,12 +211,13 @@ cmd /c npm run dev
 
 ## Runtime Notes
 
-The current WASM/WebGL engine owns one active canvas at a time. Create one `NexusCharts` instance, call `destroy()` before creating another instance on a different canvas, and avoid mounting multiple active charts in the same page until multi-instance WASM ownership is introduced.
+The current WASM/WebGL engine owns one active canvas at a time. Create one `NexusCharts` instance, call `destroy()` before creating another instance on a different canvas, and avoid mounting multiple active charts in the same page until multi-instance WASM ownership is introduced. See [ADR 0001](docs/adr/0001-wasm-single-instance-ownership.md) for the ownership decision and migration path.
 
 ## Documentation
 
 - [Getting Started](docs/getting-started.md)
 - [API Reference](docs/api-reference.md)
+- [ADR 0001: WASM Single-Instance Ownership](docs/adr/0001-wasm-single-instance-ownership.md)
 - The `public/` demo is the fastest way to exercise benchmark mode, data sources, marker snap controls, annotations, themes, and navigation behavior locally.
 
 ## Benchmark Snapshot
