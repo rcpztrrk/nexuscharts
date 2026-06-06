@@ -14,12 +14,12 @@
     "benchmark": "node scripts/run-benchmark.mjs --sweep",
     "benchmark:1m": "node scripts/run-benchmark.mjs --size=1000000",
     "benchmark:100k": "node scripts/run-benchmark.mjs --size=100000",
-    "test": "node --experimental-strip-types --test test/core.test.ts test/integration.test.ts",
+    "test": "node --experimental-strip-types --test test/core.test.ts test/integration.test.ts test/image-export.test.ts",
     "pack:check": "npm pack --dry-run",
     "check:public-types": "node scripts/check-public-types.mjs",
     "test:public-api": "node --experimental-strip-types --test test/public-api-contract.test.ts",
     "test:watch": "node --experimental-strip-types --test --watch test/core.test.ts test/integration.test.ts",
-    "test:ci": "node --experimental-strip-types --test test/core.test.ts test/integration.test.ts",
+    "test:ci": "node --experimental-strip-types --test test/core.test.ts test/integration.test.ts test/image-export.test.ts",
     "check:ci": "npm run build:ts && npm run check:public-types && npm run test:public-api && npm run test:ci"
   },
   "keywords": [
