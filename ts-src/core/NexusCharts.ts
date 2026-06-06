@@ -71,6 +71,7 @@ import type { IndicatorPaneRect } from "./indicators/IndicatorOverlayRenderer";
 import { renderIndicatorOverlay } from "./indicators/IndicatorOverlayRenderer";
 import { SeriesManager } from "./series/SeriesManager";
 import { NexusChartUpdateBatch } from "./NexusChartUpdateBatch";
+import { ChartConfigurationApi } from "./config/ChartConfigurationApi";
 import {
     buildPrimarySeriesGeometry,
     buildPrimarySeriesStats,
@@ -202,6 +203,49 @@ export class NexusCharts {
     private readonly wasmBridge = new NexusWasmBridge();
     private theme: ChartTheme = createChartTheme();
     private readonly observerFrames: NormalizedObserverFrame[] = [];
+    private readonly configurationApi = new ChartConfigurationApi({
+        getCanvasId: () => this.canvasId,
+        getUiOptions: () => this.uiOptions,
+        setUiOptions: (options) => {
+            this.uiOptions = options;
+        },
+        normalizeUiOptions: (options) => this.normalizeUiOptions(options),
+        getAnalyticsOptions: () => this.analyticsOptions,
+        setAnalyticsOptions: (options) => {
+            this.analyticsOptions = options;
+        },
+        normalizeAnalyticsOptions: (options) => this.normalizeAnalyticsOptions(options),
+        observerFrames: this.observerFrames,
+        getTimeAxisOptions: () => this.timeAxisOptions,
+        setTimeAxisOptions: (options) => {
+            this.timeAxisOptions = options;
+        },
+        normalizeTimeAxisOptions: (options) => this.normalizeTimeAxisOptions(options),
+        getAccessibilityOptions: () => this.accessibilityOptions,
+        setAccessibilityOptions: (options) => {
+            this.accessibilityOptions = options;
+        },
+        normalizeAccessibilityOptions: (options) => this.normalizeAccessibilityOptions(options),
+        applyAccessibilityOptions: () => this.applyAccessibilityOptions(),
+        getWatermarkOptions: () => this.watermarkOptions,
+        setWatermarkOptions: (options) => {
+            this.watermarkOptions = options;
+        },
+        normalizeWatermarkOptions: (options) => this.normalizeWatermarkOptions(options),
+        clearControlButtons: () => {
+            this.controlButtons = [];
+        },
+        invalidateTimeScale: () => {
+            this.primarySeriesStatsCache = null;
+            this.geometryCache = null;
+            this.timeSeriesCache = null;
+            this.lastVisibleRangeKey = null;
+            this.lastTimeScaleKey = null;
+        },
+        requestHoverRefresh: () => this.requestHoverRefresh(),
+        requestRedraw: () => this.requestRedraw(),
+        requestVisibleRangeEmit: () => this.requestVisibleRangeEmit(),
+    });
     private readonly indicatorPaneManager = new IndicatorPaneManager();
     private controlButtons: ControlButtonState[] = [];
     private analyticsOptions: Required<AnalyticsOptions> = {
@@ -326,23 +370,15 @@ export class NexusCharts {
     }
 
     public configureAccessibility(options: AccessibilityOptions): void {
-        this.accessibilityOptions = this.normalizeAccessibilityOptions({
-            ...this.accessibilityOptions,
-            ...options,
-        });
-        this.applyAccessibilityOptions();
+        this.configurationApi.configureAccessibility(options);
     }
 
     public configureWatermark(options: ChartWatermarkOptions): void {
-        this.watermarkOptions = this.normalizeWatermarkOptions({
-            ...this.watermarkOptions,
-            ...options,
-        });
-        this.requestRedraw();
+        this.configurationApi.configureWatermark(options);
     }
 
     public getWatermark(): Required<ChartWatermarkOptions> {
-        return { ...this.watermarkOptions };
+        return this.configurationApi.getWatermark();
     }
 
     public toDataURL(options: ChartImageExportOptions = {}): string | null {
@@ -819,49 +855,23 @@ export class NexusCharts {
     }
 
     public configureTimeAxis(options: TimeAxisOptions): void {
-        this.timeAxisOptions = this.normalizeTimeAxisOptions(options);
-        this.primarySeriesStatsCache = null;
-        this.geometryCache = null;
-        this.timeSeriesCache = null;
-        this.lastVisibleRangeKey = null;
-        this.lastTimeScaleKey = null;
-        this.requestHoverRefresh();
-        this.requestRedraw();
-        this.requestVisibleRangeEmit();
+        this.configurationApi.configureTimeAxis(options);
     }
 
     public getTimeAxis(): TimeAxisState {
-        return { ...this.timeAxisOptions };
+        return this.configurationApi.getTimeAxis();
     }
 
     public configureUi(options: UiOptions): void {
-        this.uiOptions = this.normalizeUiOptions(options);
-        if (!this.uiOptions.showControlBar) {
-            this.controlButtons = [];
-        }
-        persistChartState(this.canvasId, this.uiOptions, this.analyticsOptions);
-        this.requestRedraw();
+        this.configurationApi.configureUi(options);
     }
 
     public getUiState(): UiState {
-        return {
-            showAxes: this.uiOptions.showAxes,
-            showCrosshair: this.uiOptions.showCrosshair,
-            showTooltip: this.uiOptions.showTooltip,
-            showControlBar: this.uiOptions.showControlBar,
-            tooltipMode: this.uiOptions.tooltipMode,
-            persistState: this.uiOptions.persistState,
-            autoScaleY: this.uiOptions.autoScaleY,
-            showHeatmap: this.analyticsOptions.showHeatmap,
-            showAnalyticsPanel: this.analyticsOptions.showRewardCurve || this.analyticsOptions.showPnlCurve,
-        };
+        return this.configurationApi.getUiState();
     }
 
     public configureAnalytics(options: AnalyticsOptions): void {
-        this.analyticsOptions = this.normalizeAnalyticsOptions(options);
-        trimObserverFramesToLimitUi(this.observerFrames, this.analyticsOptions.maxFrames);
-        persistChartState(this.canvasId, this.uiOptions, this.analyticsOptions);
-        this.requestRedraw();
+        this.configurationApi.configureAnalytics(options);
     }
 
     public pushObserverFrame(frame: ObserverFrame): void {
