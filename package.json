@@ -18,9 +18,10 @@
     "pack:check": "npm pack --dry-run",
     "check:public-types": "node scripts/check-public-types.mjs",
     "test:public-api": "node --experimental-strip-types --test test/public-api-contract.test.ts",
+    "test:public-bundle": "node --experimental-strip-types --test test/public-bundle-smoke.test.ts",
     "test:watch": "node --experimental-strip-types --test --watch test/core.test.ts test/integration.test.ts",
     "test:ci": "node --experimental-strip-types --test test/core.test.ts test/integration.test.ts test/image-export.test.ts",
-    "check:ci": "npm run build:ts && npm run check:public-types && npm run test:public-api && npm run test:ci"
+    "check:ci": "npm run build:ts && npm run check:public-types && npm run test:public-api && npm run test:public-bundle && npm run test:ci"
   },
   "keywords": [
     "charts",
