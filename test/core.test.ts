@@ -506,6 +506,47 @@ test("CSV data adapter parses header and index based candle rows", async () => {
   });
 });
 
+test("CSV data adapter reports malformed required values", () => {
+  assert.throws(
+    () => parseCsvCandles("time,open,high,low,close\n1,10,nope,9,11"),
+    /CSV value 'high' is invalid on line 2/
+  );
+  assert.throws(
+    () => parseCsvCandles("time,open,low,close\n1,10,9,11"),
+    /CSV column 'high' is missing on line 2/
+  );
+  assert.throws(
+    () => parseCsvCandles("time,open,high,low,close\n,10,12,9,11"),
+    /CSV time value is empty/
+  );
+});
+
+test("loadSeriesData respects append mode and batching", async () => {
+  const manager = new SeriesManager();
+  const series = manager.createSeries({ type: "candlestick" }, createSeriesHooks(), baseTheme);
+  series.setData([{ time: 1, open: 10, high: 12, low: 9, close: 11 }]);
+  let batchCalls = 0;
+
+  const adapter = createDataAdapter({
+    mode: "append",
+    load: async () => [
+      { time: 2, open: 11, high: 13, low: 10, close: 12 },
+      { time: 3, open: 12, high: 14, low: 11, close: 13 },
+    ],
+  });
+
+  const loaded = await loadSeriesData(series, adapter, undefined, {
+    batch: (callback) => {
+      batchCalls += 1;
+      return callback();
+    },
+  });
+
+  assert.equal(batchCalls, 1);
+  assert.equal(loaded.length, 2);
+  assert.deepEqual(series.getData().map((point) => point.time), [1, 2, 3]);
+});
+
 test("WebSocket data adapter streams mapped candle messages", async () => {
   let socket: any = null;
   const emitted: Array<{ time: number | string; close: number; mode?: string }> = [];
@@ -567,6 +608,57 @@ test("WebSocket data adapter streams mapped candle messages", async () => {
     { time: 1, close: 11.5, mode: "updateLast" },
     { time: 2, close: 12.5, mode: "append" },
   ]);
+});
+
+test("WebSocket data adapter reports parse errors and ignores messages after unsubscribe", () => {
+  let socket: any = null;
+  const errors: unknown[] = [];
+  const emitted: CandleDataPoint[] = [];
+  const adapter = createWebSocketDataAdapter({
+    url: "wss://example.test/feed",
+    webSocketFactory: () => {
+      const listeners = new Map<string, Function[]>();
+      socket = {
+        closed: false,
+        addEventListener: (type: string, listener: Function) => {
+          listeners.set(type, [...(listeners.get(type) ?? []), listener]);
+        },
+        removeEventListener: (type: string, listener: Function) => {
+          listeners.set(type, (listeners.get(type) ?? []).filter((item) => item !== listener));
+        },
+        emit: (type: string, event: unknown) => {
+          for (const listener of listeners.get(type) ?? []) {
+            listener(event);
+          }
+        },
+        close: () => {
+          socket.closed = true;
+        },
+      };
+      return socket;
+    },
+  });
+
+  const unsubscribe = adapter.subscribe?.({
+    onCandle: (point) => {
+      emitted.push(point);
+    },
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+
+  socket.emit("message", { data: "{bad json" });
+  socket.emit("message", { data: null });
+  socket.emit("error", new Error("socket failed"));
+  socket.emit("message", { data: JSON.stringify({ time: 1, open: 10, high: 12, low: 9, close: 11 }) });
+  unsubscribe?.();
+  socket.emit("message", { data: JSON.stringify({ time: 2, open: 11, high: 13, low: 10, close: 12 }) });
+
+  assert.equal(errors.length, 2);
+  assert.equal(emitted.length, 1);
+  assert.equal(emitted[0].time, 1);
+  assert.equal(socket.closed, true);
 });
 
 
