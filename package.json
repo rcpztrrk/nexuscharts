@@ -12,6 +12,7 @@
     "build": "npm run build:wasm && npm run build:ts",
     "dev": "npx serve public",
     "benchmark": "node scripts/run-benchmark.mjs --sweep",
+    "benchmark:smoke": "node scripts/run-benchmark.mjs --smoke",
     "benchmark:1m": "node scripts/run-benchmark.mjs --size=1000000",
     "benchmark:100k": "node scripts/run-benchmark.mjs --size=100000",
     "test": "node --experimental-strip-types --test test/core.test.ts test/integration.test.ts test/image-export.test.ts",

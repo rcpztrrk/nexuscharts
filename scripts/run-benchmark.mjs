@@ -41,6 +41,12 @@ function parseArgs(argv) {
       options.size = null;
       continue;
     }
+    if (arg === "--smoke") {
+      options.sweep = false;
+      options.size = 1000;
+      options.timeoutMs = Math.min(options.timeoutMs, 120000);
+      continue;
+    }
     if (arg.startsWith("--size=")) {
       options.size = Number(arg.slice("--size=".length));
       options.sweep = false;
@@ -69,6 +75,7 @@ function printHelp() {
       "",
       "Options:",
       "  --sweep          Run the full 100K / 250K / 500K / 1M benchmark sweep (default).",
+      "  --smoke          Run a quick 1K benchmark sample to verify automation wiring.",
       "  --size=<number>  Run a single benchmark sample for the given dataset size.",
       "  --port=<number>  Port for the temporary local static server.",
       "  --timeout=<ms>   Total wait timeout for the benchmark run.",
