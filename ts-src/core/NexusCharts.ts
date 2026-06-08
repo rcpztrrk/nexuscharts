@@ -106,6 +106,7 @@ import { renderPriceAnnotations } from "./ui/PriceAnnotations";
 import { attachChartInteractionController } from "./ui/InteractionController";
 import { loadPersistedChartState, persistChartState } from "./ui/Persistence";
 import { NexusWasmBridge } from "./wasm/NexusWasmBridge";
+import { ObserverAnalyticsApi } from "./analytics/ObserverAnalyticsApi";
 import {
     chartToDataURL,
     chartToSVG,
@@ -115,9 +116,7 @@ import {
 } from "./export/ImageExport";
 import {
     getAnalyticsPanelBounds as getAnalyticsPanelBoundsUi,
-    normalizeObserverFrame as normalizeObserverFrameUi,
     renderAnalyticsOverlay as renderAnalyticsOverlayUi,
-    trimObserverFramesToLimit as trimObserverFramesToLimitUi,
     type NormalizedObserverFrame,
 } from "./analytics/ObserverAnalytics";
 
@@ -203,6 +202,15 @@ export class NexusCharts {
     private readonly wasmBridge = new NexusWasmBridge();
     private theme: ChartTheme = createChartTheme();
     private readonly observerFrames: NormalizedObserverFrame[] = [];
+    private readonly observerAnalyticsApi = new ObserverAnalyticsApi({
+        frames: this.observerFrames,
+        getAnalyticsOptions: () => this.analyticsOptions,
+        clamp: (value, minValue, maxValue) => this.clamp(value, minValue, maxValue),
+        isBatchingUpdates: () => this.isBatchingUpdates(),
+        queueObserverSync: () => this.queueObserverSync(),
+        requestRedraw: () => this.requestRedraw(),
+        wasmBridge: this.wasmBridge,
+    });
     private readonly configurationApi = new ChartConfigurationApi({
         getCanvasId: () => this.canvasId,
         getUiOptions: () => this.uiOptions,
@@ -321,7 +329,7 @@ export class NexusCharts {
         this.updateBatch = new NexusChartUpdateBatch({
             syncAllSeries: () => this.syncAllSeriesToEngine(),
             recomputeIndicators: () => this.recomputeIndicators(),
-            syncAllObserverFrames: () => this.syncAllObserverFramesToEngine(),
+            syncAllObserverFrames: () => this.observerAnalyticsApi.syncAllToEngine(),
             autoScaleVisibleY: () => this.autoScaleVisibleY(),
             refreshHoverFromStoredPointer: () => this.refreshHoverFromStoredPointer(),
             redrawDrawings: () => this.redrawDrawings(),
@@ -875,89 +883,23 @@ export class NexusCharts {
     }
 
     public pushObserverFrame(frame: ObserverFrame): void {
-        const normalized = normalizeObserverFrameUi(
-            frame,
-            this.observerFrames.length,
-            this.analyticsOptions.maxFrames,
-            this.clamp.bind(this)
-        );
-        if (!normalized) {
-            return;
-        }
-        this.observerFrames.push(normalized);
-        trimObserverFramesToLimitUi(this.observerFrames, this.analyticsOptions.maxFrames);
-        if (this.isBatchingUpdates()) {
-            this.queueObserverSync();
-        } else {
-            this.syncObserverFrameToEngine(normalized);
-        }
-        this.requestRedraw();
+        this.observerAnalyticsApi.pushFrame(frame);
     }
 
     public setObserverFrames(frames: ObserverFrame[]): void {
-        this.observerFrames.length = 0;
-        for (let i = 0; i < frames.length; i += 1) {
-            const normalized = normalizeObserverFrameUi(
-                frames[i],
-                i,
-                this.analyticsOptions.maxFrames,
-                this.clamp.bind(this)
-            );
-            if (normalized) {
-                this.observerFrames.push(normalized);
-            }
-        }
-        trimObserverFramesToLimitUi(this.observerFrames, this.analyticsOptions.maxFrames);
-        this.queueObserverSync();
-        this.requestRedraw();
+        this.observerAnalyticsApi.setFrames(frames);
     }
 
     public getObserverFrames(): ObserverFrame[] {
-        return this.observerFrames.map((frame) => ({ ...frame }));
+        return this.observerAnalyticsApi.getFrames();
     }
 
     public clearObserverFrames(): void {
-        this.observerFrames.length = 0;
-        this.queueObserverSync();
-        this.requestRedraw();
+        this.observerAnalyticsApi.clearFrames();
     }
 
     public getObserverMetrics(window: number = 0): ObserverMetrics {
-        const sanitizedWindow = Number.isFinite(window)
-            ? Math.max(0, Math.floor(window))
-            : 0;
-
-        const wasmMetrics = this.wasmBridge.getObserverMetrics(sanitizedWindow);
-        if (wasmMetrics) {
-            return wasmMetrics;
-        }
-
-        const frameCount = this.observerFrames.length;
-        if (frameCount === 0) {
-            return {
-                frameCount: 0,
-                lastReward: 0,
-                lastPnl: 0,
-                averageReward: 0,
-                source: "js",
-            };
-        }
-
-        const span = sanitizedWindow > 0 ? Math.min(sanitizedWindow, frameCount) : frameCount;
-        const start = frameCount - span;
-        let rewardSum = 0;
-        for (let i = start; i < frameCount; i += 1) {
-            rewardSum += this.observerFrames[i].reward;
-        }
-
-        const last = this.observerFrames[frameCount - 1];
-        return {
-            frameCount,
-            lastReward: last.reward,
-            lastPnl: last.pnl,
-            averageReward: rewardSum / span,
-            source: "js",
-        };
+        return this.observerAnalyticsApi.getMetrics(window);
     }
 
     public getPerfMetrics(window: number = 60): PerfMetrics {
@@ -1072,7 +1014,7 @@ export class NexusCharts {
         try {
             this.applyWasmTheme();
             this.syncAllSeriesToEngine();
-            this.syncAllObserverFramesToEngine();
+            this.observerAnalyticsApi.syncAllToEngine();
             if (this.enableInteraction && this.canvas) {
                 this.attachInteractionHandlers(this.canvas);
             }
@@ -1278,14 +1220,6 @@ export class NexusCharts {
             endIndex,
         };
         return true;
-    }
-
-    private syncObserverFrameToEngine(frame: NormalizedObserverFrame): void {
-        this.wasmBridge.pushObserverFrame(frame);
-    }
-
-    private syncAllObserverFramesToEngine(): void {
-        this.wasmBridge.syncObserverFrames(this.observerFrames);
     }
 
     private applyCameraView(): void {
