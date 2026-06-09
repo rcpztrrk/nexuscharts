@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
 import { platform } from "node:os";
+import { pathToFileURL } from "node:url";
 
 import { chromium } from "playwright-core";
 
@@ -22,7 +23,7 @@ const mimeTypes = new Map([
   [".ico", "image/x-icon"],
 ]);
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const options = {
     port: 4173,
     timeoutMs: 600000,
@@ -87,7 +88,7 @@ function printHelp() {
   );
 }
 
-function detectBrowserPath() {
+export function detectBrowserPath() {
   if (platform() === "win32") {
     const candidates = [
       "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
@@ -140,7 +141,7 @@ function startServer(port) {
   });
 }
 
-function parseBenchmarkReport(report) {
+export function parseBenchmarkReport(report) {
   const lines = report
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -166,7 +167,7 @@ function parseBenchmarkReport(report) {
   });
 }
 
-async function main() {
+export async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) {
     printHelp();
@@ -221,7 +222,13 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(`[NexusCharts] Benchmark runner failed: ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
-});
+const isDirectRun = process.argv[1]
+  ? import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+  : false;
+
+if (isDirectRun) {
+  main().catch((error) => {
+    console.error(`[NexusCharts] Benchmark runner failed: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  });
+}
