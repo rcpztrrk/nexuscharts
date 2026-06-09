@@ -18,7 +18,11 @@ export interface ObserverAnalyticsApiOptions {
 }
 
 export class ObserverAnalyticsApi {
-    constructor(private readonly options: ObserverAnalyticsApiOptions) {}
+    private readonly options: ObserverAnalyticsApiOptions;
+
+    constructor(options: ObserverAnalyticsApiOptions) {
+        this.options = options;
+    }
 
     public pushFrame(frame: ObserverFrame): void {
         const frames = this.options.frames;

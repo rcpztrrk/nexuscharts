@@ -18,7 +18,11 @@ export class NexusChartUpdateBatch {
     private pendingRedraw: boolean = false;
     private pendingVisibleRangeEmit: boolean = false;
 
-    constructor(private readonly callbacks: UpdateBatchCallbacks) {}
+    private readonly callbacks: UpdateBatchCallbacks;
+
+    constructor(callbacks: UpdateBatchCallbacks) {
+        this.callbacks = callbacks;
+    }
 
     public run<T>(callback: () => T): T {
         this.depth += 1;

@@ -37,7 +37,11 @@ export interface ChartConfigurationApiOptions {
 }
 
 export class ChartConfigurationApi {
-    constructor(private readonly options: ChartConfigurationApiOptions) {}
+    private readonly options: ChartConfigurationApiOptions;
+
+    constructor(options: ChartConfigurationApiOptions) {
+        this.options = options;
+    }
 
     public configureAccessibility(input: AccessibilityOptions): void {
         this.options.setAccessibilityOptions(this.options.normalizeAccessibilityOptions({
