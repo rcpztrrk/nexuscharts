@@ -80,15 +80,13 @@ import {
 import { createChartTheme, fontSpec } from "./theme/ChartTheme";
 import { renderControlBar, type ControlButtonState } from "./ui/ControlBar";
 import {
-    calculateFitToDataViewport,
-    calculateLatestDataViewport,
-    calculateTimeRangeViewport,
     canvasToWorldPoint as canvasToWorldPointUi,
     getVisibleCandleIndexRange as getVisibleCandleIndexRangeUi,
     getWorldUnitsPerPixel as getWorldUnitsPerPixelUi,
     worldToCanvasPoint as worldToCanvasPointUi,
     type ChartViewportState,
 } from "./ui/ChartViewport";
+import { ChartNavigationController } from "./ui/ChartNavigationController";
 import {
     buildNiceTicks,
     buildVisibleTimeLabels as buildVisibleTimeLabelsUi,
@@ -287,6 +285,28 @@ export class NexusCharts {
         zoomX: 1,
         zoomY: 1,
     };
+    private readonly navigationController = new ChartNavigationController({
+        isReady: () => this.wasmBridge.isReady(),
+        getSurface: () => this.overlayCanvas ?? this.canvas,
+        getHoverCanvasPoint: () => ({ x: this.hoverCanvasX, y: this.hoverCanvasY }),
+        getViewportState: () => this.getViewportState(),
+        setViewportState: (viewport) => this.setViewportState(viewport),
+        canvasToWorldPoint: (canvasX, canvasY, width, height) => (
+            this.canvasToWorldPoint(canvasX, canvasY, width, height)
+        ),
+        panCamera: (deltaX, deltaY) => this.wasmBridge.panCamera(deltaX, deltaY),
+        zoomCamera: (zoomFactor) => this.wasmBridge.zoomCamera(zoomFactor),
+        applyCameraView: () => this.applyCameraView(),
+        autoScaleVisibleY: () => this.autoScaleVisibleY(),
+        afterNavigation: () => {
+            this.refreshHoverFromStoredPointer();
+            this.redrawDrawings();
+            this.requestVisibleRangeEmit();
+        },
+        getPrimarySeriesStats: () => this.getPrimarySeriesStats(),
+        buildSeriesGeometry: () => this.buildSeriesGeometry(),
+        timeToWorldX: (time, geometry) => this.timeToWorldXInternal(time, geometry),
+    });
 
     constructor(options: InitOptions) {
         this.canvasId = options.canvasId;
@@ -422,57 +442,11 @@ export class NexusCharts {
     }
 
     public pan(deltaX: number, deltaY: number): void {
-        if (!this.wasmBridge.isReady()) {
-            return;
-        }
-        this.currentCenterX += deltaX;
-        this.currentCenterY += deltaY;
-        this.wasmBridge.panCamera(deltaX, deltaY);
-        this.autoScaleVisibleY();
-        this.refreshHoverFromStoredPointer();
-        this.redrawDrawings();
-        this.requestVisibleRangeEmit();
+        this.navigationController.pan(deltaX, deltaY);
     }
 
     public zoom(zoomFactor: number, axis: "x" | "y" | "both" = "x"): void {
-        if (!this.wasmBridge.isReady()) {
-            return;
-        }
-        const surface = this.overlayCanvas ?? this.canvas;
-        const anchorX = this.hoverCanvasX ?? (surface ? surface.width * 0.5 : null);
-        const anchorY = this.hoverCanvasY ?? (surface ? surface.height * 0.5 : null);
-        const anchoredWorld = (surface && anchorX !== null && anchorY !== null)
-            ? this.canvasToWorldPoint(anchorX, anchorY, surface.width, surface.height)
-            : null;
-
-        const nextZoomX = axis === "y"
-            ? this.currentZoomX
-            : Math.min(5.0, Math.max(0.2, this.currentZoomX * zoomFactor));
-        const nextZoomY = axis === "x"
-            ? this.currentZoomY
-            : Math.min(5.0, Math.max(0.2, this.currentZoomY * zoomFactor));
-
-        this.currentZoomX = nextZoomX;
-        this.currentZoomY = nextZoomY;
-
-        if (surface && anchoredWorld && anchorX !== null && anchorY !== null) {
-            const halfWidth = this.currentZoomX;
-            const halfHeight = this.currentZoomY;
-            const normalizedX = anchorX / Math.max(1, surface.width);
-            const normalizedY = (surface.height - anchorY) / Math.max(1, surface.height);
-            const left = anchoredWorld.x - (normalizedX * halfWidth * 2.0);
-            const bottom = anchoredWorld.y - (normalizedY * halfHeight * 2.0);
-            this.currentCenterX = left + halfWidth;
-            this.currentCenterY = bottom + halfHeight;
-            this.applyCameraView();
-            this.autoScaleVisibleY();
-        } else {
-            this.wasmBridge.zoomCamera(zoomFactor);
-        }
-
-        this.refreshHoverFromStoredPointer();
-        this.redrawDrawings();
-        this.requestVisibleRangeEmit();
+        this.navigationController.zoom(zoomFactor, axis);
     }
 
     public screenToWorld(clientX: number, clientY: number): WorldPoint | null {
@@ -626,29 +600,11 @@ export class NexusCharts {
     }
 
     public fitToData(): void {
-        const surface = this.overlayCanvas ?? this.canvas;
-        const stats = this.getPrimarySeriesStats();
-        if (!stats || !surface) {
-            return;
-        }
-
-        const viewport = calculateFitToDataViewport(stats);
-        if (viewport) {
-            this.applyViewportState(viewport);
-        }
+        this.navigationController.fitToData();
     }
 
     public focusLatestData(visibleCandles: number = 140): void {
-        const surface = this.overlayCanvas ?? this.canvas;
-        const geometry = this.buildSeriesGeometry();
-        if (!geometry || !surface || geometry.candles.length === 0) {
-            return;
-        }
-
-        const viewport = calculateLatestDataViewport(geometry, visibleCandles);
-        if (viewport) {
-            this.applyViewportState(viewport);
-        }
+        this.navigationController.focusLatestData(visibleCandles);
     }
 
     public focusTimeRange(
@@ -656,24 +612,7 @@ export class NexusCharts {
         toTime: number | string,
         preserveY: boolean = true
     ): void {
-        const geometry = this.buildSeriesGeometry();
-        if (!geometry || geometry.candles.length === 0) {
-            return;
-        }
-
-        const fromX = this.timeToWorldXInternal(fromTime, geometry);
-        const toX = this.timeToWorldXInternal(toTime, geometry);
-        if (fromX === null || toX === null) {
-            return;
-        }
-
-        this.applyViewportState(calculateTimeRangeViewport(
-            geometry,
-            fromX,
-            toX,
-            this.getViewportState(),
-            preserveY
-        ));
+        this.navigationController.focusTimeRange(fromTime, toTime, preserveY);
     }
 
     public createSeries(options: SeriesOptions = {}): SeriesApi {
@@ -1479,15 +1418,11 @@ export class NexusCharts {
         return this.viewportStateScratch;
     }
 
-    private applyViewportState(viewport: ChartViewportState): void {
+    private setViewportState(viewport: ChartViewportState): void {
         this.currentCenterX = viewport.centerX;
         this.currentCenterY = viewport.centerY;
         this.currentZoomX = viewport.zoomX;
         this.currentZoomY = viewport.zoomY;
-        this.applyCameraView();
-        this.refreshHoverFromStoredPointer();
-        this.redrawDrawings();
-        this.requestVisibleRangeEmit();
     }
 
     private updateHoveredDrawingFromCanvas(canvasX: number, canvasY: number, width: number, height: number): void {

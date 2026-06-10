@@ -22,6 +22,7 @@ import {
   unsubscribeChartEvent,
 } from "../ts-src/core/events/ChartEventSubscriptions.ts";
 import { PriceAnnotationManager, resolveMarkerSnapPrice } from "../ts-src/core/annotations/PriceAnnotationManager.ts";
+import { calculateAnchoredZoomViewport } from "../ts-src/core/ui/ChartViewport.ts";
 
 const baseTheme = createChartTheme();
 
@@ -173,6 +174,29 @@ test("ChartTheme clone produces isolated nested objects", () => {
 
   assert.notEqual(cloned.surface.chartBackground, baseTheme.surface.chartBackground);
   assert.notEqual(cloned.series.line, baseTheme.series.line);
+});
+
+test("ChartNavigationController keeps anchored zoom fixed under the cursor", () => {
+  const next = calculateAnchoredZoomViewport(
+    {
+      centerX: 0,
+      centerY: 0,
+      zoomX: 2,
+      zoomY: 1,
+    },
+    { width: 400, height: 200 },
+    { x: 300, y: 50 },
+    { x: 1, y: 0.5 },
+    0.5,
+    "both"
+  );
+
+  assert.deepEqual(next, {
+    centerX: 0.5,
+    centerY: 0.25,
+    zoomX: 1,
+    zoomY: 0.5,
+  });
 });
 
 test("PerfTracker keeps a sliding window and reports aggregate metrics", () => {

@@ -198,6 +198,33 @@ export function calculateTimeRangeViewport(
     return nextViewport;
 }
 
+export function calculateAnchoredZoomViewport(
+    viewport: ChartViewportState,
+    surface: { width: number; height: number },
+    anchor: { x: number; y: number },
+    anchoredWorld: WorldPoint,
+    zoomFactor: number,
+    axis: "x" | "y" | "both" = "x"
+): ChartViewportState {
+    const nextZoomX = axis === "y"
+        ? viewport.zoomX
+        : clampViewportZoom(viewport.zoomX * zoomFactor);
+    const nextZoomY = axis === "x"
+        ? viewport.zoomY
+        : clampViewportZoom(viewport.zoomY * zoomFactor);
+    const normalizedX = anchor.x / Math.max(1, surface.width);
+    const normalizedY = (surface.height - anchor.y) / Math.max(1, surface.height);
+    const left = anchoredWorld.x - (normalizedX * nextZoomX * 2.0);
+    const bottom = anchoredWorld.y - (normalizedY * nextZoomY * 2.0);
+
+    return {
+        centerX: left + nextZoomX,
+        centerY: bottom + nextZoomY,
+        zoomX: nextZoomX,
+        zoomY: nextZoomY,
+    };
+}
+
 function clampViewportZoom(value: number): number {
     return Math.min(5.0, Math.max(0.2, value));
 }
