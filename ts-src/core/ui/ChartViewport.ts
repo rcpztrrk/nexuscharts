@@ -70,14 +70,23 @@ export function getVisibleCandleIndexRange(
     const left = viewport.centerX - halfWidth;
     const right = viewport.centerX + halfWidth;
 
-    const startX = candles[0].x;
-    const stepX = candles[1].x - startX;
-    if (Math.abs(stepX) < 1e-9) {
-        return { start: 0, end: count - 1 };
+    const firstX = candles[0].x;
+    const lastX = candles[count - 1].x;
+    const stepX = candles[1].x - firstX;
+    if (Math.abs(stepX) > 1e-9 && isUniformCandleSpacing(candles, stepX)) {
+        const rawStart = Math.floor((left - firstX) / stepX) - padding;
+        const rawEnd = Math.ceil((right - firstX) / stepX) + padding;
+        const start = Math.max(0, Math.min(count - 1, rawStart));
+        const end = Math.max(0, Math.min(count - 1, rawEnd));
+        return start <= end ? { start, end } : { start: 0, end: -1 };
     }
 
-    const rawStart = Math.floor((left - startX) / stepX) - padding;
-    const rawEnd = Math.ceil((right - startX) / stepX) + padding;
+    if (right < firstX || left > lastX) {
+        return { start: 0, end: -1 };
+    }
+
+    const rawStart = lowerBoundCandleX(candles, left) - padding;
+    const rawEnd = upperBoundCandleX(candles, right) + padding;
     const start = Math.max(0, Math.min(count - 1, rawStart));
     const end = Math.max(0, Math.min(count - 1, rawEnd));
     return start <= end ? { start, end } : { start: 0, end: -1 };
@@ -227,4 +236,45 @@ export function calculateAnchoredZoomViewport(
 
 function clampViewportZoom(value: number): number {
     return Math.min(5.0, Math.max(0.2, value));
+}
+
+function isUniformCandleSpacing(candles: SeriesGeometry["candles"], stepX: number): boolean {
+    const count = candles.length;
+    const firstX = candles[0].x;
+    const lastExpectedX = firstX + (stepX * (count - 1));
+    if (Math.abs(candles[count - 1].x - lastExpectedX) > 1e-6) {
+        return false;
+    }
+
+    const midIndex = Math.floor(count * 0.5);
+    const midExpectedX = firstX + (stepX * midIndex);
+    return Math.abs(candles[midIndex].x - midExpectedX) <= 1e-6;
+}
+
+function lowerBoundCandleX(candles: SeriesGeometry["candles"], targetX: number): number {
+    let lower = 0;
+    let upper = candles.length;
+    while (lower < upper) {
+        const mid = Math.floor((lower + upper) * 0.5);
+        if (candles[mid].x < targetX) {
+            lower = mid + 1;
+        } else {
+            upper = mid;
+        }
+    }
+    return lower;
+}
+
+function upperBoundCandleX(candles: SeriesGeometry["candles"], targetX: number): number {
+    let lower = 0;
+    let upper = candles.length;
+    while (lower < upper) {
+        const mid = Math.floor((lower + upper) * 0.5);
+        if (candles[mid].x <= targetX) {
+            lower = mid + 1;
+        } else {
+            upper = mid;
+        }
+    }
+    return lower - 1;
 }

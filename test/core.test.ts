@@ -22,7 +22,7 @@ import {
   unsubscribeChartEvent,
 } from "../ts-src/core/events/ChartEventSubscriptions.ts";
 import { PriceAnnotationManager, resolveMarkerSnapPrice } from "../ts-src/core/annotations/PriceAnnotationManager.ts";
-import { calculateAnchoredZoomViewport } from "../ts-src/core/ui/ChartViewport.ts";
+import { calculateAnchoredZoomViewport, getVisibleCandleIndexRange } from "../ts-src/core/ui/ChartViewport.ts";
 
 const baseTheme = createChartTheme();
 
@@ -197,6 +197,29 @@ test("ChartNavigationController keeps anchored zoom fixed under the cursor", () 
     zoomX: 1,
     zoomY: 0.5,
   });
+});
+
+test("ChartViewport resolves visible ranges for non-uniform candle spacing", () => {
+  const geometry = {
+    minPrice: 1,
+    maxPrice: 5,
+    scale: 1,
+    candles: [-0.9, -0.5, 0.1, 0.15, 0.8].map((x, index) => ({
+      x,
+      open: 0,
+      high: 1,
+      low: -1,
+      close: 0,
+      source: { time: index + 1, open: 1, high: 2, low: 0, close: 1 },
+    })),
+  };
+
+  assert.deepEqual(getVisibleCandleIndexRange(geometry, 400, {
+    centerX: -0.2,
+    centerY: 0,
+    zoomX: 0.35,
+    zoomY: 1,
+  }, 0), { start: 1, end: 2 });
 });
 
 test("PerfTracker keeps a sliding window and reports aggregate metrics", () => {
