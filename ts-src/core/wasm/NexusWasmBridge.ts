@@ -470,9 +470,14 @@ export class NexusWasmBridge {
         const value = input.trim();
         const hex = value.startsWith("#") ? value.slice(1) : null;
         if (hex) {
-            const normalized = hex.length === 3
-                ? hex.split("").map((part) => part + part).join("")
-                : hex;
+            const rgbHex = hex.length === 4
+                ? hex.slice(0, 3)
+                : hex.length === 8
+                    ? hex.slice(0, 6)
+                    : hex;
+            const normalized = rgbHex.length === 3
+                ? rgbHex.split("").map((part) => part + part).join("")
+                : rgbHex;
             if (normalized.length === 6 && /^[0-9a-fA-F]{6}$/.test(normalized)) {
                 return [
                     parseInt(normalized.slice(0, 2), 16) / 255,

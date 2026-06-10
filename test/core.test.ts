@@ -359,6 +359,8 @@ test("NexusWasmBridge parses modern css color formats for theme sync", () => {
   const bridge = new NexusWasmBridge() as any;
 
   assert.deepEqual(bridge.parseColor("#0f8", [1, 1, 1]).map((v: number) => Number(v.toFixed(3))), [0, 1, 0.533]);
+  assert.deepEqual(bridge.parseColor("#0f8c", [1, 1, 1]).map((v: number) => Number(v.toFixed(3))), [0, 1, 0.533]);
+  assert.deepEqual(bridge.parseColor("#336699cc", [1, 1, 1]).map((v: number) => Number(v.toFixed(3))), [0.2, 0.4, 0.6]);
   assert.deepEqual(bridge.parseColor("rgb(12 34 56)", [1, 1, 1]).map((v: number) => Number(v.toFixed(3))), [0.047, 0.133, 0.22]);
   assert.deepEqual(bridge.parseColor("rgb(100% 0% 50%)", [1, 1, 1]).map((v: number) => Number(v.toFixed(3))), [1, 0, 0.5]);
   assert.deepEqual(bridge.parseColor("rgba(10, 20, 30, 0.5)", [1, 1, 1]).map((v: number) => Number(v.toFixed(3))), [0.039, 0.078, 0.118]);
