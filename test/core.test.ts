@@ -114,7 +114,7 @@ test("SeriesManager respects custom colors and refreshes default colors on theme
   assert.equal(manager.get(customSeries.id)?.style.color, "#123456");
 });
 
-test("IndicatorEngine normalizes defaults and computes SMA/EMA/RSI/MACD/ATR/Stochastic/Bollinger", () => {
+test("IndicatorEngine normalizes defaults and computes SMA/EMA/RSI/MACD/ATR/Stochastic/Bollinger/VWAP", () => {
   const engine = new IndicatorEngine();
   const createId = (() => {
     let i = 0;
@@ -128,13 +128,14 @@ test("IndicatorEngine normalizes defaults and computes SMA/EMA/RSI/MACD/ATR/Stoc
   const atrId = engine.addIndicator({ type: "atr", period: 3 }, createId, baseTheme);
   const stochasticId = engine.addIndicator({ type: "stochastic", period: 3 }, createId, baseTheme);
   const bollingerId = engine.addIndicator({ type: "bollinger", period: 3 }, createId, baseTheme);
+  const vwapId = engine.addIndicator({ type: "vwap", period: 2 }, createId, baseTheme);
 
   engine.recompute([
-    { time: 1, open: 10, high: 11, low: 9, close: 10 },
-    { time: 2, open: 11, high: 12, low: 10, close: 11 },
-    { time: 3, open: 12, high: 13, low: 11, close: 12 },
-    { time: 4, open: 13, high: 14, low: 12, close: 13 },
-    { time: 5, open: 14, high: 15, low: 13, close: 14 },
+    { time: 1, open: 10, high: 11, low: 9, close: 10, volume: 100 },
+    { time: 2, open: 11, high: 12, low: 10, close: 11, volume: 200 },
+    { time: 3, open: 12, high: 13, low: 11, close: 12, volume: 300 },
+    { time: 4, open: 13, high: 14, low: 12, close: 13, volume: 400 },
+    { time: 5, open: 14, high: 15, low: 13, close: 14, volume: 500 },
   ]);
 
   const indicators = engine.getIndicators();
@@ -145,6 +146,7 @@ test("IndicatorEngine normalizes defaults and computes SMA/EMA/RSI/MACD/ATR/Stoc
   const atr = indicators.find((item) => item.id === atrId);
   const stochastic = indicators.find((item) => item.id === stochasticId);
   const bollinger = indicators.find((item) => item.id === bollingerId);
+  const vwap = indicators.find((item) => item.id === vwapId);
 
   assert.ok(sma);
   assert.ok(ema);
@@ -153,6 +155,7 @@ test("IndicatorEngine normalizes defaults and computes SMA/EMA/RSI/MACD/ATR/Stoc
   assert.ok(atr);
   assert.ok(stochastic);
   assert.ok(bollinger);
+  assert.ok(vwap);
   assert.equal(rsi?.pane, "lower");
   assert.equal(macd?.pane, "lower");
   assert.equal(atr?.pane, "lower");
@@ -166,6 +169,7 @@ test("IndicatorEngine normalizes defaults and computes SMA/EMA/RSI/MACD/ATR/Stoc
   assert.deepEqual(bollinger?.values.slice(0, 5), [null, null, 11, 12, 13]);
   assert.equal(Number(bollinger?.upperValues?.[2]?.toFixed(3)), 12.633);
   assert.equal(Number(bollinger?.lowerValues?.[2]?.toFixed(3)), 9.367);
+  assert.deepEqual(vwap?.values.slice(0, 5).map((value) => Number(value?.toFixed(3))), [10, 10.667, 11.333, 12, 12.667]);
 });
 
 test("IndicatorEngine applyTheme updates only default indicator colors", () => {
@@ -176,6 +180,7 @@ test("IndicatorEngine applyTheme updates only default indicator colors", () => {
   engine.addIndicator({ id: "atr_default", type: "atr", period: 14 }, () => "unused", baseTheme);
   engine.addIndicator({ id: "stochastic_default", type: "stochastic", period: 14 }, () => "unused", baseTheme);
   engine.addIndicator({ id: "bollinger_default", type: "bollinger", period: 20 }, () => "unused", baseTheme);
+  engine.addIndicator({ id: "vwap_default", type: "vwap", period: 2 }, () => "unused", baseTheme);
 
   const nextTheme = mergeChartTheme(baseTheme, {
     indicators: {
@@ -185,6 +190,7 @@ test("IndicatorEngine applyTheme updates only default indicator colors", () => {
       atr: "#444444",
       stochastic: "#555555",
       bollinger: "#666666",
+      vwap: "#777777",
     },
   });
   engine.applyTheme(nextTheme);
@@ -196,6 +202,7 @@ test("IndicatorEngine applyTheme updates only default indicator colors", () => {
   assert.equal(indicators.find((item) => item.id === "atr_default")?.color, "#444444");
   assert.equal(indicators.find((item) => item.id === "stochastic_default")?.color, "#555555");
   assert.equal(indicators.find((item) => item.id === "bollinger_default")?.color, "#666666");
+  assert.equal(indicators.find((item) => item.id === "vwap_default")?.color, "#777777");
 });
 
 test("ChartTheme clone produces isolated nested objects", () => {

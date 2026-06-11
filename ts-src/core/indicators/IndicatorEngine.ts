@@ -123,6 +123,9 @@ export class IndicatorEngine {
                     indicator.lowerValues = bands.lower;
                     break;
                 }
+                case "vwap":
+                    indicator.values = IndicatorEngine.computeVwap(sourceCandles);
+                    break;
                 default:
                     indicator.values = [];
                     break;
@@ -148,6 +151,9 @@ export class IndicatorEngine {
         }
         if (type === "bollinger") {
             return theme.indicators.bollinger;
+        }
+        if (type === "vwap") {
+            return theme.indicators.vwap;
         }
         return theme.indicators.sma;
     }
@@ -375,5 +381,28 @@ export class IndicatorEngine {
         }
 
         return { middle, upper, lower };
+    }
+
+    private static computeVwap(candles: CandleDataPoint[]): Array<number | null> {
+        const result: Array<number | null> = new Array(candles.length).fill(null);
+        let cumulativePriceVolume = 0;
+        let cumulativeVolume = 0;
+
+        for (let i = 0; i < candles.length; i += 1) {
+            const high = Number(candles[i].high);
+            const low = Number(candles[i].low);
+            const close = Number(candles[i].close);
+            const volume = Number(candles[i].volume ?? 1);
+            if (!Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close) || !Number.isFinite(volume) || volume <= 0) {
+                continue;
+            }
+
+            const typicalPrice = (high + low + close) / 3;
+            cumulativePriceVolume += typicalPrice * volume;
+            cumulativeVolume += volume;
+            result[i] = cumulativePriceVolume / cumulativeVolume;
+        }
+
+        return result;
     }
 }

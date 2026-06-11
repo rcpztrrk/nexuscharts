@@ -89,6 +89,7 @@ export const defaultChartTheme: ChartTheme = {
         atr: "#fb7185",
         stochastic: "#34d399",
         bollinger: "#c084fc",
+        vwap: "#f97316",
     },
     series: {
         line: "#60a5fa",

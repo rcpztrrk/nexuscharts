@@ -352,6 +352,7 @@ export interface ChartTheme {
         atr: string;
         stochastic: string;
         bollinger: string;
+        vwap: string;
     };
     series: {
         line: string;
@@ -449,7 +450,7 @@ export type CustomSeriesRenderer = (
     context: CustomSeriesContext
 ) => void;
 
-export type IndicatorType = "sma" | "ema" | "rsi" | "macd" | "atr" | "stochastic" | "bollinger";
+export type IndicatorType = "sma" | "ema" | "rsi" | "macd" | "atr" | "stochastic" | "bollinger" | "vwap";
 
 export interface IndicatorDefinition {
     id?: string;
