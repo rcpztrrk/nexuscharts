@@ -25,7 +25,10 @@ export class IndicatorEngine {
             ? Math.max(2, Math.floor(definition.fastPeriod))
             : undefined;
         const pane = definition.pane ?? (
-            definition.type === "rsi" || definition.type === "macd" || definition.type === "atr"
+            definition.type === "rsi"
+                || definition.type === "macd"
+                || definition.type === "atr"
+                || definition.type === "stochastic"
                 ? "lower"
                 : "main"
         );
@@ -106,6 +109,9 @@ export class IndicatorEngine {
                 case "atr":
                     indicator.values = IndicatorEngine.computeAtr(sourceCandles, indicator.period);
                     break;
+                case "stochastic":
+                    indicator.values = IndicatorEngine.computeStochastic(sourceCandles, indicator.period);
+                    break;
                 default:
                     indicator.values = [];
                     break;
@@ -125,6 +131,9 @@ export class IndicatorEngine {
         }
         if (type === "atr") {
             return theme.indicators.atr;
+        }
+        if (type === "stochastic") {
+            return theme.indicators.stochastic;
         }
         return theme.indicators.sma;
     }
@@ -280,6 +289,35 @@ export class IndicatorEngine {
 
             atr = ((atr * (period - 1)) + trueRange) / period;
             result[i] = atr;
+        }
+
+        return result;
+    }
+
+    private static computeStochastic(candles: CandleDataPoint[], period: number): Array<number | null> {
+        const result: Array<number | null> = new Array(candles.length).fill(null);
+        if (candles.length === 0) {
+            return result;
+        }
+
+        for (let i = period - 1; i < candles.length; i += 1) {
+            let lowestLow = Number.POSITIVE_INFINITY;
+            let highestHigh = Number.NEGATIVE_INFINITY;
+            for (let j = i - period + 1; j <= i; j += 1) {
+                const low = Number(candles[j].low);
+                const high = Number(candles[j].high);
+                if (!Number.isFinite(low) || !Number.isFinite(high)) {
+                    continue;
+                }
+                lowestLow = Math.min(lowestLow, low);
+                highestHigh = Math.max(highestHigh, high);
+            }
+
+            const close = Number(candles[i].close);
+            const range = highestHigh - lowestLow;
+            if (Number.isFinite(close) && Number.isFinite(range) && range > 1e-9) {
+                result[i] = ((close - lowestLow) / range) * 100;
+            }
         }
 
         return result;

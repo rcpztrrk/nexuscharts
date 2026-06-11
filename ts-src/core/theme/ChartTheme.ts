@@ -87,6 +87,7 @@ export const defaultChartTheme: ChartTheme = {
         rsi: "#a78bfa",
         macd: "#38bdf8",
         atr: "#fb7185",
+        stochastic: "#34d399",
     },
     series: {
         line: "#60a5fa",

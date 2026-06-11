@@ -156,7 +156,7 @@ function renderIndicatorInPane(
         return;
     }
 
-    if (indicator.type === "rsi") {
+    if (indicator.type === "rsi" || indicator.type === "stochastic") {
         minValue = 0;
         maxValue = 100;
     } else if (Math.abs(maxValue - minValue) < 1e-6) {
@@ -202,18 +202,20 @@ function renderIndicatorInPane(
         ctx.stroke();
     }
 
-    if (indicator.type === "rsi") {
+    if (indicator.type === "rsi" || indicator.type === "stochastic") {
+        const lowerGuide = indicator.type === "stochastic" ? 20 : 30;
+        const upperGuide = indicator.type === "stochastic" ? 80 : 70;
         ctx.strokeStyle = theme.indicators.guide;
         ctx.setLineDash([4, 3]);
-        const y30 = mapY(30);
-        const y70 = mapY(70);
+        const yLower = mapY(lowerGuide);
+        const yUpper = mapY(upperGuide);
         ctx.beginPath();
-        ctx.moveTo(pane.innerX, y30);
-        ctx.lineTo(pane.innerX + pane.innerWidth, y30);
+        ctx.moveTo(pane.innerX, yLower);
+        ctx.lineTo(pane.innerX + pane.innerWidth, yLower);
         ctx.stroke();
         ctx.beginPath();
-        ctx.moveTo(pane.innerX, y70);
-        ctx.lineTo(pane.innerX + pane.innerWidth, y70);
+        ctx.moveTo(pane.innerX, yUpper);
+        ctx.lineTo(pane.innerX + pane.innerWidth, yUpper);
         ctx.stroke();
         ctx.setLineDash([]);
     }

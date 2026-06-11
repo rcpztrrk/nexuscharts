@@ -350,6 +350,7 @@ export interface ChartTheme {
         rsi: string;
         macd: string;
         atr: string;
+        stochastic: string;
     };
     series: {
         line: string;
@@ -447,7 +448,7 @@ export type CustomSeriesRenderer = (
     context: CustomSeriesContext
 ) => void;
 
-export type IndicatorType = "sma" | "ema" | "rsi" | "macd" | "atr";
+export type IndicatorType = "sma" | "ema" | "rsi" | "macd" | "atr" | "stochastic";
 
 export interface IndicatorDefinition {
     id?: string;
