@@ -114,7 +114,7 @@ test("SeriesManager respects custom colors and refreshes default colors on theme
   assert.equal(manager.get(customSeries.id)?.style.color, "#123456");
 });
 
-test("IndicatorEngine normalizes defaults and computes SMA/EMA/RSI/MACD/ATR/Stochastic", () => {
+test("IndicatorEngine normalizes defaults and computes SMA/EMA/RSI/MACD/ATR/Stochastic/Bollinger", () => {
   const engine = new IndicatorEngine();
   const createId = (() => {
     let i = 0;
@@ -127,6 +127,7 @@ test("IndicatorEngine normalizes defaults and computes SMA/EMA/RSI/MACD/ATR/Stoc
   const macdId = engine.addIndicator({ type: "macd", period: 4, fastPeriod: 2 }, createId, baseTheme);
   const atrId = engine.addIndicator({ type: "atr", period: 3 }, createId, baseTheme);
   const stochasticId = engine.addIndicator({ type: "stochastic", period: 3 }, createId, baseTheme);
+  const bollingerId = engine.addIndicator({ type: "bollinger", period: 3 }, createId, baseTheme);
 
   engine.recompute([
     { time: 1, open: 10, high: 11, low: 9, close: 10 },
@@ -143,6 +144,7 @@ test("IndicatorEngine normalizes defaults and computes SMA/EMA/RSI/MACD/ATR/Stoc
   const macd = indicators.find((item) => item.id === macdId);
   const atr = indicators.find((item) => item.id === atrId);
   const stochastic = indicators.find((item) => item.id === stochasticId);
+  const bollinger = indicators.find((item) => item.id === bollingerId);
 
   assert.ok(sma);
   assert.ok(ema);
@@ -150,6 +152,7 @@ test("IndicatorEngine normalizes defaults and computes SMA/EMA/RSI/MACD/ATR/Stoc
   assert.ok(macd);
   assert.ok(atr);
   assert.ok(stochastic);
+  assert.ok(bollinger);
   assert.equal(rsi?.pane, "lower");
   assert.equal(macd?.pane, "lower");
   assert.equal(atr?.pane, "lower");
@@ -160,6 +163,9 @@ test("IndicatorEngine normalizes defaults and computes SMA/EMA/RSI/MACD/ATR/Stoc
   assert.equal(typeof macd?.values[3], "number");
   assert.deepEqual(atr?.values.slice(0, 5), [null, null, 2, 2, 2]);
   assert.deepEqual(stochastic?.values.slice(0, 5), [null, null, 75, 75, 75]);
+  assert.deepEqual(bollinger?.values.slice(0, 5), [null, null, 11, 12, 13]);
+  assert.equal(Number(bollinger?.upperValues?.[2]?.toFixed(3)), 12.633);
+  assert.equal(Number(bollinger?.lowerValues?.[2]?.toFixed(3)), 9.367);
 });
 
 test("IndicatorEngine applyTheme updates only default indicator colors", () => {
@@ -169,6 +175,7 @@ test("IndicatorEngine applyTheme updates only default indicator colors", () => {
   engine.addIndicator({ id: "macd_default", type: "macd", period: 26 }, () => "unused", baseTheme);
   engine.addIndicator({ id: "atr_default", type: "atr", period: 14 }, () => "unused", baseTheme);
   engine.addIndicator({ id: "stochastic_default", type: "stochastic", period: 14 }, () => "unused", baseTheme);
+  engine.addIndicator({ id: "bollinger_default", type: "bollinger", period: 20 }, () => "unused", baseTheme);
 
   const nextTheme = mergeChartTheme(baseTheme, {
     indicators: {
@@ -177,6 +184,7 @@ test("IndicatorEngine applyTheme updates only default indicator colors", () => {
       macd: "#333333",
       atr: "#444444",
       stochastic: "#555555",
+      bollinger: "#666666",
     },
   });
   engine.applyTheme(nextTheme);
@@ -187,6 +195,7 @@ test("IndicatorEngine applyTheme updates only default indicator colors", () => {
   assert.equal(indicators.find((item) => item.id === "macd_default")?.color, "#333333");
   assert.equal(indicators.find((item) => item.id === "atr_default")?.color, "#444444");
   assert.equal(indicators.find((item) => item.id === "stochastic_default")?.color, "#555555");
+  assert.equal(indicators.find((item) => item.id === "bollinger_default")?.color, "#666666");
 });
 
 test("ChartTheme clone produces isolated nested objects", () => {

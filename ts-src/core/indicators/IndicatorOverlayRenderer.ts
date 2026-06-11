@@ -91,13 +91,34 @@ function renderIndicatorInMain(
 
     const stride = getSampleStride(start, end, width);
     ctx.save();
-    ctx.strokeStyle = indicator.color;
-    ctx.lineWidth = 1.5;
+    renderMainIndicatorLine(ctx, geometry, indicator.values, indicator.color, start, end, stride, width, height, api, 1.5);
+    if (indicator.upperValues && indicator.lowerValues) {
+        renderMainIndicatorLine(ctx, geometry, indicator.upperValues, indicator.color, start, end, stride, width, height, api, 1.1);
+        renderMainIndicatorLine(ctx, geometry, indicator.lowerValues, indicator.color, start, end, stride, width, height, api, 1.1);
+    }
+    ctx.restore();
+}
+
+function renderMainIndicatorLine(
+    ctx: CanvasRenderingContext2D,
+    geometry: SeriesGeometry,
+    values: Array<number | null>,
+    color: string,
+    start: number,
+    end: number,
+    stride: number,
+    width: number,
+    height: number,
+    api: IndicatorOverlayRenderApi,
+    lineWidth: number
+): void {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
     ctx.beginPath();
     let started = false;
 
     const drawPoint = (index: number): void => {
-        const value = indicator.values[index];
+        const value = values[index];
         if (!Number.isFinite(value ?? NaN)) {
             return;
         }
@@ -121,7 +142,6 @@ function renderIndicatorInMain(
     if (started) {
         ctx.stroke();
     }
-    ctx.restore();
 }
 
 function renderIndicatorInPane(

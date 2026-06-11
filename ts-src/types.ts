@@ -351,6 +351,7 @@ export interface ChartTheme {
         macd: string;
         atr: string;
         stochastic: string;
+        bollinger: string;
     };
     series: {
         line: string;
@@ -448,7 +449,7 @@ export type CustomSeriesRenderer = (
     context: CustomSeriesContext
 ) => void;
 
-export type IndicatorType = "sma" | "ema" | "rsi" | "macd" | "atr" | "stochastic";
+export type IndicatorType = "sma" | "ema" | "rsi" | "macd" | "atr" | "stochastic" | "bollinger";
 
 export interface IndicatorDefinition {
     id?: string;
@@ -469,6 +470,8 @@ export interface IndicatorSeries {
     pane: "main" | "lower";
     color: string;
     values: Array<number | null>;
+    upperValues?: Array<number | null>;
+    lowerValues?: Array<number | null>;
 }
 
 export interface SeriesApi {

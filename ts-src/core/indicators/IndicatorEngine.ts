@@ -69,6 +69,8 @@ export class IndicatorEngine {
         return Array.from(this.store.values()).map((indicator) => ({
             ...indicator,
             values: [...indicator.values],
+            upperValues: indicator.upperValues ? [...indicator.upperValues] : undefined,
+            lowerValues: indicator.lowerValues ? [...indicator.lowerValues] : undefined,
         }));
     }
 
@@ -93,6 +95,8 @@ export class IndicatorEngine {
         const valid = closes.map((value) => (Number.isFinite(value) ? value : NaN));
 
         for (const indicator of this.store.values()) {
+            indicator.upperValues = undefined;
+            indicator.lowerValues = undefined;
             switch (indicator.type) {
                 case "sma":
                     indicator.values = IndicatorEngine.computeSma(valid, indicator.period);
@@ -112,6 +116,13 @@ export class IndicatorEngine {
                 case "stochastic":
                     indicator.values = IndicatorEngine.computeStochastic(sourceCandles, indicator.period);
                     break;
+                case "bollinger": {
+                    const bands = IndicatorEngine.computeBollingerBands(valid, indicator.period);
+                    indicator.values = bands.middle;
+                    indicator.upperValues = bands.upper;
+                    indicator.lowerValues = bands.lower;
+                    break;
+                }
                 default:
                     indicator.values = [];
                     break;
@@ -134,6 +145,9 @@ export class IndicatorEngine {
         }
         if (type === "stochastic") {
             return theme.indicators.stochastic;
+        }
+        if (type === "bollinger") {
+            return theme.indicators.bollinger;
         }
         return theme.indicators.sma;
     }
@@ -321,5 +335,45 @@ export class IndicatorEngine {
         }
 
         return result;
+    }
+
+    private static computeBollingerBands(
+        values: number[],
+        period: number
+    ): { middle: Array<number | null>; upper: Array<number | null>; lower: Array<number | null> } {
+        const middle: Array<number | null> = new Array(values.length).fill(null);
+        const upper: Array<number | null> = new Array(values.length).fill(null);
+        const lower: Array<number | null> = new Array(values.length).fill(null);
+        if (values.length === 0) {
+            return { middle, upper, lower };
+        }
+
+        for (let i = period - 1; i < values.length; i += 1) {
+            let sum = 0;
+            let count = 0;
+            for (let j = i - period + 1; j <= i; j += 1) {
+                const value = values[j];
+                if (!Number.isFinite(value)) {
+                    continue;
+                }
+                sum += value;
+                count += 1;
+            }
+            if (count !== period) {
+                continue;
+            }
+
+            const average = sum / period;
+            let variance = 0;
+            for (let j = i - period + 1; j <= i; j += 1) {
+                variance += (values[j] - average) ** 2;
+            }
+            const deviation = Math.sqrt(variance / period) * 2;
+            middle[i] = average;
+            upper[i] = average + deviation;
+            lower[i] = average - deviation;
+        }
+
+        return { middle, upper, lower };
     }
 }
