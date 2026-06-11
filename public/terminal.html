@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NexusCharts Terminal Shell</title>
+  <style>
+    :root {
+      --bg: #07110f;
+      --panel: rgba(13, 28, 24, 0.88);
+      --panel-strong: rgba(19, 43, 36, 0.96);
+      --line: rgba(138, 196, 176, 0.2);
+      --text: #d7f7ea;
+      --muted: #80a99a;
+      --accent: #f6c769;
+      --buy: #39d98a;
+      --sell: #ff6f7d;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: "Aptos Display", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 18% 12%, rgba(68, 213, 158, 0.18), transparent 32rem),
+        radial-gradient(circle at 82% 0%, rgba(246, 199, 105, 0.12), transparent 28rem),
+        linear-gradient(135deg, #06100e 0%, #0a1714 52%, #11150d 100%);
+      overflow: hidden;
+    }
+
+    .terminal {
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr) 290px;
+      gap: 12px;
+      height: 100vh;
+      padding: 12px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
+      overflow: hidden;
+    }
+
+    .panel h2,
+    .panel h3 {
+      margin: 0;
+      letter-spacing: 0.04em;
+    }
+
+    .watchlist {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .brand {
+      padding: 18px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(160deg, rgba(246, 199, 105, 0.14), rgba(57, 217, 138, 0.04));
+    }
+
+    .brand p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .symbol {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px;
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(138, 196, 176, 0.12);
+      font-size: 13px;
+    }
+
+    .symbol strong {
+      font-size: 14px;
+    }
+
+    .symbol span {
+      color: var(--muted);
+    }
+
+    .symbol .up {
+      color: var(--buy);
+    }
+
+    .symbol .down {
+      color: var(--sell);
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) 118px;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 18px;
+    }
+
+    .topbar small {
+      color: var(--muted);
+    }
+
+    .chips {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .chip {
+      padding: 7px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.03);
+      font-size: 12px;
+    }
+
+    .chip.active {
+      color: #201a07;
+      border-color: transparent;
+      background: var(--accent);
+      font-weight: 700;
+    }
+
+    .chart-panel {
+      position: relative;
+      min-height: 360px;
+      background: rgba(2, 8, 7, 0.58);
+    }
+
+    #terminal-chart {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .ticket {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      padding: 14px;
+    }
+
+    .stat {
+      padding: 12px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(138, 196, 176, 0.14);
+    }
+
+    .stat span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+
+    .stat strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 18px;
+    }
+
+    .side {
+      display: grid;
+      grid-template-rows: 1fr 1fr;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .book,
+    .feed {
+      padding: 16px;
+    }
+
+    .ladder {
+      margin-top: 14px;
+      display: grid;
+      gap: 7px;
+      font-family: "Cascadia Mono", "Consolas", monospace;
+      font-size: 12px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 9px;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .ask {
+      color: var(--sell);
+    }
+
+    .bid {
+      color: var(--buy);
+    }
+
+    .activity {
+      margin-top: 14px;
+      display: grid;
+      gap: 10px;
+      font-size: 13px;
+    }
+
+    .activity p {
+      margin: 0;
+      padding: 10px;
+      border-left: 2px solid var(--accent);
+      background: rgba(255, 255, 255, 0.035);
+      color: var(--muted);
+    }
+
+    @media (max-width: 980px) {
+      body {
+        overflow: auto;
+      }
+
+      .terminal {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+
+      .workspace {
+        min-height: 680px;
+      }
+
+      .side {
+        grid-template-rows: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="terminal">
+    <aside class="panel watchlist">
+      <div class="brand">
+        <h2>Nexus Terminal</h2>
+        <p>Single-chart shell for broker, exchange, and research workspaces.</p>
+      </div>
+      <div class="symbol"><strong>BTCUSDT</strong><span class="up">+2.14%</span><span>72,418.20</span><span>Perp</span></div>
+      <div class="symbol"><strong>ETHUSDT</strong><span class="up">+1.02%</span><span>3,847.10</span><span>Spot</span></div>
+      <div class="symbol"><strong>SOLUSDT</strong><span class="down">-0.64%</span><span>168.92</span><span>Perp</span></div>
+      <div class="symbol"><strong>NVDA</strong><span class="up">+0.41%</span><span>128.14</span><span>Equity</span></div>
+    </aside>
+
+    <section class="workspace">
+      <header class="panel topbar">
+        <div>
+          <h2>BTCUSDT Perpetual</h2>
+          <small>Live workspace mock wired to NexusCharts runtime assets</small>
+        </div>
+        <div class="chips">
+          <span class="chip active">1m</span>
+          <span class="chip">5m</span>
+          <span class="chip">1h</span>
+          <span class="chip">1D</span>
+        </div>
+      </header>
+
+      <section class="panel chart-panel">
+        <canvas id="terminal-chart"></canvas>
+      </section>
+
+      <section class="panel ticket">
+        <div class="stat"><span>Mark</span><strong id="mark-price">72,418.20</strong></div>
+        <div class="stat"><span>Volume</span><strong>1.42B</strong></div>
+        <div class="stat"><span>VWAP</span><strong>72,101.66</strong></div>
+        <div class="stat"><span>Risk</span><strong>Neutral</strong></div>
+      </section>
+    </section>
+
+    <aside class="side">
+      <section class="panel book">
+        <h3>Order Book</h3>
+        <div class="ladder" id="order-book">
+          <div class="row ask"><span>72,431.5</span><span>1.82</span><span>132k</span></div>
+          <div class="row ask"><span>72,428.0</span><span>0.64</span><span>46k</span></div>
+          <div class="row ask"><span>72,423.5</span><span>2.21</span><span>160k</span></div>
+          <div class="row bid"><span>72,417.0</span><span>1.44</span><span>104k</span></div>
+          <div class="row bid"><span>72,411.5</span><span>0.91</span><span>65k</span></div>
+          <div class="row bid"><span>72,408.0</span><span>2.74</span><span>198k</span></div>
+        </div>
+      </section>
+
+      <section class="panel feed">
+        <h3>Activity</h3>
+        <div class="activity">
+          <p>VWAP reclaimed after 18 candles.</p>
+          <p>Alert layer armed at 72,600.</p>
+          <p>Bollinger expansion detected on 1m volatility.</p>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <script type="module">
+    import { NexusCharts } from "./nexus-charts.esm.js";
+
+    const chart = new NexusCharts({
+      canvasId: "terminal-chart",
+      autoResize: true,
+      wasmScriptPath: "wasm/nexuscharts.js",
+      wasmBinaryPath: "wasm/nexuscharts.wasm",
+      ui: {
+        showControlBar: true,
+        autoScaleY: true,
+      },
+      watermark: {
+        visible: true,
+        text: "BTCUSDT",
+        opacity: 0.08,
+        position: "center",
+      },
+      theme: {
+        surface: {
+          chartBackground: "#06100e",
+        },
+        candles: {
+          up: "#39d98a",
+          down: "#ff6f7d",
+          wick: "#b8dccc",
+        },
+      },
+    });
+
+    const candles = Array.from({ length: 220 }, (_, index) => {
+      const wave = Math.sin(index / 12) * 320;
+      const trend = index * 8;
+      const close = 70400 + trend + wave;
+      const open = close - (Math.sin(index / 5) * 90);
+      const high = Math.max(open, close) + 80 + (index % 7) * 8;
+      const low = Math.min(open, close) - 80 - (index % 5) * 9;
+      return {
+        time: 1710000000 + (index * 60),
+        open,
+        high,
+        low,
+        close,
+        volume: 100 + ((index * 17) % 320),
+      };
+    });
+
+    const series = chart.createSeries({ type: "candlestick" });
+    series.setData(candles);
+    chart.addIndicator({ type: "vwap", period: 2, color: "#f97316" });
+    chart.addIndicator({ type: "bollinger", period: 20, color: "#c084fc" });
+    chart.addAlert({ price: 72600, condition: "above", color: "#f6c769", label: "Breakout" });
+    chart.focusLatestData(120);
+    window.nexusTerminalChart = chart;
+  </script>
+</body>
+</html>

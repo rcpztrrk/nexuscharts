@@ -36,3 +36,16 @@ test("demo WASM runtime assets are present", async () => {
   await access(new URL("../public/wasm/nexuscharts.js", import.meta.url));
   await access(new URL("../public/wasm/nexuscharts.wasm", import.meta.url));
 });
+
+test("terminal shell demo references the public bundle and terminal widgets", async () => {
+  const html = await readProjectFile("public/terminal.html");
+
+  assert.ok(html.includes('<canvas id="terminal-chart"'));
+  assert.ok(html.includes('from "./nexus-charts.esm.js"'));
+  assert.ok(html.includes('wasmScriptPath: "wasm/nexuscharts.js"'));
+  assert.ok(html.includes('wasmBinaryPath: "wasm/nexuscharts.wasm"'));
+  assert.ok(html.includes("Order Book"));
+  assert.ok(html.includes('type: "vwap"'));
+  assert.ok(html.includes('type: "bollinger"'));
+  assert.ok(html.includes("window.nexusTerminalChart = chart;"));
+});
