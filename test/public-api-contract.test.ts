@@ -54,3 +54,11 @@ test("public package declaration exposes DataAdapter helper exports", async () =
     assertIncludes(indexTypes, exportName);
   }
 });
+
+test("public type declarations expose supported indicator types", async () => {
+  const publicTypes = await readPublicType("types.d.ts");
+
+  assertIncludes(publicTypes, 'export type IndicatorType = "sma" | "ema" | "rsi" | "macd" | "atr" | "stochastic";');
+  assertIncludes(publicTypes, "atr: string;");
+  assertIncludes(publicTypes, "stochastic: string;");
+});

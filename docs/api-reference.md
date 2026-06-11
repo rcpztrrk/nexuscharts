@@ -138,6 +138,8 @@ chart.addIndicator({ type: "sma", period: 10 });
 chart.addIndicator({ type: "ema", period: 21 });
 chart.addIndicator({ type: "rsi", period: 14, pane: "lower" });
 chart.addIndicator({ type: "macd", period: 26, fastPeriod: 12, pane: "lower" });
+chart.addIndicator({ type: "atr", period: 14, pane: "lower" });
+chart.addIndicator({ type: "stochastic", period: 14, pane: "lower" });
 
 chart.configureAnalytics({ showHeatmap: true, showRewardCurve: true, showPnlCurve: true });
 chart.setObserverFrames([
