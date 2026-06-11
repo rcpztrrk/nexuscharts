@@ -114,7 +114,7 @@ test("SeriesManager respects custom colors and refreshes default colors on theme
   assert.equal(manager.get(customSeries.id)?.style.color, "#123456");
 });
 
-test("IndicatorEngine normalizes defaults and computes SMA/EMA/RSI", () => {
+test("IndicatorEngine normalizes defaults and computes SMA/EMA/RSI/MACD/ATR", () => {
   const engine = new IndicatorEngine();
   const createId = (() => {
     let i = 0;
@@ -125,6 +125,7 @@ test("IndicatorEngine normalizes defaults and computes SMA/EMA/RSI", () => {
   const emaId = engine.addIndicator({ type: "ema", period: 3 }, createId, baseTheme);
   const rsiId = engine.addIndicator({ type: "rsi", period: 3 }, createId, baseTheme);
   const macdId = engine.addIndicator({ type: "macd", period: 4, fastPeriod: 2 }, createId, baseTheme);
+  const atrId = engine.addIndicator({ type: "atr", period: 3 }, createId, baseTheme);
 
   engine.recompute([
     { time: 1, open: 10, high: 11, low: 9, close: 10 },
@@ -139,17 +140,21 @@ test("IndicatorEngine normalizes defaults and computes SMA/EMA/RSI", () => {
   const ema = indicators.find((item) => item.id === emaId);
   const rsi = indicators.find((item) => item.id === rsiId);
   const macd = indicators.find((item) => item.id === macdId);
+  const atr = indicators.find((item) => item.id === atrId);
 
   assert.ok(sma);
   assert.ok(ema);
   assert.ok(rsi);
   assert.ok(macd);
+  assert.ok(atr);
   assert.equal(rsi?.pane, "lower");
   assert.equal(macd?.pane, "lower");
+  assert.equal(atr?.pane, "lower");
   assert.deepEqual(sma?.values.slice(0, 5), [null, null, 11, 12, 13]);
   assert.equal(ema?.values[2], 11);
   assert.equal(rsi?.values[3], 100);
   assert.equal(typeof macd?.values[3], "number");
+  assert.deepEqual(atr?.values.slice(0, 5), [null, null, 2, 2, 2]);
 });
 
 test("IndicatorEngine applyTheme updates only default indicator colors", () => {
@@ -157,14 +162,18 @@ test("IndicatorEngine applyTheme updates only default indicator colors", () => {
   engine.addIndicator({ id: "sma_default", type: "sma", period: 5 }, () => "unused", baseTheme);
   engine.addIndicator({ id: "ema_custom", type: "ema", period: 5, color: "#111111" }, () => "unused", baseTheme);
   engine.addIndicator({ id: "macd_default", type: "macd", period: 26 }, () => "unused", baseTheme);
+  engine.addIndicator({ id: "atr_default", type: "atr", period: 14 }, () => "unused", baseTheme);
 
-  const nextTheme = mergeChartTheme(baseTheme, { indicators: { sma: "#fedcba", ema: "#222222", macd: "#333333" } });
+  const nextTheme = mergeChartTheme(baseTheme, {
+    indicators: { sma: "#fedcba", ema: "#222222", macd: "#333333", atr: "#444444" },
+  });
   engine.applyTheme(nextTheme);
 
   const indicators = engine.getIndicators();
   assert.equal(indicators.find((item) => item.id === "sma_default")?.color, "#fedcba");
   assert.equal(indicators.find((item) => item.id === "ema_custom")?.color, "#111111");
   assert.equal(indicators.find((item) => item.id === "macd_default")?.color, "#333333");
+  assert.equal(indicators.find((item) => item.id === "atr_default")?.color, "#444444");
 });
 
 test("ChartTheme clone produces isolated nested objects", () => {

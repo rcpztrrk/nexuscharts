@@ -24,7 +24,11 @@ export class IndicatorEngine {
         const fastPeriod = definition.fastPeriod !== undefined
             ? Math.max(2, Math.floor(definition.fastPeriod))
             : undefined;
-        const pane = definition.pane ?? (definition.type === "rsi" || definition.type === "macd" ? "lower" : "main");
+        const pane = definition.pane ?? (
+            definition.type === "rsi" || definition.type === "macd" || definition.type === "atr"
+                ? "lower"
+                : "main"
+        );
         const color = definition.color ?? this.defaultColor(definition.type, theme);
 
         this.store.set(id, {
@@ -99,6 +103,9 @@ export class IndicatorEngine {
                 case "macd":
                     indicator.values = IndicatorEngine.computeMacd(valid, indicator.fastPeriod ?? 12, indicator.period);
                     break;
+                case "atr":
+                    indicator.values = IndicatorEngine.computeAtr(sourceCandles, indicator.period);
+                    break;
                 default:
                     indicator.values = [];
                     break;
@@ -115,6 +122,9 @@ export class IndicatorEngine {
         }
         if (type === "macd") {
             return theme.indicators.macd;
+        }
+        if (type === "atr") {
+            return theme.indicators.atr;
         }
         return theme.indicators.sma;
     }
@@ -234,6 +244,42 @@ export class IndicatorEngine {
             if (Number.isFinite(fastValue ?? NaN) && Number.isFinite(slowValue ?? NaN)) {
                 result[i] = (fastValue as number) - (slowValue as number);
             }
+        }
+
+        return result;
+    }
+
+    private static computeAtr(candles: CandleDataPoint[], period: number): Array<number | null> {
+        const result: Array<number | null> = new Array(candles.length).fill(null);
+        if (candles.length === 0) {
+            return result;
+        }
+
+        let trueRangeSum = 0;
+        let atr = 0;
+        for (let i = 0; i < candles.length; i += 1) {
+            const high = Number(candles[i].high);
+            const low = Number(candles[i].low);
+            const previousClose = i > 0 ? Number(candles[i - 1].close) : Number.NaN;
+            if (!Number.isFinite(high) || !Number.isFinite(low)) {
+                continue;
+            }
+
+            const trueRange = Number.isFinite(previousClose)
+                ? Math.max(high - low, Math.abs(high - previousClose), Math.abs(low - previousClose))
+                : high - low;
+
+            if (i < period) {
+                trueRangeSum += trueRange;
+                if (i === period - 1) {
+                    atr = trueRangeSum / period;
+                    result[i] = atr;
+                }
+                continue;
+            }
+
+            atr = ((atr * (period - 1)) + trueRange) / period;
+            result[i] = atr;
         }
 
         return result;
